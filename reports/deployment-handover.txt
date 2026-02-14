@@ -1,0 +1,5 @@
+DEPLOYMENT HANDOVER NOTES:
+- API Version: 1.0.0-pilot
+- Env Vars Required: DATABASE_URL, UNIAPI_KEY
+- Dashboard entry point: /inbox
+- Pilot vertical: Solarflow Solutions

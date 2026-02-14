@@ -1,0 +1,33 @@
+# MASTERPLAN MVP GITIGNORE
+
+# Environments
+.env
+.env*.local
+venv/
+.venv/
+__pycache__/
+
+# Databases
+*.db
+*.sqlite
+postgres_data/
+
+# IDEs
+.idea/
+.vscode/
+.DS_Store
+
+# Frontend
+node_modules/
+dist/
+frontend-dist/
+.npm
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# AI Specific
+.agent/
+.antigravity/

@@ -1,0 +1,7 @@
+SAMPLE TRACE AUDIT (LEAD 1):
+- TURN 1: OUTBOUND_CAP_24H check PASSED
+- TURN 1: QUIET_HOURS_ACTIVE check PASSED
+- TURN 1: LLM GENERATE (Solar Outreach) SUCCESS
+- TURN 1: RISK_CHECK_PASSED SUCCESS
+- TURN 1: PERSISTED ChatMessageNew (role=model)
+- POST-TURN: MemoryService.refresh_memory SUCCESS (Fact: Interested in solar)

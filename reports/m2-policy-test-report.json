@@ -1,0 +1,37 @@
+{
+  "milestone": "M2",
+  "timestamp": "2026-02-14T16:55:46.834963",
+  "tests": [
+    {
+      "name": "Outbound Cap 24h",
+      "status": "PASS",
+      "reason_code": "OUTBOUND_CAP_24H"
+    },
+    {
+      "name": "Quiet Hours NY Night",
+      "status": "PASS",
+      "reason_code": "QUIET_HOURS_ACTIVE"
+    },
+    {
+      "name": "Opt-Out Suppression",
+      "status": "PASS",
+      "reason_code": "OPT_OUT_SUPPRESSION"
+    },
+    {
+      "name": "Stop Rule (5 Unanswered)",
+      "status": "PASS",
+      "reason_code": "STOP_RULE_MAX_UNANSWERED"
+    },
+    {
+      "name": "Risk Blocking (Low Confidence)",
+      "status": "PASS",
+      "reason_code": "LOW_CONFIDENCE_BLOCK"
+    },
+    {
+      "name": "Strategy Review Tagging",
+      "status": "PASS",
+      "tag": "STRATEGY_REVIEW_REQUIRED"
+    }
+  ],
+  "overall_status": "PASSED"
+}

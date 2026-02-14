@@ -1,0 +1,11 @@
+{
+  "transitions_verified": [
+    "NEW -> CONTACTED (Auto on send)",
+    "ANY -> QUALIFIED (Manual transition via transition_state)",
+    "ANY -> SUPPRESSED (Policy engine loopback)"
+  ],
+  "tagging_verified": [
+    "STRATEGY_REVIEW_REQUIRED (On risk block)",
+    "POSITIVE (Manual tagging)"
+  ]
+}
