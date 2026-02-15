@@ -15,6 +15,7 @@ from routers import mcp, chat, agents, knowledge, settings, policy, playground, 
 from runtime.agent_runtime import ConversationAgentRuntime
 from runtime.crm_agent import CRMAgent
 import asyncio
+from tenacity import retry, stop_after_attempt, wait_fixed
 from models import SystemSetting, MCPServer
 
 # Configure logging
@@ -87,17 +88,12 @@ def seed_mcp_scripts():
     else:
         logger.warning(f"Initial MCP directory {initial_dir} not found. Skipping seeding.")
 
-@app.on_event("startup")
-async def on_startup():
-    create_db_and_tables() # Enabled for automatic schema management
+@retry(stop=stop_after_attempt(5), wait=wait_fixed(5))
+def perform_db_startup():
+    """Resiliently initialize database tables and seed data."""
+    logger.info("Initializing database...")
+    create_db_and_tables()
     
-    # Run simple migration for new field
-    try:
-        pass
-        # Auto-migration scripts removed per user request for manual DB management
-    except Exception as e:
-        logger.error(f"Migration script failed: {e}")
-
     seed_mcp_scripts()
 
     # Seed Knowledge Retrieval MCP if not exists
@@ -121,6 +117,7 @@ async def on_startup():
                 session.commit()
     except Exception as e:
         logger.error(f"Failed to seed Knowledge Retrieval MCP: {e}")
+        raise # Let tenacity retry
 
     # Load Z.ai Key from DB if exists
     try:
@@ -131,12 +128,22 @@ async def on_startup():
                 zai_client.update_api_key(setting.value)
     except Exception as e:
         logger.warning(f"Failed to load Z.ai key from DB on startup: {e}")
+        # Not fatal, but log it
+
+    # Seed default assets if empty
+    seed_default_assets()
+
+@app.on_event("startup")
+async def on_startup():
+    try:
+        perform_db_startup()
+    except Exception as e:
+        logger.error(f"CRITICAL: System could not connect to database after retries: {e}")
+        # We don't exit(1) here to allow the process to stay alive and show health errors 
+        # instead of an infinite restart loop on some platforms.
 
     # Start Real CRM Background Loop
     asyncio.create_task(background_crm_loop())
-    
-    # Seed default assets if empty
-    seed_default_assets()
 
 def seed_default_assets():
     """Ensure at least one agent and workspace exist for testing."""
