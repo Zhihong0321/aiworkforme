@@ -55,17 +55,24 @@ const fetchStatus = async () => {
 const saveZai = async () => {
   if (!zaiKey.value) return
   isSaving.value = true
+  message.value = 'Saving...'
   try {
-    await fetch(`${API_BASE}/settings/zai-key`, {
+    const res = await fetch(`${API_BASE}/settings/zai-key`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key: zaiKey.value })
     })
+    
+    if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}))
+      throw new Error(errorData.detail || 'Failed to save Z.ai key')
+    }
+    
     zaiKey.value = ''
     message.value = 'Z.ai Key Updated'
     await fetchStatus()
   } catch (e) {
-    message.value = 'Error saving Z.ai key'
+    message.value = `Error: ${e.message}`
   } finally {
     isSaving.value = false
   }
@@ -74,17 +81,24 @@ const saveZai = async () => {
 const saveUni = async () => {
   if (!uniKey.value) return
   isSaving.value = true
+  message.value = 'Saving...'
   try {
-    await fetch(`${API_BASE}/settings/uniapi-key`, {
+    const res = await fetch(`${API_BASE}/settings/uniapi-key`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ api_key: uniKey.value })
     })
+    
+    if (!res.ok) {
+       const errorData = await res.json().catch(() => ({}))
+       throw new Error(errorData.detail || 'Failed to save UniAPI key')
+    }
+
     uniKey.value = ''
     message.value = 'UniAPI Key Updated'
     await fetchStatus()
   } catch (e) {
-    message.value = 'Error saving UniAPI key'
+    message.value = `Error: ${e.message}`
   } finally {
     isSaving.value = false
   }

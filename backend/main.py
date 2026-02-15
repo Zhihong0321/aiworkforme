@@ -42,14 +42,14 @@ app.include_router(policy.router)
 app.include_router(playground.router)
 app.include_router(workspaces.router)
 
-# Set up CORS
-origins = ["http://localhost:8080"]
+# Set up CORS - allow all for pilot/local development to avoid blocking user
+origins = ["*"]
 
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
