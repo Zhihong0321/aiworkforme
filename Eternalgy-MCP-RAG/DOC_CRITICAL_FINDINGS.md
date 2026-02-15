@@ -18,7 +18,7 @@ The "Knowledge Base" feature is **NOT** purely local RAG.
 
 ## 3. Database & Deployment Quirks
 *   **Railway Postgres**: The system is designed to run on Railway. It expects `DATABASE_URL` to be auto-injected.
-*   **Railway Build**: Railway no longer uses Nixpacks for this project; builds run from the Dockerfile (or your own CI) and `nixpacks.toml` is ignored. Keep the Docker image pipeline up to date when changing backend/frontend build steps.
+*   **Railway Build**: Nixpacks has been removed. Builds run exclusively from the root `Dockerfile`. Ensure the `Dockerfile` remains the source of truth for backend/frontend build logic.
 *   **Procfile**: The web command `web: cd backend && python main.py` assumes the backend is the root context.
 *   **Lazy Loading**: The CRUD operations (`crud.py`) explicitly avoid eager loading in `get_chat_sessions` to prevent SQL errors, implying potential performance or permission issues with the database schema.
 
