@@ -5,6 +5,7 @@ from database import get_session
 from models import Lead, Workspace, ConversationThread, ChatMessageNew, PolicyDecision
 from runtime.agent_runtime import ConversationAgentRuntime
 from dependencies import zai_client
+from zai_client import ZaiClient
 from providers.uniapi import UniAPIClient
 
 router = APIRouter(prefix="/api/v1/playground", tags=["Playground"])
