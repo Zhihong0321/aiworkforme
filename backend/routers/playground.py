@@ -29,8 +29,10 @@ async def playground_chat(
     workspace_id: int,
     message: str,
     session: Session = Depends(get_session),
-    client: UniAPIClient = Depends(get_uniapi_client)
+    client: ZaiClient = Depends(get_uniapi_client)
 ):
+    if not client.is_configured:
+        raise HTTPException(status_code=503, detail="AI Provider not configured. Set the key in Settings.")
     runtime = ConversationAgentRuntime(session, client)
     
     # We want to capture the trace, so we might need to modify run_turn or just fetch decisions after

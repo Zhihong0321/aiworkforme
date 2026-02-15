@@ -44,6 +44,11 @@ async def chat_with_agent(
     mcp_manager: MCPManager = Depends(get_mcp_manager),
     zai_client: ZaiClient = Depends(get_zai_client)
 ):
+    if not zai_client.is_configured:
+        raise HTTPException(
+            status_code=503, 
+            detail="AI Provider not configured. Please enter your Z.ai API key in the Settings dashboard."
+        )
     try:
         t0 = time.perf_counter()
         # 1. Load Agent
