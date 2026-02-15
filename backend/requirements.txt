@@ -11,5 +11,8 @@ tenacity
 redis
 pytest
 pytest-asyncio
+pytz
+requests
+python-multipart
 
 
