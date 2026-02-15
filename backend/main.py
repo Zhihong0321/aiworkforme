@@ -134,6 +134,28 @@ async def on_startup():
 
     # Start Real CRM Background Loop
     asyncio.create_task(background_crm_loop())
+    
+    # Seed default assets if empty
+    seed_default_assets()
+
+def seed_default_assets():
+    """Ensure at least one agent and workspace exist for testing."""
+    with Session(engine) as session:
+        # Check for Agents
+        from models import Agent, Workspace, BudgetTier
+        if not session.exec(select(Agent)).first():
+            logger.info("Seeding default Sales Agent...")
+            agent = Agent(name="Default Sales Agent", system_prompt="You are a helpful sales assistant.", model="glm-4.7-flash")
+            session.add(agent)
+            session.commit()
+            session.refresh(agent)
+            
+            # Create Workspace for this agent
+            if not session.exec(select(Workspace)).first():
+                logger.info("Seeding default Workspace...")
+                ws = Workspace(name="Main Workspace", agent_id=agent.id, budget_tier=BudgetTier.GREEN)
+                session.add(ws)
+                session.commit()
 
 async def background_crm_loop():
     """Real Automation Heartbeat: Runs Review and Dispatch loops."""
