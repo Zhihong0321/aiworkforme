@@ -4,6 +4,7 @@ import Leads from '../views/Leads.vue'
 import Strategy from '../views/Strategy.vue'
 import Knowledge from '../views/Knowledge.vue'
 import Analytics from '../views/Analytics.vue'
+import Playground from '../views/Playground.vue'
 
 const routes = [
   {
@@ -34,6 +35,12 @@ const routes = [
     path: '/analytics',
     name: 'Analytics',
     component: Analytics
+  },
+  {
+    path: '/playground',
+    name: 'Playground',
+    component: Playground,
+    meta: { bare: false }
   }
 ]
 

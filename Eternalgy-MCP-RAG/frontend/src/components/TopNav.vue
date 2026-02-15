@@ -16,7 +16,8 @@ const navItems = [
   { label: 'Leads', path: '/leads' },
   { label: 'Strategy', path: '/strategy' },
   { label: 'Knowledge', path: '/knowledge' },
-  { label: 'Analytics', path: '/analytics' }
+  { label: 'Analytics', path: '/analytics' },
+  { label: 'Playground', path: '/playground' }
 ]
 </script>
 

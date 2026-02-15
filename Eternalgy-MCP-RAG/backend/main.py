@@ -11,7 +11,7 @@ import logging
 
 from database import engine, get_session
 from dependencies import mcp_manager, zai_client
-from routers import mcp, chat, agents, knowledge, settings, policy
+from routers import mcp, chat, agents, knowledge, settings, policy, playground
 from models import SystemSetting, MCPServer
 
 # Configure logging
@@ -35,6 +35,7 @@ app.include_router(knowledge.router)
 
 app.include_router(settings.router)
 app.include_router(policy.router)
+app.include_router(playground.router)
 
 # Set up CORS
 origins = ["http://localhost:8080"]

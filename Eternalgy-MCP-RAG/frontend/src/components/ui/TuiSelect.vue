@@ -5,7 +5,7 @@ const props = defineProps({
   label: String,
   hint: String,
   modelValue: {
-    type: String,
+    type: [String, Number],
     default: ''
   },
   options: {
@@ -15,6 +15,10 @@ const props = defineProps({
   placeholder: {
     type: String,
     default: 'Select'
+  },
+  dark: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -28,14 +32,19 @@ const onChange = (event) => {
 </script>
 
 <template>
-  <label class="flex flex-col gap-2 text-sm text-[var(--text)]">
+  <label :class="['flex flex-col gap-2 text-sm', dark ? 'text-white' : 'text-[var(--text)]']">
     <div class="flex items-center justify-between">
-      <span class="text-xs uppercase tracking-wider text-[var(--muted)]">{{ label }}</span>
-      <span v-if="hint" class="text-xs text-[var(--muted)]">{{ hint }}</span>
+      <span :class="['text-[10px] font-bold uppercase tracking-widest', dark ? 'text-white/40' : 'text-[var(--muted)]']">{{ label }}</span>
+      <span v-if="hint" :class="['text-xs', dark ? 'text-white/40' : 'text-[var(--muted)]']">{{ hint }}</span>
     </div>
     <div class="relative breathing-ring">
       <select
-        class="w-full appearance-none rounded-md border border-[var(--border-strong)] bg-white px-3 py-2 pr-9 text-[var(--text)] focus:border-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[rgba(31,31,31,0.1)]"
+        :class="[
+          'w-full appearance-none rounded-xl border px-4 py-3 pr-10 text-sm transition-all focus:outline-none focus:ring-2',
+          dark 
+            ? 'bg-white/5 border-white/10 text-white focus:border-white/30 focus:ring-white/10' 
+            : 'bg-white border-[var(--border-strong)] text-[var(--text)] focus:border-[var(--text)] focus:ring-[rgba(31,31,31,0.1)]'
+        ]"
         :value="modelValue"
         @change="onChange"
       >
@@ -45,10 +54,13 @@ const onChange = (event) => {
         </option>
       </select>
       <span
-        class="pointer-events-none absolute inset-y-0 right-3 flex items-center text-[var(--muted)] transition"
-        :class="hasValue ? 'opacity-80' : 'opacity-60'"
+        :class="[
+          'pointer-events-none absolute inset-y-0 right-4 flex items-center transition text-[10px]',
+          dark ? 'text-white/40' : 'text-[var(--muted)]',
+          hasValue ? 'opacity-100' : 'opacity-40'
+        ]"
       >
-        ▾
+        ▼
       </span>
     </div>
   </label>
