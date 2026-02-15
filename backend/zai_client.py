@@ -6,8 +6,8 @@ from openai.types.chat import ChatCompletionMessage
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 class ZaiClient:
-    def __init__(self, api_key: str, base_url: str = "https://api.z.ai/api/coding/paas/v4", timeout: int = 300):
-        self.api_key = api_key
+    def __init__(self, api_key: Optional[str] = None, base_url: str = "https://api.z.ai/api/coding/paas/v4", timeout: int = 300):
+        self.api_key = api_key or "EMPTY_KEY"
         self.base_url = base_url
         self.timeout = timeout
         
@@ -25,6 +25,8 @@ class ZaiClient:
 
     def update_api_key(self, api_key: str):
         """Update the API key and re-initialize the client."""
+        if not api_key:
+            return
         self.api_key = api_key
         self.client = AsyncOpenAI(
             api_key=self.api_key,
