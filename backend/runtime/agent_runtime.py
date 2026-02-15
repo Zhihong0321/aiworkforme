@@ -6,7 +6,7 @@ from models import Lead, Workspace, PolicyDecision, ChatMessageNew, Conversation
 from policy.evaluator import PolicyEvaluator
 from runtime.context_builder import ContextBuilder
 from runtime.memory_service import MemoryService
-from providers.uniapi import UniAPIClient
+from zai_client import ZaiClient
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +14,11 @@ class ConversationAgentRuntime:
     """
     Unified Conversation Runtime.
     Orchestrates the policy-aware, intent-first messaging loop.
+    Now unified to use ZaiClient (OpenAI-compatible).
     """
-    def __init__(self, session: Session, uniapi_client: UniAPIClient):
+    def __init__(self, session: Session, zai_client: ZaiClient):
         self.session = session
-        self.client = uniapi_client
+        self.client = zai_client
         self.policy = PolicyEvaluator(session)
         self.builder = ContextBuilder(session)
 
@@ -41,21 +42,28 @@ class ConversationAgentRuntime:
         
         # 4. PREPARE MESSAGES
         history = self._get_recent_history(thread.id)
+        
+        # Construct messages for ZaiClient (OpenAI format)
+        messages = [{"role": "system", "content": context["system_instruction"]}]
+        messages.extend(history)
+        
         if user_message:
-            history.append({"role": "user", "content": user_message})
+            messages.append({"role": "user", "content": user_message})
             self._save_message(thread.id, "user", user_message)
 
         # 5. EXECUTE LLM CALL
         try:
-            response = await self.client.generate_content(
-                messages=history,
-                system_instruction=context["system_instruction"],
-                generation_config=context.get("generation_config")
+            # Note: We use the Flash model for budget efficiency on turns
+            response_msg = await self.client.chat(
+                messages=messages,
+                model="glm-4.7-flash"
             )
-            model_text = response["candidates"][0]["content"]["parts"][0]["text"]
+            model_text = response_msg.content
+            if not model_text:
+                raise ValueError("LLM returned empty content")
         except Exception as e:
-            logger.error(f"LLM failure: {e}")
-            return {"status": "error", "message": "Model unreachable"}
+            logger.error(f"LLM failure in runtime: {e}")
+            return {"status": "error", "message": f"Model unreachable: {str(e)}"}
 
         # 6. POST-GENERATION RISK CHECK
         risk_decision = self.policy.validate_risk(lead_id, workspace_id, model_text, confidence_score=0.9)
@@ -71,8 +79,6 @@ class ConversationAgentRuntime:
 
         # 8. ASYNC MEMORY REFRESH
         memory_service = MemoryService(self.session, self.client)
-        # In a real app, this would be a background task (e.g., Celery/Redis)
-        # For MVP implementation, we do it in-process for now or just trigger it.
         await memory_service.refresh_memory(lead_id, thread.id)
 
         return {"status": "sent", "content": model_text}

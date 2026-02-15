@@ -1,6 +1,7 @@
 import os
 import httpx
 import logging
+import json
 from typing import List, Dict, Optional, Any
 from openai import AsyncOpenAI, RateLimitError
 from openai.types.chat import ChatCompletionMessage
@@ -20,7 +21,7 @@ class ZaiClient:
         self._client: Optional[AsyncOpenAI] = None
         self._http_client: Optional[httpx.AsyncClient] = None
         
-        if self._api_key:
+        if self._api_key and self._api_key != "EMPTY_KEY":
             self._init_client()
 
     def _init_client(self):
@@ -40,7 +41,7 @@ class ZaiClient:
 
     @property
     def is_configured(self) -> bool:
-        return self._api_key is not None and len(self._api_key) > 5
+        return self._api_key is not None and len(self._api_key) > 5 and self._api_key != "EMPTY_KEY"
 
     def update_api_key(self, api_key: str):
         """Update the API key and re-initialize the client safely."""
@@ -52,6 +53,11 @@ class ZaiClient:
     async def _ensure_client(self):
         """Check if configured before attempting a call."""
         if not self._client:
+            # Fallback for startup race conditions
+            key = os.getenv("ZAI_API_KEY")
+            if key and key != "EMPTY_KEY":
+                self.update_api_key(key)
+                return self._client
             raise ValueError("ZaiClient is not configured. Please set ZAI_API_KEY in settings.")
         return self._client
 
@@ -66,7 +72,8 @@ class ZaiClient:
         model: str = "glm-4.7-flash", 
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: Optional[Any] = None,
-        include_reasoning: bool = True
+        include_reasoning: bool = True,
+        response_format: Optional[Dict[str, Any]] = None
     ) -> ChatCompletionMessage:
         client = await self._ensure_client()
         try:
@@ -80,6 +87,8 @@ class ZaiClient:
                 kwargs["tools"] = tools
             if tool_choice:
                 kwargs["tool_choice"] = tool_choice
+            if response_format:
+                kwargs["response_format"] = response_format
 
             response = await client.chat.completions.create(**kwargs)
             message = response.choices[0].message

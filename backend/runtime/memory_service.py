@@ -1,18 +1,21 @@
 import logging
+import json
 from typing import Optional, List, Dict, Any
+from datetime import datetime
 from sqlmodel import Session, select
 from models import LeadMemory, ChatMessageNew, ConversationThread
-from providers.uniapi import UniAPIClient
+from zai_client import ZaiClient
 
 logger = logging.getLogger(__name__)
 
 class MemoryService:
     """
     Manages lead-specific memory (Summaries and Facts).
+    Unified to use ZaiClient.
     """
-    def __init__(self, session: Session, uniapi_client: Optional[UniAPIClient] = None):
+    def __init__(self, session: Session, zai_client: Optional[ZaiClient] = None):
         self.session = session
-        self.client = uniapi_client
+        self.client = zai_client
 
     def get_lead_memory(self, lead_id: int) -> Optional[LeadMemory]:
         return self.session.exec(
@@ -23,8 +26,8 @@ class MemoryService:
         """
         Triggers an LLM turn to summarize the conversation and extract facts.
         """
-        if not self.client:
-            logger.warning("No UniAPIClient provided to MemoryService; skipping refresh.")
+        if not self.client or not self.client.is_configured:
+            logger.warning("ZaiClient not configured in MemoryService; skipping refresh.")
             return
 
         # Fetch recent messages
@@ -53,14 +56,18 @@ JSON Format:
 }}
 """
         try:
-            # We use a compact generation config for background tasks
-            response = await self.client.generate_content(
+            # Request JSON formatting for extraction
+            response_msg = await self.client.chat(
                 messages=[{"role": "user", "content": prompt}],
-                system_instruction="You are a data extraction assistant. Output valid JSON only.",
-                generation_config={"responseMimeType": "application/json"}
+                model="glm-4.7-flash",
+                include_reasoning=False,
+                response_format={"type": "json_object"}
             )
             
-            data = json.loads(response["candidates"][0]["content"]["parts"][0]["text"])
+            if not response_msg.content:
+                raise ValueError("Memory refresh returned empty content")
+
+            data = json.loads(response_msg.content)
             
             memory = self.get_lead_memory(lead_id)
             if not memory:
@@ -72,9 +79,7 @@ JSON Format:
             
             self.session.add(memory)
             self.session.commit()
+            logger.info(f"Memory refreshed for lead {lead_id}")
             
         except Exception as e:
             logger.error(f"Memory refresh failed for lead {lead_id}: {e}")
-
-import json
-from datetime import datetime
