@@ -26,8 +26,8 @@ def create_db_and_tables():
 
 
 app = FastAPI(
-    title="Z.ai Chatbot System API",
-    description="Backend API for the Z.ai Chatbot System.",
+    title="Aiworkfor.me API",
+    description="Backend API for the Aiworkfor.me AI Chatbot System.",
     version="0.1.0",
 )
 
@@ -204,7 +204,7 @@ def read_root():
 
 @app.get("/api/v1/health", tags=["Health Check"])
 def health_check():
-    return {"status": "ok", "service": "eternalgy-backend", "version": "1.0.0-pilot"}
+    return {"status": "ok", "service": "aiworkforme-backend", "version": "1.0.0-pilot"}
 
 @app.get("/api/v1/ready", tags=["Health Check"])
 def readiness_check(db_session: Session = Depends(get_session)):

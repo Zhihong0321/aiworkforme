@@ -37,7 +37,7 @@ onMounted(() => {
     <div class="mx-auto flex max-w-7xl items-center justify-between px-4">
       <div class="flex items-center py-3">
          <span class="text-xs font-black uppercase tracking-[0.2em] mr-8 select-none" :class="isDark ? 'text-white' : 'text-black'">
-            Eternalgy
+            Aiworkfor.me
          </span>
          
          <!-- REAL WORKSPACE SELECTOR -->
