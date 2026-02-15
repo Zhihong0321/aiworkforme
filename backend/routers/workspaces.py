@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from typing import List, Optional
 from database import get_session
-from models import Workspace, Agent
+from models import Workspace, Agent, Lead, StrategyVersion, StrategyStatus
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["Workspace Management"])
 

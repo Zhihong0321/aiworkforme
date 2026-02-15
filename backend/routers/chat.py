@@ -287,8 +287,13 @@ async def chat_with_agent(
                 logger.info("chat total: agent_id=%s dt=%.3fs", agent.id, (t1 - t0))
                 return ChatResponse(response=message.content or "")
                 
-        t1 = time.perf_counter()
-        logger.info("chat total: agent_id=%s dt=%.3fs", agent.id, (t1 - t0))
+        return ChatResponse(response="Max chat turns reached.")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Chat endpoint error")
+        raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
+
 @router.get("/conversations")
 def list_conversations(session: Session = Depends(get_session)):
     """List all active chat sessions with the latest message snippet."""
