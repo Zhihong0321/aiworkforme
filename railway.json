@@ -3,7 +3,7 @@
     "build": {
         "builder": "DOCKER",
         "dockerfilePath": "Dockerfile",
-        "context": "Eternalgy-MCP-RAG"
+        "context": "."
     },
     "deploy": {
         "healthcheckPath": "/api/v1/health",

@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+python-dotenv
+psycopg2-binary
+sqlmodel
+alembic
+httpx
+openai
+mcp
+tenacity
+redis
+pytest
+pytest-asyncio
+
+
