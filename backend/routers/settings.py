@@ -17,8 +17,15 @@ class APIKeyRequest(BaseModel):
 def get_zai_key(session: Session = Depends(get_session)):
     setting = session.get(SystemSetting, "zai_api_key")
     if setting and setting.value:
-        # Return masked key
         masked = f"{setting.value[:4]}...{setting.value[-4:]}"
+        return {"status": "set", "masked_key": masked}
+    return {"status": "not_set", "masked_key": None}
+
+@router.get("/uniapi-key")
+def get_uniapi_key(session: Session = Depends(get_session)):
+    setting = session.get(SystemSetting, "uniapi_key")
+    if setting and setting.value:
+        masked = f"{setting.value[:2]}...{setting.value[-2:]}"
         return {"status": "set", "masked_key": masked}
     return {"status": "not_set", "masked_key": None}
 
@@ -28,17 +35,24 @@ def update_zai_key(
     session: Session = Depends(get_session),
     zai_client: ZaiClient = Depends(get_zai_client)
 ):
-    setting = session.get(SystemSetting, "zai_api_key")
+    _save_setting(session, "zai_api_key", request.api_key)
+    zai_client.update_api_key(request.api_key)
+    return {"status": "updated"}
+
+@router.post("/uniapi-key")
+def update_uniapi_key(
+    request: APIKeyRequest, 
+    session: Session = Depends(get_session)
+):
+    _save_setting(session, "uniapi_key", request.api_key)
+    return {"status": "updated"}
+
+def _save_setting(session: Session, key: str, value: str):
+    setting = session.get(SystemSetting, key)
     if not setting:
-        setting = SystemSetting(key="zai_api_key", value=request.api_key)
+        setting = SystemSetting(key=key, value=value)
         session.add(setting)
     else:
-        setting.value = request.api_key
+        setting.value = value
         session.add(setting)
-    
     session.commit()
-    
-    # Update live client
-    zai_client.update_api_key(request.api_key)
-    
-    return {"status": "updated"}

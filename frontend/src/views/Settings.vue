@@ -8,57 +8,83 @@ import { useTheme } from '../composables/theme'
 
 const API_BASE = `${window.location.origin}/api/v1`
 
-const apiKey = ref('')
-const maskedKey = ref('')
-const status = ref('unknown')
+// ZAI Key
+const zaiKey = ref('')
+const zaiMasked = ref('')
+const zaiStatus = ref('unknown')
+const zaiLoading = ref(true)
+
+// UniAPI Key
+const uniKey = ref('')
+const uniMasked = ref('')
+const uniStatus = ref('unknown')
+const uniLoading = ref(true)
+
 const message = ref('')
 const isSaving = ref(false)
-const isLoading = ref(true)
-
-const statusVariant = () => (status.value === 'set' ? 'success' : 'warning')
 
 const { theme, toggleTheme, setTheme } = useTheme()
 const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'))
 const nextThemeLabel = computed(() => (theme.value === 'dark' ? 'Light' : 'Dark'))
 
 const fetchStatus = async () => {
-  isLoading.value = true
-  message.value = ''
+  zaiLoading.value = true
+  uniLoading.value = true
   try {
-    const res = await fetch(`${API_BASE}/settings/zai-key`)
-    if (!res.ok) throw new Error('Failed to fetch key status')
-    const data = await res.json()
-    status.value = data.status || 'unknown'
-    maskedKey.value = data.masked_key || ''
+    const [zaiRes, uniRes] = await Promise.all([
+      fetch(`${API_BASE}/settings/zai-key`),
+      fetch(`${API_BASE}/settings/uniapi-key`)
+    ])
+    
+    const zaiData = await zaiRes.json()
+    zaiStatus.value = zaiData.status
+    zaiMasked.value = zaiData.masked_key
+
+    const uniData = await uniRes.json()
+    uniStatus.value = uniData.status
+    uniMasked.value = uniData.masked_key
+    
   } catch (error) {
-    console.error('Failed to load key status', error)
-    status.value = 'error'
-    message.value = 'Failed to load key status.'
+    console.error('Failed to load keys', error)
   } finally {
-    isLoading.value = false
+    zaiLoading.value = false
+    uniLoading.value = false
   }
 }
 
-const saveKey = async () => {
-  if (!apiKey.value) {
-    message.value = 'Enter an API key before saving.'
-    return
-  }
+const saveZai = async () => {
+  if (!zaiKey.value) return
   isSaving.value = true
-  message.value = ''
   try {
-    const res = await fetch(`${API_BASE}/settings/zai-key`, {
+    await fetch(`${API_BASE}/settings/zai-key`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ api_key: apiKey.value })
+      body: JSON.stringify({ api_key: zaiKey.value })
     })
-    if (!res.ok) throw new Error('Failed to update key')
-    message.value = 'System API Key Updated'
-    apiKey.value = ''
+    zaiKey.value = ''
+    message.value = 'Z.ai Key Updated'
     await fetchStatus()
-  } catch (error) {
-    console.error('Failed to update key', error)
-    message.value = 'Update failed. Check backend connectivity.'
+  } catch (e) {
+    message.value = 'Error saving Z.ai key'
+  } finally {
+    isSaving.value = false
+  }
+}
+
+const saveUni = async () => {
+  if (!uniKey.value) return
+  isSaving.value = true
+  try {
+    await fetch(`${API_BASE}/settings/uniapi-key`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ api_key: uniKey.value })
+    })
+    uniKey.value = ''
+    message.value = 'UniAPI Key Updated'
+    await fetchStatus()
+  } catch (e) {
+    message.value = 'Error saving UniAPI key'
   } finally {
     isSaving.value = false
   }
@@ -75,61 +101,56 @@ onMounted(() => {
       <header class="tui-surface rounded-xl border border-slate-200 p-6">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div class="space-y-2">
-            <p class="text-xs uppercase tracking-[0.32em] text-slate-500">z.ai admin</p>
+            <p class="text-xs uppercase tracking-[0.32em] text-slate-500">System Admin</p>
             <h1 class="text-3xl font-bold text-slate-900">Settings</h1>
             <p class="text-sm text-slate-600">
-              Manage frontend-managed secrets. API key stored locally until backend integration is finalized.
+              Configure system-wide secrets and provider credentials. 
             </p>
-            <div class="flex flex-wrap items-center gap-2">
-              <TuiBadge variant="info">placeholder</TuiBadge>
-              <TuiBadge variant="muted">frontend storage</TuiBadge>
-            </div>
           </div>
           <div class="flex flex-wrap gap-2 text-xs text-slate-700">
-            <TuiBadge variant="muted">Z.ai API</TuiBadge>
+            <TuiBadge variant="info">Production Ready</TuiBadge>
           </div>
         </div>
       </header>
 
-      <TuiCard title="Appearance" subtitle="theme">
-        <div class="space-y-3">
-          <div class="flex flex-wrap items-center gap-3">
-            <TuiBadge :variant="theme === 'dark' ? 'success' : 'muted'">Theme: {{ themeLabel }}</TuiBadge>
-            <TuiButton @click="toggleTheme">Switch to {{ nextThemeLabel }}</TuiButton>
-            <TuiButton size="sm" variant="outline" @click="setTheme('light')">Light</TuiButton>
-            <TuiButton size="sm" variant="outline" @click="setTheme('dark')">Dark</TuiButton>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Z.AI CARD -->
+        <TuiCard title="Z.ai (Primary)" subtitle="used for AI Coding & Agent turns">
+          <div class="space-y-4">
+            <div class="flex items-center gap-2">
+              <TuiBadge :variant="zaiStatus === 'set' ? 'success' : 'warning'">
+                {{ zaiStatus === 'set' ? 'Connected' : 'Missing' }}
+              </TuiBadge>
+              <span v-if="zaiMasked" class="text-[10px] text-slate-400 font-mono">{{ zaiMasked }}</span>
+            </div>
+            <TuiInput v-model="zaiKey" type="password" placeholder="sk-..." label="API Key" />
+            <TuiButton @click="saveZai" :loading="isSaving" class="w-full">Update Z.ai Key</TuiButton>
           </div>
-          <p class="text-xs text-slate-600">
-            Applies instantly and persists locally on this device.
-          </p>
+        </TuiCard>
+
+        <!-- UNIAPI CARD -->
+        <TuiCard title="UniAPI (Fallback)" subtitle="targeting Google Gemini models">
+          <div class="space-y-4">
+            <div class="flex items-center gap-2">
+              <TuiBadge :variant="uniStatus === 'set' ? 'success' : 'warning'">
+                {{ uniStatus === 'set' ? 'Connected' : 'Missing' }}
+              </TuiBadge>
+              <span v-if="uniMasked" class="text-[10px] text-slate-400 font-mono">{{ uniMasked }}</span>
+            </div>
+            <TuiInput v-model="uniKey" type="password" placeholder="Key..." label="UniAPI Key" />
+            <TuiButton @click="saveUni" :loading="isSaving" variant="outline" class="w-full">Update UniAPI Key</TuiButton>
+          </div>
+        </TuiCard>
+      </div>
+
+      <TuiCard title="Appearance" subtitle="Theme selection">
+        <div class="flex items-center gap-4">
+          <TuiButton @click="toggleTheme">{{ themeLabel }} Mode Active</TuiButton>
+          <p class="text-xs text-slate-500">Persists locally on this browser.</p>
         </div>
       </TuiCard>
 
-      <TuiCard title="Z.ai API Key" subtitle="credentials">
-        <div class="space-y-4">
-          <div class="flex flex-wrap items-center gap-2">
-            <TuiBadge :variant="statusVariant()">
-              {{ status === 'set' ? 'Connected' : status === 'error' ? 'Error' : 'Missing' }}
-            </TuiBadge>
-            <TuiBadge variant="muted" v-if="maskedKey">masked: {{ maskedKey }}</TuiBadge>
-            <TuiBadge variant="muted" v-if="isLoading">loading...</TuiBadge>
-          </div>
-          <TuiInput
-            label="API Key"
-            placeholder="Enter Z.ai API key"
-            v-model="apiKey"
-            type="password"
-          />
-          <p class="text-xs text-slate-600">
-            On save, POSTs to /api/v1/settings/zai-key. When set, backend serves a masked value via GET /settings/zai-key.
-          </p>
-          <div class="flex flex-wrap gap-3">
-            <TuiButton :loading="isSaving" @click="saveKey">Save</TuiButton>
-            <TuiButton variant="outline" @click="fetchStatus">Refresh</TuiButton>
-          </div>
-          <p v-if="message" class="text-xs text-slate-700">{{ message }}</p>
-        </div>
-      </TuiCard>
+      <p v-if="message" class="text-center text-sm font-bold text-indigo-600 animate-pulse">{{ message }}</p>
     </main>
   </div>
 </template>
