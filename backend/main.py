@@ -11,7 +11,10 @@ import logging
 
 from database import engine, get_session
 from dependencies import mcp_manager, zai_client
-from routers import mcp, chat, agents, knowledge, settings, policy, playground
+from routers import mcp, chat, agents, knowledge, settings, policy, playground, workspaces
+from runtime.agent_runtime import ConversationAgentRuntime
+from runtime.crm_agent import CRMAgent
+import asyncio
 from models import SystemSetting, MCPServer
 
 # Configure logging
@@ -36,6 +39,7 @@ app.include_router(knowledge.router)
 app.include_router(settings.router)
 app.include_router(policy.router)
 app.include_router(playground.router)
+app.include_router(workspaces.router)
 
 # Set up CORS
 origins = ["http://localhost:8080"]
@@ -85,7 +89,7 @@ def seed_mcp_scripts():
 
 @app.on_event("startup")
 async def on_startup():
-    # create_db_and_tables() # Enabled for local testing and initial setup
+    create_db_and_tables() # Enabled for automatic schema management
     
     # Run simple migration for new field
     try:
@@ -127,6 +131,30 @@ async def on_startup():
                 zai_client.update_api_key(setting.value)
     except Exception as e:
         logger.warning(f"Failed to load Z.ai key from DB on startup: {e}")
+
+    # Start Real CRM Background Loop
+    asyncio.create_task(background_crm_loop())
+
+async def background_crm_loop():
+    """Real Automation Heartbeat: Runs Review and Dispatch loops."""
+    logger.info("Starting REAL CRM Background Loop...")
+    while True:
+        try:
+            with Session(engine) as session:
+                runtime = ConversationAgentRuntime(session, zai_client)
+                crm = CRMAgent(session, runtime)
+                
+                # 1. Review Loop: Plan follow-ups for new/neglected leads
+                await crm.run_review_loop()
+                
+                # 2. Dispatcher: Execute turns for leads that are 'due'
+                await crm.run_due_dispatcher()
+                
+        except Exception as e:
+            logger.error(f"CRM Loop Error: {e}")
+        
+        # Interval for MVP: Check every 60 seconds
+        await asyncio.sleep(60)
 
 @app.on_event("shutdown")
 async def on_shutdown():

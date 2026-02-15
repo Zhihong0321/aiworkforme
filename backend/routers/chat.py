@@ -289,9 +289,36 @@ async def chat_with_agent(
                 
         t1 = time.perf_counter()
         logger.info("chat total: agent_id=%s dt=%.3fs", agent.id, (t1 - t0))
-        return ChatResponse(response="Max chat turns reached.")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Chat endpoint error")
-        raise HTTPException(status_code=500, detail=f"Internal Error: {str(e)}")
+@router.get("/conversations")
+def list_conversations(session: Session = Depends(get_session)):
+    """List all active chat sessions with the latest message snippet."""
+    from models import ChatSession, ChatMessage, Lead
+    sessions = session.exec(select(ChatSession).order_by(ChatSession.updated_at.desc())).all()
+    results = []
+    for s in sessions:
+        last_msg = session.exec(
+            select(ChatMessage)
+            .where(ChatMessage.chat_session_id == s.id)
+            .order_by(ChatMessage.created_at.desc())
+        ).first()
+        
+        # Try to find a lead associated with this agent/workspace if possible
+        # For MVP, we'll just return the session data
+        results.append({
+            "id": s.id,
+            "agent_id": s.agent_id,
+            "last_message": last_msg.content if last_msg else "No messages",
+            "updated_at": s.updated_at,
+            "created_at": s.created_at
+        })
+    return results
+
+@router.get("/{session_id}/messages", response_model=List[ChatMessage])
+def get_session_messages(session_id: int, session: Session = Depends(get_session)):
+    """Return the message history for a specific chat session."""
+    from models import ChatMessage
+    return session.exec(
+        select(ChatMessage)
+        .where(ChatMessage.chat_session_id == session_id)
+        .order_by(ChatMessage.created_at.asc())
+    ).all()

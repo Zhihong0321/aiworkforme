@@ -5,6 +5,7 @@ import Strategy from '../views/Strategy.vue'
 import Knowledge from '../views/Knowledge.vue'
 import Analytics from '../views/Analytics.vue'
 import Playground from '../views/Playground.vue'
+import Settings from '../views/Settings.vue'
 
 const routes = [
   {
@@ -41,6 +42,11 @@ const routes = [
     name: 'Playground',
     component: Playground,
     meta: { bare: false }
+  },
+  {
+    path: '/settings',
+    name: 'Settings',
+    component: Settings
   }
 ]
 

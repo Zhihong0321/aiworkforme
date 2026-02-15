@@ -179,6 +179,7 @@ class Workspace(SQLModel, table=True):
     name: str
     timezone: str = Field(default="UTC")
     budget_tier: BudgetTier = Field(default=BudgetTier.GREEN)
+    agent_id: Optional[int] = Field(default=None, foreign_key="zairag_agents.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     leads: List["Lead"] = Relationship(back_populates="workspace")

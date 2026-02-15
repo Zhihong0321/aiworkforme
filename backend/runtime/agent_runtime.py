@@ -34,8 +34,8 @@ class ConversationAgentRuntime:
             logger.info(f"Send blocked: {policy_decision.reason_code} for lead {lead_id}")
             return {"status": "blocked", "reason": policy_decision.reason_code}
 
-        # 2. BUILD CONTEXT
-        context = await self.builder.build_context(lead_id, workspace_id)
+        # 2. BUILD CONTEXT (including real knowledge retrieval)
+        context = await self.builder.build_context(lead_id, workspace_id, query=user_message)
         
         # 3. GET OR CREATE THREAD
         thread = self._get_or_create_thread(lead_id, workspace_id)

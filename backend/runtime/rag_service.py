@@ -1,62 +1,67 @@
 import logging
 import json
 from typing import List, Dict, Any, Optional
-from sqlmodel import Session, select, text
-from models import StrategyVersion
+from sqlmodel import Session, select, or_
+from models import AgentKnowledgeFile, AgentMCPServer
 
 logger = logging.getLogger(__name__)
 
 class RAGService:
     """
-    Knowledge Retrieval Service (pgvector-ready).
-    Prioritizes sources based on Strategy and intent.
+    Real Knowledge Retrieval Service.
+    Performs keyword-based search across agent knowledge files for the MVP.
     """
     def __init__(self, session: Session):
         self.session = session
 
-    async def retrieve_context(self, query: str, workspace_id: int, strategy_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    async def retrieve_context(self, query: str, agent_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """
-        Retrieves top-k relevant chunks with source metadata.
+        Retrieves relevant knowledge chunks from the database based on the query.
         """
-        # 1. Generate Embeddings (Placeholder for UniAPI embedding endpoint)
-        # embedding = await self.get_embedding(query)
-        
-        # 2. PGVector Search (SQL placeholder)
-        # statement = text(""\"
-        #     SELECT content, metadata, 1 - (embedding <=> :query_embedding) AS similarity
-        #     FROM et_knowledge_chunks
-        #     WHERE workspace_id = :ws_id
-        #     ORDER BY similarity DESC
-        #     LIMIT 5
-        # ""\")
-        
-        # 3. Strategy Priority Filter
-        # If strategy_id is provided, we bump similarity for chunks linked to that strategy
-        
-        # Final result structure
-        results = [
-            {
-                "content": "Sample knowledge chunk matching the query.",
-                "source": "product_specs.pdf",
-                "similarity": 0.95,
-                "strategy_match": True
-            }
-        ]
-        
-        return results
+        if not agent_id or not query:
+            return []
 
-    def format_for_prompt(self, chunks: List[Dict[str, Any]], token_budget: int = 1000) -> str:
+        # Simple keyword search for MVP
+        # In a full V1, this would be PGVector / OpenAI Embeddings
+        words = query.lower().split()
+        if not words:
+            return []
+
+        # Find files for this agent
+        statement = select(AgentKnowledgeFile).where(AgentKnowledgeFile.agent_id == agent_id)
+        files = self.session.exec(statement).all()
+        
+        results = []
+        for file in files:
+            content_lower = file.content.lower()
+            score = 0
+            # Calculate simple relevance score
+            for word in words:
+                if word in content_lower:
+                    score += 1
+            
+            if score > 0:
+                results.append({
+                    "content": file.content[:1000],  # Clip for prompt buffer
+                    "source": file.filename,
+                    "relevance": score / len(words),
+                    "id": file.id
+                })
+
+        # Sort by relevance
+        results.sort(key=lambda x: x["relevance"], reverse=True)
+        
+        return results[:3] # Return top 3
+
+    def format_for_prompt(self, chunks: List[Dict[str, Any]], token_budget: int = 1500) -> str:
         """
-        Packs chunks into a string for the LLM prompt, respecting budgets.
+        Packs chunks into a string for the LLM prompt.
         """
-        formatted = "KNOWLEDGE SOURCES:\n"
-        current_tokens = 0
+        if not chunks:
+            return ""
+
+        formatted = "\n--- RELEVANT KNOWLEDGE ---\n"
         for chunk in chunks:
-            text_block = f"Source: {chunk['source']}\nContent: {chunk['content']}\n---\n"
-            # Simple token estimation
-            current_tokens += len(text_block) // 4 
-            if current_tokens > token_budget:
-                break
-            formatted += text_block
+            formatted += f"Source: {chunk['source']}\n{chunk['content']}\n---\n"
         
         return formatted

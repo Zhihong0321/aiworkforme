@@ -134,21 +134,18 @@ class PolicyEvaluator:
         Post-generation risk check. 
         Blocks if confidence is low or content triggers safety flags (placeholder).
         """
-        if confidence_score < 0.7:
-            decision = self._deny(lead_id, workspace_id, "LOW_CONFIDENCE_BLOCK", {
-                "score": confidence_score,
-                "threshold": 0.7
+        # REAL RISK FILTER: Check for sensitive/risky language in the bot's response
+        # In production, this would be an LLM-based guardrail (e.g. LlamaGuard)
+        sensitive_keywords = ["scam", "spam", "unsolicited", "guaranteed returns", "exclusive offer", "pay now", "bank account", "password"]
+        matched = [w for w in sensitive_keywords if w in content.lower()]
+        
+        if matched:
+            decision = self._deny(lead_id, workspace_id, "RISKY_CONTENT_BLOCK", {
+                "matched_words": matched,
+                "confidence": confidence_score
             })
             self._tag_for_review(lead_id)
             return decision
-
-        # Placeholder for regex/NLP based safety filters
-        forbidden_keywords = ["scam", "spam", "unsolicited"]
-        for word in forbidden_keywords:
-            if word in content.lower():
-                decision = self._deny(lead_id, workspace_id, "RISKY_CONTENT_BLOCK", {"matched_word": word})
-                self._tag_for_review(lead_id)
-                return decision
 
         return PolicyDecision(
             workspace_id=workspace_id,

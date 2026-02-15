@@ -1,53 +1,126 @@
+<script setup>
+import { ref, onMounted, watch } from 'vue'
+import { store } from '../store'
+import TuiBadge from '../components/ui/TuiBadge.vue'
+import TuiButton from '../components/ui/TuiButton.vue'
+
+const API_BASE = `${window.location.origin}/api/v1`
+const documents = ref([])
+const isLoading = ref(false)
+const isUploading = ref(false)
+const fileInput = ref(null)
+
+const fetchKnowledge = async () => {
+  if (!store.activeWorkspace?.agent_id) {
+    documents.value = []
+    return
+  }
+  isLoading.value = true
+  try {
+    const res = await fetch(`${API_BASE}/agents/${store.activeWorkspace.agent_id}/knowledge`)
+    if (res.ok) {
+      documents.value = await res.json()
+    }
+  } catch (e) {
+    console.error('Failed to fetch knowledge', e)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const handleUpload = async (event) => {
+  const file = event.target.files[0]
+  if (!file || !store.activeWorkspace?.agent_id) return
+  
+  isUploading.value = true
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('tags', '["manual_upload"]')
+  
+  try {
+    const res = await fetch(`${API_BASE}/agents/${store.activeWorkspace.agent_id}/knowledge`, {
+      method: 'POST',
+      body: formData
+    })
+    if (res.ok) {
+      await fetchKnowledge()
+    }
+  } catch (e) {
+    console.error('Upload failed', e)
+  } finally {
+    isUploading.value = false
+  }
+}
+
+onMounted(fetchKnowledge)
+watch(() => store.activeWorkspaceId, fetchKnowledge)
+</script>
+
 <template>
   <div class="p-8">
     <header class="mb-8 flex justify-between items-center">
       <div>
         <h1 class="text-2xl font-bold mb-2">Knowledge Base</h1>
-        <p class="text-[var(--muted)]">Upload documentation for the AI agent to reference during outreach.</p>
+        <p class="text-slate-500 text-sm">Upload documentation for Agent #{{ store.activeWorkspace?.agent_id || '?' }} to reference.</p>
       </div>
-      <button class="bg-black text-white px-4 py-2 rounded font-bold">+ Upload Source</button>
+      <div class="flex gap-3">
+        <input type="file" ref="fileInput" class="hidden" @change="handleUpload" accept=".txt,.pdf,.json" />
+        <TuiButton @click="fileInput.click()" :loading="isUploading">
+          + Upload Source
+        </TuiButton>
+      </div>
     </header>
 
-    <div class="grid grid-cols-3 gap-6">
+    <div v-if="!store.activeWorkspace?.agent_id" class="p-12 text-center border-2 border-dashed rounded-xl">
+      <p class="text-slate-500">This workspace has no AI Agent linked. Go to Settings or Agents to link one.</p>
+    </div>
+
+    <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-6">
       <!-- Source List -->
-      <div class="col-span-2 bg-white border border-[var(--border)] rounded-lg">
-        <div class="p-4 border-b border-[var(--border)] flex justify-between items-center bg-gray-50">
-           <span class="text-xs font-bold uppercase text-[var(--muted)]">Document Library</span>
-           <span class="text-[10px] text-[var(--muted)]">3 Sources • 1.2MB total</span>
+      <div class="lg:col-span-2 bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+        <div class="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+           <span class="text-xs font-bold uppercase text-slate-500">Document Library</span>
+           <span class="text-[10px] text-slate-400">{{ documents.length }} Sources</span>
         </div>
-        <div class="divide-y divide-[var(--border)]">
-          <div v-for="i in 3" :key="i" class="p-4 flex justify-between items-center hover:bg-gray-50">
+        
+        <div v-if="isLoading" class="p-8 text-center text-slate-400 animate-pulse">Scanning knowledge vault...</div>
+        
+        <div v-else-if="documents.length === 0" class="p-12 text-center">
+           <p class="text-slate-400 text-sm">No knowledge files found for this agent.</p>
+        </div>
+
+        <div v-else class="divide-y divide-slate-100">
+          <div v-for="doc in documents" :key="doc.id" class="p-4 flex justify-between items-center hover:bg-slate-50 transition-colors">
              <div class="flex items-center gap-3">
-               <div class="w-10 h-10 bg-blue-50 text-blue-600 flex items-center justify-center rounded">PDF</div>
+               <div class="w-10 h-10 bg-indigo-50 text-indigo-600 flex items-center justify-center rounded font-bold text-[10px]">
+                 {{ doc.filename.split('.').pop().toUpperCase() }}
+               </div>
                <div>
-                  <div class="text-sm font-bold">Product_Catalog_v{{ i }}.pdf</div>
-                  <div class="text-[10px] text-[var(--muted)]">Uploaded Feb 15, 2026 • 50 chunks extracted</div>
+                  <div class="text-sm font-bold text-slate-900">{{ doc.filename }}</div>
+                  <div class="text-[10px] text-slate-500">
+                    Uploaded {{ new Date(doc.created_at).toLocaleDateString() }} • {{ doc.content.length }} chars
+                  </div>
                </div>
              </div>
-             <button class="text-[var(--muted)] hover:text-black">•••</button>
+             <TuiButton variant="outline" size="sm">View</TuiButton>
           </div>
         </div>
       </div>
 
       <!-- Health/Stats -->
       <div class="space-y-6">
-        <div class="bg-white p-4 border border-[var(--border)] rounded-lg">
-           <h4 class="text-xs font-bold uppercase mb-4 text-[var(--muted)]">Retrieval Health</h4>
-           <div class="space-y-2">
-             <div class="flex justify-between text-sm">
-               <span>Relevance Score</span>
-               <span class="font-bold text-green-600">92%</span>
+        <div class="bg-white p-6 border border-slate-200 rounded-lg shadow-sm">
+           <h4 class="text-xs font-bold uppercase mb-4 text-slate-500 tracking-wider">Retrieval Status</h4>
+           <div class="space-y-4">
+             <div class="flex justify-between items-end">
+               <span class="text-sm text-slate-600">Vector Status</span>
+               <TuiBadge variant="success">Active</TuiBadge>
              </div>
-             <div class="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden">
-               <div class="bg-green-500 h-full" style="width: 92%"></div>
+             <div class="flex justify-between items-end">
+               <span class="text-sm text-slate-600">Sources Synced</span>
+               <span class="font-bold text-slate-900">{{ documents.length }}</span>
              </div>
            </div>
-        </div>
-        
-        <div class="bg-white p-4 border border-[var(--border)] rounded-lg">
-           <h4 class="text-xs font-bold uppercase mb-4 text-[var(--muted)]">Token Usage</h4>
-           <p class="text-[10px] text-[var(--muted)] mb-2">Knowledge retrieval accounts for 15% of total token usage.</p>
-           <button class="text-xs text-blue-600 hover:underline">Optimize Chunks</button>
         </div>
       </div>
     </div>
