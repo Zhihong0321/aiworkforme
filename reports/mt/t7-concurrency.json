@@ -1,0 +1,20 @@
+{
+  "milestone": "T7",
+  "title": "Reliability and concurrency under multi-tenant load",
+  "status": "PASS",
+  "executed_at": "2026-02-16T01:51:54+08:00",
+  "validation": {
+    "suite_command": "docker compose exec backend sh -lc 'cd /app && pytest -q tests/test_t7_reliability_live.py'",
+    "test_file": "backend/tests/test_t7_reliability_live.py"
+  },
+  "result": {
+    "passed": 3,
+    "failed": 0,
+    "cross_tenant_contamination": 0
+  },
+  "checks": [
+    "Concurrent workspace creation across two tenants remains isolated",
+    "Repeated foreign MCP delete attempts do not affect owner tenant resources",
+    "Resource ownership remains intact under concurrent API activity"
+  ]
+}

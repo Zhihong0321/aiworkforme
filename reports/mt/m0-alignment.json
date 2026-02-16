@@ -1,0 +1,23 @@
+{
+  "milestone": "M0",
+  "title": "Alignment and architecture freeze",
+  "status": "PASS",
+  "executed_at": "2026-02-16T01:51:54+08:00",
+  "artifacts": {
+    "adr": "docs/adr/ADR-0001-multitenant-saas-boundary.md",
+    "build_plan": "build-plan-multi-tenant.md",
+    "test_plan": "test-plan-multi-tenant.md"
+  },
+  "decisions": [
+    "Role model fixed: platform_admin, tenant_admin, tenant_user",
+    "Platform and tenant route boundaries fixed under /api/v1",
+    "Tenant ownership enforced via tenant_id + auth dependency guards",
+    "Platform API-key ownership fixed as platform-admin-only for MVP",
+    "Audit and denial-event telemetry required for admin and authz actions"
+  ],
+  "rollback_strategy": [
+    "Revert deployment image and restore DB snapshot",
+    "Keep additive migration path and guarded compatibility adapters",
+    "Preserve audit/security logs as immutable records"
+  ]
+}

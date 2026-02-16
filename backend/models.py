@@ -3,6 +3,86 @@ from datetime import datetime
 from enum import Enum
 
 from sqlmodel import Field, Relationship, SQLModel, Column, JSON
+from sqlalchemy import UniqueConstraint
+
+
+class Role(str, Enum):
+    PLATFORM_ADMIN = "platform_admin"
+    TENANT_ADMIN = "tenant_admin"
+    TENANT_USER = "tenant_user"
+
+
+class TenantStatus(str, Enum):
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
+
+
+class Tenant(SQLModel, table=True):
+    __tablename__ = "et_tenants"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    name: str
+    status: TenantStatus = Field(default=TenantStatus.ACTIVE)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    memberships: List["TenantMembership"] = Relationship(back_populates="tenant")
+
+
+class User(SQLModel, table=True):
+    __tablename__ = "et_users"
+    __table_args__ = (UniqueConstraint("email", name="uq_et_users_email"),)
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    email: str = Field(index=True)
+    password_hash: str
+    is_active: bool = Field(default=True)
+    is_platform_admin: bool = Field(default=False)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    last_login_at: Optional[datetime] = None
+
+    memberships: List["TenantMembership"] = Relationship(back_populates="user")
+
+
+class TenantMembership(SQLModel, table=True):
+    __tablename__ = "et_tenant_memberships"
+    __table_args__ = (
+        UniqueConstraint("user_id", "tenant_id", name="uq_et_tenant_memberships_user_tenant"),
+    )
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="et_users.id", index=True)
+    tenant_id: int = Field(foreign_key="et_tenants.id", index=True)
+    role: Role = Field(default=Role.TENANT_USER)
+    is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+    user: "User" = Relationship(back_populates="memberships")
+    tenant: "Tenant" = Relationship(back_populates="memberships")
+
+
+class AdminAuditLog(SQLModel, table=True):
+    __tablename__ = "et_admin_audit_logs"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    actor_user_id: int = Field(foreign_key="et_users.id", index=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
+    action: str = Field(index=True)
+    target_type: str
+    target_id: Optional[str] = None
+    details: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class SecurityEventLog(SQLModel, table=True):
+    __tablename__ = "et_security_events"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    actor_user_id: Optional[int] = Field(default=None, foreign_key="et_users.id", index=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
+    event_type: str = Field(index=True)
+    endpoint: str
+    method: str
+    status_code: int = Field(index=True)
+    reason: str = Field(index=True)
+    details: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
 
 
 class SystemSetting(SQLModel, table=True):
@@ -21,6 +101,7 @@ class AgentMCPServer(SQLModel, table=True):
 class Agent(SQLModel, table=True):
     __tablename__ = "zairag_agents"
     id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     name: str
     system_prompt: str
     model: str
@@ -69,6 +150,7 @@ class AgentUpdate(SQLModel):
 class AgentKnowledgeFile(SQLModel, table=True):
     __tablename__ = "zairag_agent_knowledge_files"
     id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     agent_id: int = Field(foreign_key="zairag_agents.id")
     filename: str
     content: str
@@ -84,6 +166,7 @@ class AgentKnowledgeFile(SQLModel, table=True):
 class MCPServer(SQLModel, table=True):
     __tablename__ = "zairag_mcp_servers"
     id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     name: str
     script: str
     command: str = Field(default="python")
@@ -106,6 +189,7 @@ class MCPServer(SQLModel, table=True):
 class ChatSession(SQLModel, table=True):
     __tablename__ = "zairag_chat_sessions"
     id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     agent_id: int = Field(foreign_key="zairag_agents.id")
     
     total_tokens: int = Field(default=0)
@@ -123,6 +207,7 @@ class ChatSession(SQLModel, table=True):
 class ChatMessage(SQLModel, table=True):
     __tablename__ = "zairag_chat_messages"
     id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     chat_session_id: int = Field(foreign_key="zairag_chat_sessions.id")
     role: str
     content: str
@@ -176,6 +261,7 @@ class StrategyStatus(str, Enum):
 class Workspace(SQLModel, table=True):
     __tablename__ = "et_workspaces"
     id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     name: str
     timezone: str = Field(default="UTC")
     budget_tier: BudgetTier = Field(default=BudgetTier.GREEN)
@@ -188,6 +274,7 @@ class Workspace(SQLModel, table=True):
 class StrategyVersion(SQLModel, table=True):
     __tablename__ = "et_strategy_versions"
     id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     workspace_id: int = Field(foreign_key="et_workspaces.id")
     version_number: int
     status: StrategyStatus = Field(default=StrategyStatus.DRAFT)
@@ -210,6 +297,7 @@ class StrategyVersion(SQLModel, table=True):
 class Lead(SQLModel, table=True):
     __tablename__ = "et_leads"
     id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     workspace_id: int = Field(foreign_key="et_workspaces.id")
     external_id: str = Field(index=True) # e.g. Phone number/WhatsApp ID
     name: Optional[str] = None
@@ -231,6 +319,7 @@ class Lead(SQLModel, table=True):
 class ConversationThread(SQLModel, table=True):
     __tablename__ = "et_conversation_threads"
     id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     workspace_id: int = Field(foreign_key="et_workspaces.id")
     lead_id: int = Field(foreign_key="et_leads.id")
     
@@ -243,6 +332,7 @@ class ConversationThread(SQLModel, table=True):
 class ChatMessageNew(SQLModel, table=True):
     __tablename__ = "et_chat_messages"
     id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     thread_id: int = Field(foreign_key="et_conversation_threads.id")
     role: str # user, model, system
     content: str
@@ -254,6 +344,7 @@ class ChatMessageNew(SQLModel, table=True):
 class PolicyDecision(SQLModel, table=True):
     __tablename__ = "et_policy_decisions"
     id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     workspace_id: int = Field(foreign_key="et_workspaces.id")
     lead_id: int = Field(foreign_key="et_leads.id")
     
@@ -267,6 +358,7 @@ class PolicyDecision(SQLModel, table=True):
 class OutreachAttestation(SQLModel, table=True):
     __tablename__ = "et_outreach_attestations"
     id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     workspace_id: int = Field(foreign_key="et_workspaces.id")
     operator_id: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
@@ -275,6 +367,7 @@ class OutreachAttestation(SQLModel, table=True):
 class LeadMemory(SQLModel, table=True):
     __tablename__ = "et_lead_memories"
     id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     lead_id: int = Field(foreign_key="et_leads.id", unique=True)
     
     # Rolling summary of the last conversation

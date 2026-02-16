@@ -1,0 +1,20 @@
+{
+  "milestone": "T7",
+  "title": "Idempotency and retry behavior",
+  "status": "PASS",
+  "executed_at": "2026-02-16T01:51:54+08:00",
+  "validation": {
+    "source_test": "tests/test_t7_reliability_live.py::test_membership_create_retry_has_no_duplicate_side_effect"
+  },
+  "contract": {
+    "operation": "POST /api/v1/platform/tenants/{tenant_id}/memberships",
+    "retry_input": "same user_id + tenant_id + role",
+    "first_call": 200,
+    "second_call": 409,
+    "side_effect_limit": "single membership row"
+  },
+  "result": {
+    "duplicate_rows_created": 0,
+    "idempotency_contract_met": true
+  }
+}

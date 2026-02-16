@@ -1,0 +1,25 @@
+{
+  "milestone": "T2",
+  "title": "Tenant data isolation (API-level IDOR suite)",
+  "status": "PASS",
+  "executed_at": "2026-02-16T01:51:54+08:00",
+  "validation": {
+    "suite_command": "docker compose exec backend sh -lc 'cd /app && pytest -q tests/test_role_matrix_live.py::test_cross_tenant_idor_is_blocked tests/test_m4_boundary_live.py::test_chat_session_message_idor_is_blocked tests/test_m4_boundary_live.py::test_workspace_update_idor_is_blocked tests/test_idor_extended_live.py'",
+    "snapshot_file": "reports/mt/t2-data-scope-snapshots.md"
+  },
+  "result": {
+    "passed": 6,
+    "failed": 0,
+    "cross_tenant_read_success": 0,
+    "cross_tenant_write_success": 0
+  },
+  "covered_resources": [
+    "workspace",
+    "agent",
+    "chat session/messages",
+    "knowledge files",
+    "MCP servers",
+    "policy decisions",
+    "playground paths"
+  ]
+}

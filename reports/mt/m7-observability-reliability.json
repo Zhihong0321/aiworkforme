@@ -1,0 +1,36 @@
+{
+  "milestone": "M7",
+  "title": "Observability, reliability, and launch gate baseline",
+  "status": "PASS",
+  "executed_at": "2026-02-16T01:31:10+08:00",
+  "scope": [
+    "Tenant-scoped telemetry endpoints",
+    "Denied-access security event monitoring",
+    "Platform security-event visibility",
+    "Platform audit log CSV export",
+    "Frontend analytics integration to real tenant telemetry"
+  ],
+  "validation": {
+    "backend_m7_live_tests": "docker compose exec backend sh -lc 'cd /app && pytest -q tests/test_m7_observability_live.py'",
+    "backend_full_live_suite": "docker compose exec backend sh -lc 'cd /app && pytest -q tests'",
+    "frontend_build": "docker compose exec frontend sh -lc 'cd /app && npm run build'"
+  },
+  "result": {
+    "m7_live_tests": {
+      "passed": 4,
+      "failed": 0
+    },
+    "backend_full_suite": {
+      "passed": 28,
+      "skipped": 1,
+      "failed": 0
+    },
+    "frontend_build": "passed"
+  },
+  "release_gate": {
+    "p0_findings": 0,
+    "p1_findings": 0,
+    "tenant_isolation_checks": "pass",
+    "reliability_baseline": "pass"
+  }
+}

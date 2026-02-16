@@ -1,0 +1,33 @@
+{
+  "milestone": "T0",
+  "title": "Harness and baseline validation",
+  "status": "PASS",
+  "executed_at": "2026-02-16T01:51:54+08:00",
+  "checks": [
+    "docker compose services up and healthy",
+    "health and readiness endpoints return HTTP 200",
+    "bootstrap seed identities are present and stable",
+    "auth contract and schema hardening smoke tests pass"
+  ],
+  "validation": {
+    "service_status": "docker compose ps",
+    "health": "curl http://127.0.0.1:8001/api/v1/health",
+    "ready": "curl http://127.0.0.1:8001/api/v1/ready",
+    "seed_fingerprint": "docker compose exec backend python seed-check snippet",
+    "smoke_tests": "docker compose exec backend sh -lc 'cd /app && pytest -q tests/test_auth_contract_live.py tests/test_schema_m2_live.py'"
+  },
+  "result": {
+    "smoke_tests": {
+      "passed": 4,
+      "failed": 0
+    },
+    "health_status_code": 200,
+    "ready_status_code": 200,
+    "seed_fingerprint": {
+      "default_tenant_exists": true,
+      "platform_admin_exists": true,
+      "tenant_admin_exists": true,
+      "tenant_admin_membership_records": 1
+    }
+  }
+}
