@@ -111,18 +111,34 @@ async def on_startup():
         # 4. Load System Settings
         with Session(engine) as session:
             # Load Z.ai key
-            setting = session.get(SystemSetting, "zai_api_key")
-            if setting and setting.value:
+            zai_setting = session.get(SystemSetting, "zai_api_key")
+            if zai_setting and zai_setting.value:
                 logger.info("Loading Z.ai API Key from Database...")
-                os.environ["ZAI_API_KEY"] = setting.value
+                os.environ["ZAI_API_KEY"] = zai_setting.value
             
             # Load UniAPI key
-            setting = session.get(SystemSetting, "uniapi_key")
-            if setting and setting.value:
+            uni_setting = session.get(SystemSetting, "uniapi_key")
+            if uni_setting and uni_setting.value:
                 logger.info("Loading UniAPI Key from Database...")
-                os.environ["UNIAPI_API_KEY"] = setting.value
-            
-            # Refresh LLM Router from DB
+                os.environ["UNIAPI_API_KEY"] = uni_setting.value
+
+            # Re-initialise provider instances with the loaded keys.
+            # ZaiProvider / UniAPIProvider are created at import time (before startup),
+            # so they must be explicitly re-inited after the keys are in os.environ.
+            from src.adapters.api.dependencies import llm_router
+            zai_provider = llm_router.providers.get("zai")
+            if zai_provider and zai_setting and zai_setting.value:
+                zai_provider.api_key = zai_setting.value
+                zai_provider._init_client()
+                logger.info("ZaiProvider re-initialised with DB key.")
+
+            uniapi_provider = llm_router.providers.get("uniapi")
+            if uniapi_provider and uni_setting and uni_setting.value:
+                uniapi_provider.api_key = uni_setting.value
+                uniapi_provider._init_client()
+                logger.info("UniAPIProvider re-initialised with DB key.")
+
+            # Refresh LLM Router routing config from DB
             from src.adapters.api.dependencies import refresh_llm_router_config
             refresh_llm_router_config(session)
                 
