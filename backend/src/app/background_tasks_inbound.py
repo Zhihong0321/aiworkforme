@@ -17,6 +17,7 @@ from sqlmodel import Session, select
 from src.infra.database import engine
 from src.adapters.api.dependencies import llm_router
 from src.adapters.db.messaging_models import UnifiedMessage, UnifiedThread, OutboundQueue, ThreadInsight
+from src.adapters.db import channel_models  # must be imported before crm_models — ConversationThread.channel_session relationship
 from src.adapters.db.crm_models import Lead, Workspace
 from src.adapters.db.agent_models import Agent
 from src.app.runtime.agent_runtime import ConversationAgentRuntime
