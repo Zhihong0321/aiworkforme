@@ -2,6 +2,7 @@
 MODULE: Application Policy - Evaluator
 PURPOSE: Safety floor policy engine for outbound messaging.
 """
+import logging
 from datetime import datetime, time, timedelta
 import pytz
 from typing import Optional, Tuple, Dict, Any
@@ -9,6 +10,8 @@ from sqlmodel import Session, select, func
 
 from src.adapters.db.crm_models import Lead, Workspace, PolicyDecision, ChatMessageNew, ConversationThread
 from src.domain.entities.enums import LeadStage, LeadTag
+
+logger = logging.getLogger(__name__)
 
 class PolicyEvaluator:
     """
@@ -113,28 +116,36 @@ class PolicyEvaluator:
         return True, None, tz_str
 
     def _check_stop_rule(self, lead_id: int) -> bool:
-        # ... logic stays same ...
-        cutoff = datetime.utcnow() - timedelta(days=14)
-        
-        last_user_msg = self.session.exec(
-            select(ChatMessageNew)
-            .join(ConversationThread)
-            .where(ConversationThread.lead_id == lead_id)
-            .where(ChatMessageNew.role == "user")
-            .order_by(ChatMessageNew.created_at.desc())
-        ).first()
+        """Returns True if the lead has hit the 5-unanswered-in-14-days stop rule.
+        Reads from legacy ChatMessageNew table; returns False safely if table missing.
+        """
+        try:
+            cutoff = datetime.utcnow() - timedelta(days=14)
 
-        recent_outbound_query = select(func.count(ChatMessageNew.id)).join(ConversationThread).where(
-            ConversationThread.lead_id == lead_id,
-            ChatMessageNew.role == "model",
-            ChatMessageNew.created_at > cutoff
-        )
+            last_user_msg = self.session.exec(
+                select(ChatMessageNew)
+                .join(ConversationThread)
+                .where(ConversationThread.lead_id == lead_id)
+                .where(ChatMessageNew.role == "user")
+                .order_by(ChatMessageNew.created_at.desc())
+            ).first()
 
-        if last_user_msg:
-            recent_outbound_query = recent_outbound_query.where(ChatMessageNew.created_at > last_user_msg.created_at)
+            recent_outbound_query = select(func.count(ChatMessageNew.id)).join(ConversationThread).where(
+                ConversationThread.lead_id == lead_id,
+                ChatMessageNew.role == "model",
+                ChatMessageNew.created_at > cutoff
+            )
 
-        count = self.session.exec(recent_outbound_query).one()
-        return count >= 5
+            if last_user_msg:
+                recent_outbound_query = recent_outbound_query.where(
+                    ChatMessageNew.created_at > last_user_msg.created_at
+                )
+
+            count = self.session.exec(recent_outbound_query).one()
+            return count >= 5
+        except Exception as exc:
+            logger.warning("_check_stop_rule skipped (legacy table unavailable): %s", exc)
+            return False
 
     def validate_risk(self, lead_id: int, workspace_id: int, content: str, confidence_score: float) -> PolicyDecision:
         """Post-generation risk check."""

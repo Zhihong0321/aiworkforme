@@ -219,7 +219,7 @@ async def _process_one_inbound(session: Session, message: UnifiedMessage):
         workspace_id=lead.workspace_id,
         user_message=message.text_content or "",
         agent_id_override=agent.id,
-        bypass_safety=False,
+        bypass_safety=True,   # inbound reply — must not be blocked by 24h outbound cap
         history_override=history,
     )
 

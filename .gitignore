@@ -31,3 +31,6 @@ yarn-debug.log*
 # AI Specific
 .agent/
 .antigravity/
+
+# Local secrets — never commit
+.credentials
