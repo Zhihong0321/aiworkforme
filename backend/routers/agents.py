@@ -60,8 +60,6 @@ def create_agent(
     new_agent = Agent(
         name=agent_in.name if agent_in.name else "New Agent",
         system_prompt=agent_in.system_prompt if agent_in.system_prompt else "",
-        model=agent_in.model if agent_in.model else "glm-4.7-flash",
-        reasoning_enabled=agent_in.reasoning_enabled if agent_in.reasoning_enabled is not None else True,
         tenant_id=auth.tenant.id,
         created_at=datetime.utcnow()
     )
@@ -87,10 +85,6 @@ def update_agent(
         agent.name = payload.name
     if payload.system_prompt is not None:
         agent.system_prompt = payload.system_prompt
-    if payload.model is not None:
-        agent.model = payload.model
-    if payload.reasoning_enabled is not None:
-        agent.reasoning_enabled = payload.reasoning_enabled
 
     session.add(agent)
     session.commit()

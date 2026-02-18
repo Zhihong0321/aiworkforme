@@ -14,8 +14,7 @@ class Agent(SQLModel, table=True):
     tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     name: str
     system_prompt: str
-    model: str
-    reasoning_enabled: bool = Field(default=True)
+    # model and reasoning_enabled removed — LLM provider is platform-admin controlled via env vars
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
     chat_sessions: List["ChatSession"] = Relationship(
@@ -50,8 +49,6 @@ class AgentRead(SQLModel):
     id: Optional[int]
     name: str
     system_prompt: str
-    model: str
-    reasoning_enabled: bool = True
     linked_mcp_ids: List[int] = Field(default_factory=list)
     linked_mcp_count: int = 0
     class Config:
@@ -60,5 +57,3 @@ class AgentRead(SQLModel):
 class AgentUpdate(SQLModel):
     name: Optional[str] = None
     system_prompt: Optional[str] = None
-    model: Optional[str] = None
-    reasoning_enabled: Optional[bool] = None

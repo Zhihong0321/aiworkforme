@@ -17,22 +17,11 @@ const isUploading = ref(false)
 const deletingAgentId = ref(null)
 const message = ref('')
 
-const modelOptions = [
-  { label: 'glm-4.7', value: 'glm-4.7' },
-  { label: 'glm-4.7-flash', value: 'glm-4.7-flash' },
-  { label: 'glm-4.6', value: 'glm-4.6' },
-  { label: 'glm-4.5-flash', value: 'glm-4.5-flash' },
-  { label: 'claude-3.5', value: 'claude-3.5' },
-  { label: 'gpt-4o-mini', value: 'gpt-4o-mini' }
-]
-
 const form = reactive({
   id: null,
   name: '',
-  model: 'glm-4.7-flash',
   system_prompt: '',
   linkedMcpId: '',
-  reasoning_enabled: true
 })
 
 const statusVariant = (status) => {
@@ -80,10 +69,8 @@ const resetForm = (agent) => {
   const linkedIds = extractLinkedMcpIds(agent)
   form.id = agent?.id ?? null
   form.name = agent?.name ?? ''
-  form.model = agent?.model ?? 'glm-4.7-flash'
   form.system_prompt = agent?.system_prompt ?? agent?.systemPrompt ?? ''
   form.linkedMcpId = linkedIds[0] ?? ''
-  form.reasoning_enabled = agent?.reasoning_enabled ?? true
   
   console.log('Form ID set to:', form.id)
   if (form.id) {
@@ -104,7 +91,6 @@ const loadAgents = async () => {
           return {
             id: agent.id,
             name: agent.name ?? 'Unknown Agent',
-            model: agent.model ?? 'n/a',
             status: (agent.status ?? 'ready').toLowerCase(),
             lastActive: agent.lastActive ?? agent.last_active ?? '—',
             tokenCountToday: agent.tokenCountToday ?? agent.token_count_today ?? 0,
@@ -112,7 +98,6 @@ const loadAgents = async () => {
             linkedMcpId: linkedIds[0] ?? '',
             linkedMcpCount: agent.linked_mcp_count ?? agent.linkedMcpCount ?? linkedIds.length,
             system_prompt: agent.system_prompt ?? '',
-            reasoning_enabled: agent.reasoning_enabled ?? true
           }
       })
       : []
@@ -153,9 +138,7 @@ const saveAgent = async () => {
     const path = form.id ? `/agents/${form.id}` : `/agents/`
     const payload = {
       name: form.name,
-      model: form.model,
       system_prompt: form.system_prompt,
-      reasoning_enabled: form.reasoning_enabled
     }
 
     const savedData = await request(path, {
@@ -316,7 +299,6 @@ onMounted(() => {
                   </div>
                   <div class="min-w-0 flex-1">
                     <p class="text-base font-semibold text-slate-900 break-words leading-tight">{{ agent.name }}</p>
-                    <p class="text-sm text-slate-600">{{ agent.model }}</p>
                   </div>
                 </div>
 
@@ -372,7 +354,6 @@ onMounted(() => {
         <TuiCard title="Agent Form" subtitle="create / edit">
           <div class="space-y-4">
             <TuiInput label="Agent Name" placeholder="Atlas" v-model="form.name" />
-            <TuiSelect label="Model" :options="modelOptions" v-model="form.model" placeholder="Select model" />
             <label class="flex flex-col gap-2 text-sm text-slate-800">
               <div class="flex items-center justify-between">
                 <span class="text-[11px] uppercase tracking-[0.2em] text-slate-600">Instruction</span>
@@ -386,11 +367,6 @@ onMounted(() => {
                   class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-[inset_0_1px_1px_rgba(15,23,42,0.06)] focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200"
                 ></textarea>
               </div>
-            </label>
-
-            <label class="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" v-model="form.reasoning_enabled" class="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-900" />
-              <span class="text-sm text-slate-700">Enable Reasoning Thought</span>
             </label>
 
             <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
