@@ -2,19 +2,26 @@ import csv
 import io
 import json
 from datetime import datetime
-from typing import List
+from typing import List, Optional
+
+import httpx
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import PlainTextResponse
 from sqlmodel import Session, SQLModel, select
 from sqlalchemy.exc import IntegrityError
 
-from audit import record_admin_audit
-from database import get_session
-from dependencies import AuthContext, get_zai_client, require_platform_admin
-from models import AdminAuditLog, Role, SecurityEventLog, SystemSetting, Tenant, TenantMembership, TenantStatus, User
-from security import hash_password
-from zai_client import ZaiClient
+from src.infra.database import get_session
+from src.adapters.api.dependencies import AuthContext, get_zai_client, require_platform_admin
+from src.adapters.db.audit_models import AdminAuditLog, SecurityEventLog
+from src.adapters.db.tenant_models import Tenant, SystemSetting
+from src.adapters.db.user_models import User, TenantMembership
+from src.domain.entities.enums import Role, TenantStatus
+from src.infra.security import hash_password
+from src.adapters.zai.client import ZaiClient
+from src.adapters.db.audit_recorder import record_admin_audit
+from src.infra.llm.schemas import LLMTask
+from src.adapters.api.dependencies import refresh_llm_router_config
 
 
 router = APIRouter(prefix="/api/v1/platform", tags=["Platform Admin"])
@@ -104,6 +111,21 @@ class ApiKeyStatus(SQLModel):
     masked_key: str | None = None
 
 
+class ApiKeyValidateRequest(SQLModel):
+    api_key: Optional[str] = None
+
+
+class ApiKeyValidationResponse(SQLModel):
+    provider: str
+    status: str  # valid | invalid | not_set
+    detail: str
+    checked_at: datetime
+
+
+class LLMRoutingUpdateRequest(SQLModel):
+    config: dict # Dict[str, str] where key is LLMTask value and value is provider name
+
+
 PROVIDER_SETTINGS = {
     "zai": ("zai_api_key", 4, 4),
     "uniapi": ("uniapi_key", 2, 2),
@@ -124,6 +146,58 @@ def _provider_meta(provider: str) -> tuple[str, int, int]:
     if not meta:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unsupported provider")
     return meta
+
+
+def _validate_zai_key(api_key: str) -> tuple[bool, str]:
+    url = "https://api.z.ai/api/coding/paas/v4/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "glm-4.7-flash",
+        "messages": [{"role": "user", "content": "ping"}],
+        "temperature": 0,
+        "max_tokens": 1,
+    }
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            resp = client.post(url, headers=headers, json=payload)
+            if resp.status_code >= 400:
+                detail = resp.text[:240] if resp.text else f"HTTP {resp.status_code}"
+                return False, f"Z.ai validation failed: {detail}"
+            body = resp.json() if resp.content else {}
+            choices = body.get("choices") if isinstance(body, dict) else None
+            if not choices:
+                return False, "Z.ai key check returned no choices"
+            return True, "Z.ai key is valid"
+    except Exception as exc:
+        return False, f"Z.ai validation error: {str(exc)}"
+
+
+def _validate_uniapi_key(api_key: str) -> tuple[bool, str]:
+    url = "https://api.uniapi.io/gemini/v1beta/models/gemini-3-flash-preview:generateContent"
+    headers = {
+        "x-goog-api-key": api_key,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": "ping"}]}],
+        "generationConfig": {"temperature": 0, "maxOutputTokens": 1},
+    }
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            resp = client.post(url, headers=headers, json=payload)
+            if resp.status_code >= 400:
+                detail = resp.text[:240] if resp.text else f"HTTP {resp.status_code}"
+                return False, f"UniAPI validation failed: {detail}"
+            body = resp.json() if resp.content else {}
+            candidates = body.get("candidates") if isinstance(body, dict) else None
+            if not candidates:
+                return False, "UniAPI key check returned no candidates"
+            return True, "UniAPI key is valid"
+    except Exception as exc:
+        return False, f"UniAPI validation error: {str(exc)}"
 
 
 @router.get("/tenants", response_model=List[TenantResponse])
@@ -555,6 +629,11 @@ def upsert_api_key(
 
     if setting_key == "zai_api_key":
         zai_client.update_api_key(api_key)
+        import os
+        os.environ["ZAI_API_KEY"] = api_key
+    elif setting_key == "uniapi_key":
+        import os
+        os.environ["UNIAPI_API_KEY"] = api_key
 
     masked = _mask_secret(api_key, head, tail)
     record_admin_audit(
@@ -593,3 +672,105 @@ def revoke_api_key(
         metadata={"provider": provider.lower()},
     )
     return ApiKeyStatus(provider=provider.lower(), status="not_set", masked_key=None)
+
+
+@router.post("/api-keys/{provider}/validate", response_model=ApiKeyValidationResponse)
+def validate_api_key(
+    provider: str,
+    payload: ApiKeyValidateRequest,
+    session: Session = Depends(get_session),
+    _context: AuthContext = Depends(require_platform_admin),
+):
+    setting_key, _head, _tail = _provider_meta(provider)
+    input_key = (payload.api_key or "").strip()
+    if input_key:
+        api_key = input_key
+    else:
+        setting = session.get(SystemSetting, setting_key)
+        api_key = (setting.value if setting and setting.value else "").strip()
+
+    checked_at = datetime.utcnow()
+    if not api_key:
+        return ApiKeyValidationResponse(
+            provider=provider.lower(),
+            status="not_set",
+            detail="No key to validate. Enter one or save it first.",
+            checked_at=checked_at,
+        )
+
+    normalized = provider.strip().lower()
+    if normalized == "zai":
+        is_valid, detail = _validate_zai_key(api_key)
+    elif normalized == "uniapi":
+        is_valid, detail = _validate_uniapi_key(api_key)
+    else:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unsupported provider")
+
+    return ApiKeyValidationResponse(
+        provider=normalized,
+        status="valid" if is_valid else "invalid",
+        detail=detail,
+        checked_at=checked_at,
+    )
+
+@router.get("/llm/routing")
+def get_llm_routing(
+    session: Session = Depends(get_session),
+    _context: AuthContext = Depends(require_platform_admin),
+):
+    setting = session.get(SystemSetting, "llm_routing_config")
+    if setting and setting.value:
+        return json.loads(setting.value)
+    
+    # Return default from code if not in DB
+    from src.adapters.api.dependencies import llm_router
+    return {k.value: v for k, v in llm_router.routing_config.items()}
+
+@router.post("/llm/routing")
+def update_llm_routing(
+    payload: LLMRoutingUpdateRequest,
+    session: Session = Depends(get_session),
+    context: AuthContext = Depends(require_platform_admin),
+):
+    # Validate tasks
+    valid_tasks = {t.value for t in LLMTask}
+    for task in payload.config.keys():
+        if task not in valid_tasks:
+            raise HTTPException(status_code=400, detail=f"Invalid LLM task: {task}")
+    
+    # Save to DB
+    setting = session.get(SystemSetting, "llm_routing_config")
+    if not setting:
+        setting = SystemSetting(key="llm_routing_config", value=json.dumps(payload.config))
+    else:
+        setting.value = json.dumps(payload.config)
+    
+    session.add(setting)
+    session.commit()
+    
+    # Refresh router
+    refresh_llm_router_config(session)
+    
+    record_admin_audit(
+        session,
+        actor_user_id=context.user.id,
+        action="llm_routing.update",
+        target_type="system_setting",
+        target_id="llm_routing_config",
+        metadata={"config": payload.config},
+    )
+    
+    return {"status": "updated", "config": payload.config}
+
+@router.get("/llm/providers")
+def list_llm_providers(
+    _context: AuthContext = Depends(require_platform_admin),
+):
+    from src.adapters.api.dependencies import llm_router
+    return list(llm_router.providers.keys())
+
+@router.get("/llm/tasks")
+def list_llm_tasks(
+    _context: AuthContext = Depends(require_platform_admin),
+):
+    return [t.value for t in LLMTask]

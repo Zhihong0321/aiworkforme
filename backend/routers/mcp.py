@@ -7,10 +7,10 @@ import hashlib
 import json
 import logging
 
-from database import get_session
-from models import MCPServer
-from dependencies import get_mcp_manager
-from mcp_manager import MCPManager
+from src.infra.database import get_session
+from src.adapters.db.mcp_models import MCPServer
+from src.adapters.api.dependencies import get_mcp_manager
+from src.adapters.mcp.manager import MCPManager
 
 logger = logging.getLogger(__name__)
 

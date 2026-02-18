@@ -3,10 +3,10 @@ from sqlmodel import Session, select
 from typing import Dict
 from pydantic import BaseModel
 
-from database import get_session
-from models import SystemSetting
-from dependencies import get_zai_client
-from zai_client import ZaiClient
+from src.infra.database import get_session
+from src.adapters.db.tenant_models import SystemSetting
+from src.adapters.api.dependencies import get_zai_client
+from src.adapters.zai.client import ZaiClient
 
 router = APIRouter(prefix="/api/v1/settings", tags=["System Settings"])
 
@@ -37,6 +37,8 @@ def update_zai_key(
 ):
     _save_setting(session, "zai_api_key", request.api_key)
     zai_client.update_api_key(request.api_key)
+    import os
+    os.environ["ZAI_API_KEY"] = request.api_key
     return {"status": "updated"}
 
 @router.post("/uniapi-key")
@@ -45,6 +47,8 @@ def update_uniapi_key(
     session: Session = Depends(get_session)
 ):
     _save_setting(session, "uniapi_key", request.api_key)
+    import os
+    os.environ["UNIAPI_API_KEY"] = request.api_key
     return {"status": "updated"}
 
 def _save_setting(session: Session, key: str, value: str):

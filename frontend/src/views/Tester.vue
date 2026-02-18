@@ -5,7 +5,7 @@ import TuiBadge from '../components/ui/TuiBadge.vue'
 import TuiButton from '../components/ui/TuiButton.vue'
 import TuiSelect from '../components/ui/TuiSelect.vue'
 
-const API_BASE = `${window.location.origin}/api/v1`
+import { request } from '../services/api'
 
 const route = useRoute()
 
@@ -58,9 +58,7 @@ const loadAgents = async () => {
   isLoadingAgents.value = true
   agentError.value = ''
   try {
-    const res = await fetch(`${API_BASE}/agents/`)
-    if (!res.ok) throw new Error('Failed to fetch agents')
-    const data = await res.json()
+    const data = await request('/agents/')
     agents.value = Array.isArray(data)
       ? data.map((agent, index) => ({
           id: agent.id ?? index,
@@ -99,9 +97,8 @@ const sendMessage = async () => {
   isSending.value = true
   
   try {
-    const res = await fetch(`${API_BASE}/chat/`, {
+    const data = await request('/chat/', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         agent_id: parseInt(currentAgentId.value),
         message: messageText,
@@ -109,12 +106,6 @@ const sendMessage = async () => {
       })
     })
 
-    if (!res.ok) {
-      throw new Error(`API Error: ${res.statusText}`)
-    }
-
-    const data = await res.json()
-    
     // Add assistant response
     conversation.value.push({
       role: 'assistant',

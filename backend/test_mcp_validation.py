@@ -8,9 +8,9 @@ import shutil
 
 # Import app and dependencies
 from main import app
-from database import get_session
-from dependencies import get_mcp_manager
-from models import MCPServer
+from src.infra.database import get_session
+from src.adapters.api.dependencies import get_mcp_manager
+from src.adapters.db.mcp_models import MCPServer
 from sqlmodel import Session, create_engine, SQLModel
 from sqlmodel.pool import StaticPool
 

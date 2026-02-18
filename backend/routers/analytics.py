@@ -5,9 +5,11 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlmodel import SQLModel, Session, select
 
-from database import get_session
-from dependencies import AuthContext, require_tenant_access
-from models import Agent, ChatMessageNew, ConversationThread, Lead, PolicyDecision, SecurityEventLog, Workspace
+from src.infra.database import get_session
+from src.adapters.api.dependencies import AuthContext, require_tenant_access
+from src.adapters.db.agent_models import Agent
+from src.adapters.db.crm_models import ChatMessageNew, ConversationThread, Lead, PolicyDecision, Workspace
+from src.adapters.db.audit_models import SecurityEventLog
 
 
 router = APIRouter(prefix="/api/v1/analytics", tags=["Analytics"])

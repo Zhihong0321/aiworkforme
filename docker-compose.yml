@@ -3,13 +3,13 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "8080:8080"
+      - "5555:5555"
     depends_on:
       - backend
   backend:
     build: ./backend
     ports:
-      - "8001:8000"
+      - "9555:9555"
     depends_on:
       db:
         condition: service_healthy

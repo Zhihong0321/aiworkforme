@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Optional
 from sqlmodel import Session, select
-from database import get_session
-from models import PolicyDecision
+from src.infra.database import get_session
+from src.adapters.db.crm_models import PolicyDecision
 
 router = APIRouter(prefix="/v1/workspaces/{workspace_id}/policy", tags=["Policy"])
 

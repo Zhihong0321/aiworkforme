@@ -1,29 +1,46 @@
 <script setup>
 import { computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useTheme } from '../composables/theme'
 import { store } from '../store'
 
 const route = useRoute()
+const router = useRouter()
 const { theme } = useTheme()
+
+const handleLogout = () => {
+  localStorage.removeItem('token')
+  localStorage.removeItem('tenant_id')
+  localStorage.removeItem('user_id')
+  localStorage.removeItem('is_platform_admin')
+  router.push('/login')
+}
 const isDark = computed(() => theme.value === 'dark')
+const isPlatformAdmin = computed(() => localStorage.getItem('is_platform_admin') === 'true')
 
 const isActive = (path) => {
   return route.path.startsWith(path)
 }
 
-const navItems = [
-  { label: 'Inbox', path: '/inbox' },
-  { label: 'Leads', path: '/leads' },
-  { label: 'Strategy', path: '/strategy' },
-  { label: 'Knowledge', path: '/knowledge' },
-  { label: 'Analytics', path: '/analytics' },
-  { label: 'Playground', path: '/playground' },
-  { label: 'Settings', path: '/settings' }
-]
+const navItems = computed(() => {
+  if (isPlatformAdmin.value) {
+    return [{ label: 'System Settings', path: '/settings' }]
+  }
+  return [
+    { label: 'My AI Agent', path: '/agents' },
+    { label: 'Playground', path: '/playground' },
+    { label: 'Contact Book', path: '/leads' },
+    { label: 'Catalog', path: '/catalog' },
+    { label: 'Knowledge', path: '/knowledge' },
+    { label: 'Calendar', path: '/calendar' },
+    { label: 'Channel Setup', path: '/channels' }
+  ]
+})
 
 onMounted(() => {
-  store.fetchWorkspaces()
+  if (!isPlatformAdmin.value) {
+    store.fetchWorkspaces()
+  }
 })
 </script>
 
@@ -36,24 +53,9 @@ onMounted(() => {
   >
     <div class="mx-auto flex max-w-7xl items-center justify-between px-4">
       <div class="flex items-center py-3">
-         <span class="text-xs font-black uppercase tracking-[0.2em] mr-8 select-none" :class="isDark ? 'text-white' : 'text-black'">
+         <span class="text-sm font-black uppercase tracking-[0.2em] select-none" :class="isDark ? 'text-white' : 'text-black'">
             Aiworkfor.me
          </span>
-         
-         <!-- REAL WORKSPACE SELECTOR -->
-         <select 
-           v-if="store.workspaces.length > 0"
-           :value="store.activeWorkspaceId"
-           @change="e => store.setActiveWorkspace(e.target.value)"
-           class="text-[10px] font-bold uppercase bg-transparent border-none focus:ring-0 cursor-pointer"
-           :class="isDark ? 'text-slate-400' : 'text-slate-600'"
-         >
-           <option v-for="ws in store.workspaces" :key="ws.id" :value="ws.id">
-             {{ ws.name }}
-           </option>
-         </select>
-         <span v-else-if="store.isLoading" class="text-[10px] text-slate-400 animate-pulse">Loading...</span>
-         <span v-else class="text-[10px] text-red-400">No Workspaces Found</span>
       </div>
 
       <nav class="flex overflow-x-auto">
@@ -79,9 +81,15 @@ onMounted(() => {
       </nav>
 
       <div class="hidden sm:flex items-center gap-4">
-        <span class="text-[9px] font-bold uppercase tracking-widest" :class="store.activeWorkspace?.budget_tier === 'RED' ? 'text-red-500' : 'text-green-500'">
+        <span v-if="!isPlatformAdmin" class="text-[9px] font-bold uppercase tracking-widest" :class="store.activeWorkspace?.budget_tier === 'RED' ? 'text-red-500' : 'text-green-500'">
            ● {{ store.activeWorkspace?.budget_tier || 'GREEN' }} TIER
         </span>
+        <button 
+          @click="handleLogout"
+          class="text-[9px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 rounded-full border border-red-200 text-red-500 hover:bg-red-50 transition-all duration-200"
+        >
+          Logout
+        </button>
       </div>
     </div>
   </header>

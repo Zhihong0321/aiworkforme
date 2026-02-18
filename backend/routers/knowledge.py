@@ -5,8 +5,8 @@ from typing import List, Optional
 from fastapi import APIRouter, Body, Depends, Form, HTTPException
 from sqlmodel import SQLModel, Session
 
-from database import get_session
-from models import AgentKnowledgeFile
+from src.infra.database import get_session
+from src.adapters.db.agent_models import AgentKnowledgeFile
 
 
 router = APIRouter(prefix="/api/v1/knowledge", tags=["Knowledge Vault"])

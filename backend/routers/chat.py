@@ -8,11 +8,14 @@ import os
 import time
 from openai import RateLimitError
 
-from database import get_session
-from models import Agent, AgentMCPServer, ChatRequest, ChatResponse, MCPServer, AgentKnowledgeFile, ChatSession, ChatMessage
-from dependencies import get_mcp_manager, get_zai_client
-from mcp_manager import MCPManager
-from zai_client import ZaiClient
+from src.infra.database import get_session
+from src.adapters.db.agent_models import Agent, AgentMCPServer
+from src.adapters.db.mcp_models import MCPServer
+from src.adapters.db.chat_models import ChatRequest, ChatResponse, ChatSession, ChatMessage
+from src.adapters.api.dependencies import get_mcp_manager, get_llm_router
+from src.adapters.mcp.manager import MCPManager
+from src.infra.llm.router import LLMRouter
+from src.infra.llm.schemas import LLMTask, LLMMessage
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +26,14 @@ def save_message(
     chat_session_id: int, 
     role: str, 
     content: str, 
+    tenant_id: Optional[int] = None,
     tool_calls: Optional[List[Dict]] = None,
     tool_call_id: Optional[str] = None
 ):
     tool_calls_str = json.dumps(tool_calls) if tool_calls else None
     msg = ChatMessage(
         chat_session_id=chat_session_id, 
+        tenant_id=tenant_id,
         role=role, 
         content=content or "", 
         tool_calls=tool_calls_str,
@@ -42,13 +47,8 @@ async def chat_with_agent(
     request: ChatRequest, 
     session: Session = Depends(get_session),
     mcp_manager: MCPManager = Depends(get_mcp_manager),
-    zai_client: ZaiClient = Depends(get_zai_client)
+    llm_router: LLMRouter = Depends(get_llm_router)
 ):
-    if not zai_client.is_configured:
-        raise HTTPException(
-            status_code=503, 
-            detail="AI Provider not configured. Please enter your Z.ai API key in the Settings dashboard."
-        )
     try:
         t0 = time.perf_counter()
         # 1. Load Agent
@@ -59,7 +59,7 @@ async def chat_with_agent(
         # 1.5 Create or Retrieve Chat Session
         chat_session = session.exec(select(ChatSession).where(ChatSession.agent_id == agent.id).order_by(ChatSession.created_at.desc())).first()
         if not chat_session:
-            chat_session = ChatSession(agent_id=agent.id)
+            chat_session = ChatSession(agent_id=agent.id, tenant_id=agent.tenant_id)
             session.add(chat_session)
             session.commit()
             session.refresh(chat_session)
@@ -195,18 +195,18 @@ async def chat_with_agent(
 
         # Append Current User Message
         messages.append({"role": "user", "content": request.message})
-        save_message(session, chat_session.id, "user", request.message)
+        save_message(session, chat_session.id, "user", request.message, tenant_id=agent.tenant_id)
 
         # 6. Chat Loop
         max_turns = 5
         for _ in range(max_turns):
             try:
                 t_llm0 = time.perf_counter()
-                message = await zai_client.chat(
+                task = LLMTask.TOOL_USE if tools else LLMTask.CONVERSATION
+                response = await llm_router.execute(
+                    task=task,
                     messages=messages,
-                    model=agent.model,
                     tools=tools if tools else None,
-                    include_reasoning=request.include_reasoning if hasattr(request, 'include_reasoning') else True
                 )
                 t_llm1 = time.perf_counter()
                 logger.info(
@@ -216,37 +216,28 @@ async def chat_with_agent(
                     bool(tools),
                     (t_llm1 - t_llm0),
                 )
-            except RateLimitError:
-                raise HTTPException(status_code=429, detail="Z.ai API Rate Limit Exceeded.")
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Z.ai Error: {str(e)}")
+                raise HTTPException(status_code=500, detail=f"LLM Error: {str(e)}")
 
-            # Append assistant message to history object
-            messages.append(message)
+            # Append assistant message to history object (LLMMessage format)
+            assistant_msg = LLMMessage(
+                role="assistant",
+                content=response.content,
+                tool_calls=response.tool_calls
+            )
+            messages.append(assistant_msg)
 
             # Save Assistant Message (Content + Tool Calls)
-            # Convert tool_calls object to list of dicts for JSON serialization
-            tool_calls_list = None
-            if message.tool_calls:
-                tool_calls_list = [
-                    {
-                        "id": tc.id,
-                        "type": tc.type,
-                        "function": {
-                            "name": tc.function.name,
-                            "arguments": tc.function.arguments
-                        }
-                    } for tc in message.tool_calls
-                ]
+            tool_calls_list = response.tool_calls
             
             # Save to DB even if content is None (if tool calls exist)
-            if message.content or tool_calls_list:
-                save_message(session, chat_session.id, "assistant", message.content, tool_calls=tool_calls_list)
+            if response.content or tool_calls_list:
+                save_message(session, chat_session.id, "assistant", response.content, tenant_id=agent.tenant_id, tool_calls=tool_calls_list)
 
-            if message.tool_calls:
-                for tool_call in message.tool_calls:
-                    tool_name = tool_call.function.name
-                    tool_args_str = tool_call.function.arguments
+            if response.tool_calls:
+                for tool_call in response.tool_calls:
+                    tool_name = tool_call["function"]["name"]
+                    tool_args_str = tool_call["function"]["arguments"]
                     
                     content_str = "Error executing tool"
                     if tool_name in tool_map:
@@ -275,17 +266,17 @@ async def chat_with_agent(
                         content_str = "Tool not found"
 
                     # Append Tool Result to messages list
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": content_str
-                    })
+                    messages.append(LLMMessage(
+                        role="tool",
+                        tool_call_id=tool_call["id"],
+                        content=content_str
+                    ))
                     # Save Tool Result to DB
-                    save_message(session, chat_session.id, "tool", content_str, tool_call_id=tool_call.id)
+                    save_message(session, chat_session.id, "tool", content_str, tenant_id=agent.tenant_id, tool_call_id=tool_call["id"])
             else:
                 t1 = time.perf_counter()
                 logger.info("chat total: agent_id=%s dt=%.3fs", agent.id, (t1 - t0))
-                return ChatResponse(response=message.content or "")
+                return ChatResponse(response=response.content or "")
                 
         return ChatResponse(response="Max chat turns reached.")
     except HTTPException:

@@ -1,12 +1,11 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { request } from '../services/api'
 import TuiBadge from '../components/ui/TuiBadge.vue'
 import TuiButton from '../components/ui/TuiButton.vue'
 import TuiCard from '../components/ui/TuiCard.vue'
 import TuiInput from '../components/ui/TuiInput.vue'
 import TuiSelect from '../components/ui/TuiSelect.vue'
-
-const API_BASE = `${window.location.origin}/api/v1`
 
 const agents = ref([])
 const mcpServers = ref([])
@@ -67,9 +66,7 @@ const loadKnowledgeFiles = async (agentId) => {
     return
   }
   try {
-    const res = await fetch(`${API_BASE}/agents/${agentId}/knowledge`)
-    if (!res.ok) throw new Error('Failed to load knowledge')
-    const data = await res.json()
+    const data = await request(`/agents/${agentId}/knowledge`)
     console.log('Knowledge files loaded:', data)
     knowledgeFiles.value = Array.isArray(data) ? data : []
   } catch (error) {
@@ -100,14 +97,12 @@ const loadAgents = async () => {
   isLoading.value = true
   message.value = ''
   try {
-    const res = await fetch(`${API_BASE}/agents/`)
-    if (!res.ok) throw new Error('Failed to fetch agents')
-    const data = await res.json()
+    const data = await request('/agents/')
     agents.value = Array.isArray(data)
-      ? data.map((agent, index) => {
+      ? data.map((agent) => {
           const linkedIds = extractLinkedMcpIds(agent)
           return {
-            id: agent.id ?? index,
+            id: agent.id,
             name: agent.name ?? 'Unknown Agent',
             model: agent.model ?? 'n/a',
             status: (agent.status ?? 'ready').toLowerCase(),
@@ -133,9 +128,7 @@ const loadAgents = async () => {
 const loadMcpServers = async () => {
   mcpLoading.value = true
   try {
-    const res = await fetch(`${API_BASE}/mcp/servers`)
-    if (!res.ok) throw new Error('Failed to fetch mcp servers')
-    const data = await res.json()
+    const data = await request('/mcp/servers')
     mcpServers.value = Array.isArray(data)
       ? data.map((server, index) => ({
           id: server.id ?? index,
@@ -157,7 +150,7 @@ const saveAgent = async () => {
   message.value = ''
   try {
     const method = form.id ? 'PUT' : 'POST'
-    const url = form.id ? `${API_BASE}/agents/${form.id}` : `${API_BASE}/agents/`
+    const path = form.id ? `/agents/${form.id}` : `/agents/`
     const payload = {
       name: form.name,
       model: form.model,
@@ -165,14 +158,11 @@ const saveAgent = async () => {
       reasoning_enabled: form.reasoning_enabled
     }
 
-    const res = await fetch(url, {
+    const savedData = await request(path, {
       method,
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     })
 
-    if (!res.ok) throw new Error('Failed to save agent')
-    const savedData = await res.json()
     message.value = form.id ? 'Agent updated' : 'Agent created'
     await loadAgents()
     
@@ -183,7 +173,7 @@ const saveAgent = async () => {
     }
   } catch (error) {
     console.error('Save agent failed', error)
-    message.value = 'Save failed. Check API connectivity.'
+    message.value = `Save failed: ${error.message}`
   } finally {
     isSaving.value = false
   }
@@ -197,14 +187,13 @@ const deleteAgent = async (agentId) => {
   deletingAgentId.value = agentId
   message.value = ''
   try {
-    const res = await fetch(`${API_BASE}/agents/${agentId}`, { method: 'DELETE' })
-    if (!res.ok) throw new Error('Failed to delete agent')
+    await request(`/agents/${agentId}`, { method: 'DELETE' })
     message.value = 'Agent deleted.'
     await loadAgents()
     if (form.id === agentId) resetForm()
   } catch (error) {
     console.error('Delete agent failed', error)
-    message.value = 'Delete failed. Confirm backend DELETE /agents/{id} is available.'
+    message.value = `Delete failed: ${error.message}`
   } finally {
     deletingAgentId.value = null
   }
@@ -217,15 +206,14 @@ const linkMcp = async () => {
   }
 
   try {
-    const res = await fetch(`${API_BASE}/agents/${form.id}/link-mcp/${form.linkedMcpId}`, {
+    await request(`/agents/${form.id}/link-mcp/${form.linkedMcpId}`, {
       method: 'POST'
     })
-    if (!res.ok) throw new Error('Failed to link MCP')
     message.value = 'MCP linked to agent.'
     await loadAgents()
   } catch (error) {
     console.error('Link MCP failed', error)
-    message.value = 'Link failed. Confirm backend endpoint.'
+    message.value = `Link failed: ${error.message}`
   }
 }
 
@@ -242,16 +230,28 @@ const handleFileUpload = async (event) => {
   try {
     const formData = new FormData()
     formData.append('file', file)
-    const res = await fetch(`${API_BASE}/agents/${form.id}/knowledge`, {
+    
+    // Using fetch directly for FormData as request helper is optimized for JSON
+    // But we still need the headers
+    const res = await fetch(`${window.location.origin}/api/v1/agents/${form.id}/knowledge`, {
       method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        'X-Tenant-Id': localStorage.getItem('tenant_id') || ''
+      },
       body: formData
     })
-    if (!res.ok) throw new Error('Failed to upload file')
+    
+    if (!res.ok) {
+       const err = await res.json().catch(() => ({}))
+       throw new Error(err.detail || 'Upload failed')
+    }
+    
     message.value = 'File uploaded to agent knowledge.'
     await loadKnowledgeFiles(form.id)
   } catch (error) {
     console.error('Upload failed', error)
-    message.value = 'Upload failed. Verify backend handler.'
+    message.value = `Upload failed: ${error.message}`
   } finally {
     isUploading.value = false
     event.target.value = ''
@@ -261,14 +261,13 @@ const handleFileUpload = async (event) => {
 const deleteKnowledgeFile = async (fileId) => {
   if (!confirm('Delete this file?')) return
   try {
-    const res = await fetch(`${API_BASE}/agents/${form.id}/knowledge/${fileId}`, {
+    await request(`/agents/${form.id}/knowledge/${fileId}`, {
       method: 'DELETE'
     })
-    if (!res.ok) throw new Error('Failed to delete file')
     await loadKnowledgeFiles(form.id)
   } catch (error) {
     console.error('Delete file failed', error)
-    message.value = 'Failed to delete file.'
+    message.value = `Failed to delete file: ${error.message}`
   }
 }
 
@@ -280,23 +279,20 @@ onMounted(() => {
   loadAgents()
   loadMcpServers()
 })
+
 </script>
 
 <template>
   <div class="relative min-h-screen">
     <main class="relative z-10 mx-auto w-full max-w-none px-5 lg:px-10 py-10 space-y-8">
-      <header class="tui-surface rounded-xl border border-slate-200 p-6">
+      <header class="tui-surface rounded-3xl border border-slate-200 p-8 shadow-sm">
         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div class="space-y-2">
-            <p class="text-xs uppercase tracking-[0.32em] text-slate-500">z.ai admin</p>
-            <h1 class="text-3xl font-bold text-slate-900">Agent Management</h1>
-            <p class="text-sm text-slate-600">
-              Create, edit, and link RAG agents to MCP servers. Attach files to extend knowledge.
+            <p class="text-[10px] uppercase font-black tracking-[0.32em] text-indigo-600">Pillar 1</p>
+            <h1 class="text-3xl font-black text-slate-900 tracking-tight">My AI Agent</h1>
+            <p class="text-sm text-slate-500 max-w-xl">
+              Create your AI agent, define their personality, and give them the "Keys" to your business skills like products and appointments.
             </p>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <TuiBadge variant="info">/api/v1</TuiBadge>
-            <TuiBadge variant="muted">base: dynamic (current host)</TuiBadge>
           </div>
         </div>
       </header>
@@ -399,14 +395,14 @@ onMounted(() => {
 
             <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
               <TuiSelect
-                label="Linked MCP Server"
-                :options="mcpServers.map((server) => ({ label: server.name, value: server.id }))"
+                label="Agent Skills"
+                :options="mcpServers.map((server) => ({ label: `Access: ${server.name}`, value: server.id }))"
                 v-model="form.linkedMcpId"
-                placeholder="Select MCP"
-                :hint="mcpLoading ? 'loading...' : 'optional'"
+                placeholder="Select a Skill"
+                :hint="mcpLoading ? 'loading...' : 'Product Catalog, Calendar, etc.'"
               />
               <div class="flex items-end">
-                <TuiButton class="w-full" variant="outline" :loading="false" @click="linkMcp">link mcp</TuiButton>
+                <TuiButton class="w-full" variant="outline" :loading="false" @click="linkMcp">Give Skill Access</TuiButton>
               </div>
             </div>
             <div class="space-y-2">

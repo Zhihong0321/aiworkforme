@@ -2,50 +2,85 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlmodel import Session, select
 from typing import List, Optional
 from sqlalchemy.exc import IntegrityError
-import json
 from datetime import datetime
+import json
 
-from database import get_session
-from models import Agent, AgentMCPServer, MCPServer, AgentKnowledgeFile, AgentRead, AgentUpdate
+from src.infra.database import get_session
+from src.adapters.api.dependencies import require_tenant_access, AuthContext, get_llm_router
+from src.adapters.db.agent_models import Agent, AgentMCPServer, AgentKnowledgeFile, AgentRead, AgentUpdate
+from src.adapters.db.mcp_models import MCPServer
+from src.app.runtime.knowledge_processor import KnowledgeProcessor
+from src.infra.llm.router import LLMRouter
+import logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/agents", tags=["Agent Management"])
 
 @router.get("/", response_model=List[AgentRead])
-def list_agents(session: Session = Depends(get_session)):
-    agents = session.exec(select(Agent)).all()
-    results: List[AgentRead] = []
+def list_agents(
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access)
+):
+    import traceback
+    try:
+        agents = session.exec(select(Agent).where(Agent.tenant_id == auth.tenant.id)).all()
+        results: List[AgentRead] = []
 
-    for agent in agents:
-        linked_ids = [
-            link_id
-            for link_id in session.exec(
-                select(AgentMCPServer.mcp_server_id).where(AgentMCPServer.agent_id == agent.id)
-            ).all()
-            if link_id is not None
-        ]
+        for agent in agents:
+            linked_ids = [
+                link_id
+                for link_id in session.exec(
+                    select(AgentMCPServer.mcp_server_id).where(AgentMCPServer.agent_id == agent.id)
+                ).all()
+                if link_id is not None
+            ]
 
-        agent_data = agent.dict(exclude={"chat_sessions", "mcp_servers", "knowledge_files"})
-        results.append(
-            AgentRead(
-                **agent_data,
-                linked_mcp_ids=linked_ids,
-                linked_mcp_count=len(linked_ids)
+            # Use model_dump in Pydantic v2 or dict in v1
+            agent_data = agent.model_dump(exclude={"chat_sessions", "mcp_servers", "knowledge_files"})
+            results.append(
+                AgentRead(
+                    **agent_data,
+                    linked_mcp_ids=linked_ids,
+                    linked_mcp_count=len(linked_ids)
+                )
             )
-        )
 
-    return results
+        return results
+    except Exception as e:
+        logger.error(f"LIST AGENTS ERROR: {e}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/", response_model=Agent)
-def create_agent(agent: Agent, session: Session = Depends(get_session)):
-    session.add(agent)
+@router.post("/", response_model=AgentRead)
+def create_agent(
+    agent_in: AgentUpdate, # Use AgentUpdate or a dedicated AgentCreate model
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access)
+):
+    new_agent = Agent(
+        name=agent_in.name if agent_in.name else "New Agent",
+        system_prompt=agent_in.system_prompt if agent_in.system_prompt else "",
+        model=agent_in.model if agent_in.model else "glm-4.7-flash",
+        reasoning_enabled=agent_in.reasoning_enabled if agent_in.reasoning_enabled is not None else True,
+        tenant_id=auth.tenant.id,
+        created_at=datetime.utcnow()
+    )
+    
+    session.add(new_agent)
     session.commit()
-    session.refresh(agent)
-    return agent
+    session.refresh(new_agent)
+    
+    return AgentRead(**new_agent.model_dump())
 
-@router.put("/{agent_id}", response_model=Agent)
-def update_agent(agent_id: int, payload: AgentUpdate, session: Session = Depends(get_session)):
+@router.put("/{agent_id}", response_model=AgentRead)
+def update_agent(
+    agent_id: int, 
+    payload: AgentUpdate, 
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access)
+):
     agent = session.get(Agent, agent_id)
-    if not agent:
+    if not agent or agent.tenant_id != auth.tenant.id:
         raise HTTPException(status_code=404, detail="Agent not found")
 
     if payload.name is not None:
@@ -54,16 +89,42 @@ def update_agent(agent_id: int, payload: AgentUpdate, session: Session = Depends
         agent.system_prompt = payload.system_prompt
     if payload.model is not None:
         agent.model = payload.model
+    if payload.reasoning_enabled is not None:
+        agent.reasoning_enabled = payload.reasoning_enabled
 
     session.add(agent)
     session.commit()
     session.refresh(agent)
-    return agent
+    return AgentRead(**agent.model_dump())
+
+@router.get("/{agent_id}", response_model=AgentRead)
+def get_agent(
+    agent_id: int,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access)
+):
+    agent = session.get(Agent, agent_id)
+    if not agent or agent.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    linked_ids = session.exec(
+        select(AgentMCPServer.mcp_server_id).where(AgentMCPServer.agent_id == agent.id)
+    ).all()
+
+    return AgentRead(
+        **agent.model_dump(exclude={"chat_sessions", "mcp_servers", "knowledge_files"}),
+        linked_mcp_ids=list(linked_ids),
+        linked_mcp_count=len(linked_ids)
+    )
 
 @router.delete("/{agent_id}")
-def delete_agent(agent_id: int, session: Session = Depends(get_session)):
+def delete_agent(
+    agent_id: int, 
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access)
+):
     agent = session.get(Agent, agent_id)
-    if not agent:
+    if not agent or agent.tenant_id != auth.tenant.id:
         raise HTTPException(status_code=404, detail="Agent not found")
 
     session.delete(agent)
@@ -71,16 +132,20 @@ def delete_agent(agent_id: int, session: Session = Depends(get_session)):
     return {"message": "Agent deleted"}
 
 @router.post("/{agent_id}/link-mcp/{server_id}")
-def link_mcp_to_agent(agent_id: int, server_id: int, session: Session = Depends(get_session)):
+def link_mcp_to_agent(
+    agent_id: int, 
+    server_id: int, 
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access)
+):
     agent = session.get(Agent, agent_id)
-    if not agent:
+    if not agent or agent.tenant_id != auth.tenant.id:
         raise HTTPException(status_code=404, detail="Agent not found")
     
     server = session.get(MCPServer, server_id)
     if not server:
         raise HTTPException(status_code=404, detail="MCP Server not found")
 
-    # Idempotent link: skip duplicates instead of throwing 500 on unique constraint
     existing_link = session.get(AgentMCPServer, (agent_id, server_id))
     if existing_link:
         return {"message": "MCP already linked to agent"}
@@ -91,7 +156,6 @@ def link_mcp_to_agent(agent_id: int, server_id: int, session: Session = Depends(
         session.commit()
     except IntegrityError:
         session.rollback()
-        # Likely duplicate link raced in; treat as success to keep UI happy
         return {"message": "MCP already linked to agent"}
 
     return {"message": "Linked successfully"}
@@ -102,37 +166,38 @@ async def upload_agent_knowledge(
     file: UploadFile = File(...),
     tags: Optional[str] = Form(default="[]"),
     description: Optional[str] = Form(default=""),
-    session: Session = Depends(get_session)
+    session: Session = Depends(get_session),
+    llm: LLMRouter = Depends(get_llm_router),
+    auth: AuthContext = Depends(require_tenant_access)
 ):
     agent = session.get(Agent, agent_id)
-    if not agent:
+    if not agent or agent.tenant_id != auth.tenant.id:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    content = await file.read()
-    try:
-        content_str = content.decode("utf-8")
-    except UnicodeDecodeError:
-         raise HTTPException(status_code=400, detail="File must be valid UTF-8 text")
-
-    # Validate and parse tags JSON
-    try:
-        parsed_tags = json.loads(tags)
-        if not isinstance(parsed_tags, list) or not all(isinstance(t, str) for t in parsed_tags):
-            raise ValueError("Tags must be a JSON array of strings.")
-    except json.JSONDecodeError:
-        raise HTTPException(status_code=400, detail="Tags must be a valid JSON array string.")
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    content_bytes = await file.read()
+    content_str = ""
+    
+    if file.content_type.startswith("image/"):
+        processor = KnowledgeProcessor(session, llm)
+        content_str = await processor.process_image(content_bytes, file.filename)
+    elif file.content_type == "application/pdf":
+        processor = KnowledgeProcessor(session, llm)
+        content_str = await processor.process_pdf(content_bytes, file.filename)
+    else:
+        try:
+            content_str = content_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+             raise HTTPException(status_code=400, detail="Text file must be valid UTF-8")
 
     knowledge = AgentKnowledgeFile(
         agent_id=agent_id,
+        tenant_id=auth.tenant.id,
         filename=file.filename,
         content=content_str,
-        tags=tags, # Store as JSON string
+        tags=tags,
         description=description,
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
-        last_trigger_inputs="[]" # Initialize as empty JSON array string
     )
     session.add(knowledge)
     session.commit()
@@ -140,56 +205,28 @@ async def upload_agent_knowledge(
     return knowledge
 
 @router.get("/{agent_id}/knowledge", response_model=List[AgentKnowledgeFile])
-def list_agent_knowledge(agent_id: int, session: Session = Depends(get_session)):
+def list_agent_knowledge(
+    agent_id: int, 
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access)
+):
     agent = session.get(Agent, agent_id)
-    if not agent:
+    if not agent or agent.tenant_id != auth.tenant.id:
         raise HTTPException(status_code=404, detail="Agent not found")
     
     files = session.exec(select(AgentKnowledgeFile).where(AgentKnowledgeFile.agent_id == agent_id)).all()
     return files
 
-@router.put("/knowledge/{file_id}")
-async def update_agent_knowledge(
-    file_id: int,
-    filename: Optional[str] = Form(None),
-    content: Optional[str] = Form(None),
-    tags: Optional[str] = Form(None),
-    description: Optional[str] = Form(None),
-    session: Session = Depends(get_session)
-):
-    knowledge_file = session.get(AgentKnowledgeFile, file_id)
-    if not knowledge_file:
-        raise HTTPException(status_code=404, detail="Knowledge file not found")
-
-    if filename is not None:
-        knowledge_file.filename = filename
-    if content is not None:
-        knowledge_file.content = content
-    if tags is not None:
-        try:
-            parsed_tags = json.loads(tags)
-            if not isinstance(parsed_tags, list) or not all(isinstance(t, str) for t in parsed_tags):
-                raise ValueError("Tags must be a JSON array of strings.")
-            knowledge_file.tags = tags
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=400, detail="Tags must be a valid JSON array string.")
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e))
-    if description is not None:
-        knowledge_file.description = description
-
-    knowledge_file.updated_at = datetime.utcnow() # Update timestamp
-
-    session.add(knowledge_file)
-    session.commit()
-    session.refresh(knowledge_file)
-    return knowledge_file
-
 @router.delete("/{agent_id}/knowledge/{file_id}")
-def delete_agent_knowledge(agent_id: int, file_id: int, session: Session = Depends(get_session)):
+def delete_agent_knowledge(
+    agent_id: int, 
+    file_id: int, 
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access)
+):
     file = session.get(AgentKnowledgeFile, file_id)
-    if not file or file.agent_id != agent_id:
-        raise HTTPException(status_code=404, detail="File not found for this agent")
+    if not file or file.agent_id != agent_id or file.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="File not found or access denied")
     
     session.delete(file)
     session.commit()
