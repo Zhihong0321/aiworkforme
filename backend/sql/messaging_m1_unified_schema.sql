@@ -157,5 +157,12 @@ COMMIT;
 -- Additive lead identity support for Baileys LID mapping.
 ALTER TABLE et_leads
     ADD COLUMN IF NOT EXISTS whatsapp_lid VARCHAR(255);
+ALTER TABLE et_leads
+    ADD COLUMN IF NOT EXISTS is_whatsapp_valid BOOLEAN;
+ALTER TABLE et_leads
+    ADD COLUMN IF NOT EXISTS last_verify_at TIMESTAMP;
+ALTER TABLE et_leads
+    ADD COLUMN IF NOT EXISTS verify_error TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_et_leads_whatsapp_lid ON et_leads(whatsapp_lid);
+CREATE INDEX IF NOT EXISTS idx_et_leads_is_whatsapp_valid ON et_leads(is_whatsapp_valid);

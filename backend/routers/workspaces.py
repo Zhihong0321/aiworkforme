@@ -66,17 +66,35 @@ def _verify_lead_with_baileys(
     session: Session,
     tenant_id: int,
     lead: Lead,
-) -> Optional[str]:
+) -> Optional[Lead]:
     channel_session = _resolve_active_whatsapp_session(session, tenant_id)
     if not channel_session:
+        lead.is_whatsapp_valid = False
+        lead.verify_error = "No active WhatsApp session for tenant."
+        lead.last_verify_at = datetime.utcnow()
+        session.add(lead)
+        session.commit()
+        session.refresh(lead)
         return None
 
     base_url = _resolve_whatsapp_base_url(channel_session)
     if not base_url:
+        lead.is_whatsapp_valid = False
+        lead.verify_error = "WHATSAPP_API_BASE_URL is not configured."
+        lead.last_verify_at = datetime.utcnow()
+        session.add(lead)
+        session.commit()
+        session.refresh(lead)
         return None
 
     phone = _normalize_whatsapp_phone(lead.external_id)
     if not phone:
+        lead.is_whatsapp_valid = False
+        lead.verify_error = "Lead phone/external_id is invalid."
+        lead.last_verify_at = datetime.utcnow()
+        session.add(lead)
+        session.commit()
+        session.refresh(lead)
         return None
 
     endpoint = f"{base_url}/leads/verify-whatsapp"
@@ -87,27 +105,43 @@ def _verify_lead_with_baileys(
     try:
         with httpx.Client(timeout=20.0) as client:
             resp = client.post(endpoint, headers=_headers_for_baileys(), json=payload)
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                detail = (resp.text or "").strip() or f"HTTP {resp.status_code}"
+                raise RuntimeError(detail)
             body = resp.json() if resp.content else {}
     except Exception as exc:
+        detail = str(exc)
         logger.warning(
             "Lead verify-whatsapp failed: tenant_id=%s lead_id=%s phone=%s err=%s",
             tenant_id,
             lead.id,
             phone,
-            exc,
+            detail,
         )
+        lead.is_whatsapp_valid = False
+        lead.verify_error = detail[:2000]
+        lead.last_verify_at = datetime.utcnow()
+        session.add(lead)
+        session.commit()
+        session.refresh(lead)
         return None
 
     is_whatsapp = bool(body.get("isWhatsApp"))
     lid = body.get("lid")
+    verify_error = body.get("verifyError") or body.get("error")
+    lead.is_whatsapp_valid = is_whatsapp
+    lead.last_verify_at = datetime.utcnow()
+    lead.verify_error = str(verify_error) if verify_error else None
+
     if is_whatsapp and lid:
         lead.whatsapp_lid = str(lid)
-        session.add(lead)
-        session.commit()
-        session.refresh(lead)
-        return lead.whatsapp_lid
-    return None
+    elif not is_whatsapp:
+        lead.whatsapp_lid = None
+
+    session.add(lead)
+    session.commit()
+    session.refresh(lead)
+    return lead
 
 @router.get("/", response_model=List[Workspace])
 def list_workspaces(

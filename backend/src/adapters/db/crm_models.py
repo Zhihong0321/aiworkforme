@@ -86,6 +86,9 @@ class Lead(SQLModel, table=True):
     workspace_id: int = Field(foreign_key="et_workspaces.id")
     external_id: str = Field(index=True) # e.g. Phone number/WhatsApp ID
     whatsapp_lid: Optional[str] = Field(default=None, index=True)
+    is_whatsapp_valid: Optional[bool] = Field(default=None, index=True)
+    last_verify_at: Optional[datetime] = None
+    verify_error: Optional[str] = None
     name: Optional[str] = None
     
     stage: LeadStage = Field(default=LeadStage.NEW)
