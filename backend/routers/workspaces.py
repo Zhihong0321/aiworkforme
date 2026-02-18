@@ -3,12 +3,19 @@ from sqlmodel import Session, select
 from typing import List, Optional
 from datetime import datetime
 from sqlmodel import SQLModel
+import logging
+import os
+import re
+
+import httpx
 from src.infra.database import get_session
 from src.adapters.db.crm_models import Workspace, Lead, StrategyVersion, StrategyStatus
 from src.adapters.db.agent_models import Agent
 from src.adapters.api.dependencies import require_tenant_access, AuthContext
+from src.adapters.db.channel_models import ChannelSession, ChannelType, SessionStatus
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["Workspace Management"])
+logger = logging.getLogger(__name__)
 
 
 class LeadModeRequest(SQLModel):
@@ -17,6 +24,87 @@ class LeadModeRequest(SQLModel):
 
 def _stage_value(stage) -> str:
     return stage.value if hasattr(stage, "value") else str(stage)
+
+
+def _normalize_whatsapp_phone(raw: str) -> str:
+    return re.sub(r"\D+", "", str(raw or ""))
+
+
+def _resolve_whatsapp_base_url(channel_session: Optional[ChannelSession] = None) -> Optional[str]:
+    if channel_session and isinstance(channel_session.session_metadata, dict):
+        provider_base_url = channel_session.session_metadata.get("provider_base_url")
+        if provider_base_url:
+            return str(provider_base_url).rstrip("/")
+    env_url = os.getenv("WHATSAPP_API_BASE_URL")
+    if env_url:
+        return env_url.rstrip("/")
+    return None
+
+
+def _headers_for_baileys() -> dict:
+    headers = {"Content-Type": "application/json"}
+    api_key = os.getenv("WHATSAPP_API_KEY")
+    if api_key:
+        headers["x-api-key"] = api_key
+    return headers
+
+
+def _resolve_active_whatsapp_session(session: Session, tenant_id: int) -> Optional[ChannelSession]:
+    return session.exec(
+        select(ChannelSession).where(
+            ChannelSession.tenant_id == tenant_id,
+            ChannelSession.channel_type == ChannelType.WHATSAPP,
+            ChannelSession.status == SessionStatus.ACTIVE,
+        ).order_by(ChannelSession.id.asc())
+    ).first()
+
+
+def _verify_lead_with_baileys(
+    session: Session,
+    tenant_id: int,
+    lead: Lead,
+) -> Optional[str]:
+    channel_session = _resolve_active_whatsapp_session(session, tenant_id)
+    if not channel_session:
+        return None
+
+    base_url = _resolve_whatsapp_base_url(channel_session)
+    if not base_url:
+        return None
+
+    phone = _normalize_whatsapp_phone(lead.external_id)
+    if not phone:
+        return None
+
+    endpoint = f"{base_url}/leads/verify-whatsapp"
+    payload = {
+        "sessionId": channel_session.session_identifier,
+        "phone": phone,
+    }
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            resp = client.post(endpoint, headers=_headers_for_baileys(), json=payload)
+            resp.raise_for_status()
+            body = resp.json() if resp.content else {}
+    except Exception as exc:
+        logger.warning(
+            "Lead verify-whatsapp failed: tenant_id=%s lead_id=%s phone=%s err=%s",
+            tenant_id,
+            lead.id,
+            phone,
+            exc,
+        )
+        return None
+
+    is_whatsapp = bool(body.get("isWhatsApp"))
+    lid = body.get("lid")
+    if is_whatsapp and lid:
+        lead.whatsapp_lid = str(lid)
+        session.add(lead)
+        session.commit()
+        session.refresh(lead)
+        return lead.whatsapp_lid
+    return None
 
 @router.get("/", response_model=List[Workspace])
 def list_workspaces(
@@ -131,6 +219,27 @@ def create_lead(
     lead.tenant_id = auth.tenant.id
     session.add(lead)
     session.commit()
+    session.refresh(lead)
+    _verify_lead_with_baileys(session, auth.tenant.id, lead)
+    return lead
+
+
+@router.post("/{workspace_id}/leads/{lead_id}/verify-whatsapp", response_model=Lead)
+def verify_lead_whatsapp(
+    workspace_id: int,
+    lead_id: int,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    ws = session.get(Workspace, workspace_id)
+    if not ws or ws.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    lead = session.get(Lead, lead_id)
+    if not lead or lead.tenant_id != auth.tenant.id or lead.workspace_id != workspace_id:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    _verify_lead_with_baileys(session, auth.tenant.id, lead)
     session.refresh(lead)
     return lead
 

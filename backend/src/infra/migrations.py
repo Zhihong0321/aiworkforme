@@ -42,6 +42,7 @@ def apply_multitenant_additive_migration(engine: Engine, default_tenant_id: int)
         conn.execute(text("ALTER TABLE zairag_agent_knowledge_files ADD COLUMN IF NOT EXISTS tags TEXT DEFAULT '[]'"))
         conn.execute(text("ALTER TABLE zairag_agent_knowledge_files ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''"))
         conn.execute(text("ALTER TABLE zairag_agent_knowledge_files ADD COLUMN IF NOT EXISTS last_trigger_inputs TEXT DEFAULT '[]'"))
+        conn.execute(text("ALTER TABLE et_leads ADD COLUMN IF NOT EXISTS whatsapp_lid VARCHAR(255)"))
 
         # Backfill logic (Simplified for readability, usually matched by use-case)
         # Note: In a production refactor, we would use a more robust backfill script
@@ -59,6 +60,7 @@ def apply_multitenant_additive_migration(engine: Engine, default_tenant_id: int)
         # Create Indexes
         for table in tenant_owned_tables:
             conn.execute(text(f"CREATE INDEX IF NOT EXISTS idx_{table}_tenant_id ON {table} (tenant_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_et_leads_whatsapp_lid ON et_leads (whatsapp_lid)"))
 
         # Enforce Foreign Keys and NOT NULL
         for table in tenant_owned_tables:

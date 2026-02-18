@@ -85,6 +85,7 @@ class Lead(SQLModel, table=True):
     tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     workspace_id: int = Field(foreign_key="et_workspaces.id")
     external_id: str = Field(index=True) # e.g. Phone number/WhatsApp ID
+    whatsapp_lid: Optional[str] = Field(default=None, index=True)
     name: Optional[str] = None
     
     stage: LeadStage = Field(default=LeadStage.NEW)
