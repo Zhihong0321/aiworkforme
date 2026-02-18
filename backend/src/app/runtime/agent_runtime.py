@@ -28,47 +28,64 @@ class ConversationAgentRuntime:
         self.policy = PolicyEvaluator(session)
         self.builder = ContextBuilder(session)
 
-    async def run_turn(self, lead_id: int, workspace_id: int, user_message: Optional[str] = None, agent_id_override: Optional[int] = None, bypass_safety: bool = False) -> Dict[str, Any]:
+    async def run_turn(
+        self,
+        lead_id: int,
+        workspace_id: int,
+        user_message: Optional[str] = None,
+        agent_id_override: Optional[int] = None,
+        bypass_safety: bool = False,
+        history_override: Optional[List[Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
         """
         Executes a single workflow turn.
+
+        history_override: when provided (e.g. from the inbound worker which reads
+        from et_messages), skip fetching from ChatMessageNew and use this history
+        directly. Format: [{"role": "user"|"assistant", "content": "..."}]
         """
         # 1. PRE-SEND POLICY CHECK
         policy_decision = self.policy.evaluate_outbound(lead_id, workspace_id, bypass_safety=bypass_safety)
         self.policy.record_decision(policy_decision)
-        
+
         if not policy_decision.allow_send:
             logger.info(f"Send blocked: {policy_decision.reason_code} for lead {lead_id}")
             return {"status": "blocked", "reason": policy_decision.reason_code}
 
-        # 2. BUILD CONTEXT
-        context = await self.builder.build_context(lead_id, workspace_id, query=user_message, agent_id_override=agent_id_override)
-        
-        # 3. GET OR CREATE THREAD
-        thread = self._get_or_create_thread(lead_id, workspace_id)
-        
-        # 4. PREPARE MESSAGES
-        history = self._get_recent_history(thread.id)
+        # 2. BUILD CONTEXT (agent system_prompt + RAG knowledge + lead memory)
+        context = await self.builder.build_context(
+            lead_id, workspace_id, query=user_message, agent_id_override=agent_id_override
+        )
+
+        # 3. PREPARE MESSAGES
+        # Use caller-supplied history when available (inbound worker uses et_messages);
+        # otherwise fall back to ChatMessageNew (playground / legacy path).
+        if history_override is not None:
+            history = history_override
+        else:
+            thread = self._get_or_create_thread(lead_id, workspace_id)
+            history = self._get_recent_history(thread.id)
+
         messages = [{"role": "system", "content": context["system_instruction"]}]
         messages.extend(history)
-        
+
         if user_message:
             messages.append({"role": "user", "content": user_message})
-            self._save_message(thread.id, "user", user_message)
+            # Only persist to ChatMessageNew on the legacy (playground) path
+            if history_override is None:
+                thread = self._get_or_create_thread(lead_id, workspace_id)
+                self._save_message(thread.id, "user", user_message)
 
-        # 5. EXECUTE LLM CALL
-        try:
-            response = await self.router.execute(
-                task=LLMTask.CONVERSATION,
-                messages=messages
-            )
-            model_text = response.content
-            if not model_text:
-                raise ValueError("LLM returned empty content")
-        except Exception as e:
-            logger.error(f"LLM failure in runtime: {e}")
-            return {"status": "error", "message": f"Model unreachable: {str(e)}"}
+        # 4. EXECUTE LLM CALL — let exceptions propagate so callers see real errors
+        response = await self.router.execute(
+            task=LLMTask.CONVERSATION,
+            messages=messages,
+        )
+        model_text = response.content
+        if not model_text:
+            raise ValueError("LLM returned empty content")
 
-        # 6. POST-GENERATION RISK CHECK
+        # 5. POST-GENERATION RISK CHECK
         risk_decision = self.policy.validate_risk(lead_id, workspace_id, model_text, confidence_score=0.9)
         self.policy.record_decision(risk_decision)
 
@@ -76,13 +93,15 @@ class ConversationAgentRuntime:
             logger.warning(f"Response blocked by risk check: {risk_decision.reason_code}")
             return {"status": "blocked", "reason": risk_decision.reason_code}
 
-        # 7. COMMIT MESSAGE & UPDATE LEAD
-        self._save_message(thread.id, "model", model_text)
-        self._update_lead_after_send(lead_id)
+        # 6. COMMIT MESSAGE & UPDATE LEAD (legacy path only)
+        if history_override is None:
+            thread = self._get_or_create_thread(lead_id, workspace_id)
+            self._save_message(thread.id, "model", model_text)
+            self._update_lead_after_send(lead_id)
 
-        # 8. ASYNC MEMORY REFRESH
-        memory_service = MemoryService(self.session, self.router)
-        await memory_service.refresh_memory(lead_id, thread.id)
+            # 7. ASYNC MEMORY REFRESH
+            memory_service = MemoryService(self.session, self.router)
+            await memory_service.refresh_memory(lead_id, thread.id)
 
         return {"status": "sent", "content": model_text}
 

@@ -1,9 +1,11 @@
 """
 MODULE: Application Background Tasks - Inbound Worker
-PURPOSE: Process inbound messages with thread-bound AI agent decisions.
+PURPOSE: Process inbound messages through the real AI agent pipeline.
+         Each inbound message is handled by ConversationAgentRuntime, which
+         uses the assigned agent's system_prompt, RAG knowledge, lead memory,
+         and MCP tools — exactly the same pipeline as the Playground.
 """
 import asyncio
-import json
 import logging
 import os
 from datetime import datetime
@@ -14,10 +16,10 @@ from sqlmodel import Session, select
 
 from src.infra.database import engine
 from src.adapters.api.dependencies import llm_router
-from src.infra.llm.schemas import LLMTask
 from src.adapters.db.messaging_models import UnifiedMessage, UnifiedThread, OutboundQueue, ThreadInsight
 from src.adapters.db.crm_models import Lead, Workspace
 from src.adapters.db.agent_models import Agent
+from src.app.runtime.agent_runtime import ConversationAgentRuntime
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +28,16 @@ INBOUND_POLL_SECONDS = float(os.getenv("MESSAGING_INBOUND_POLL_SECONDS", "2"))
 INBOUND_BATCH_SIZE = int(os.getenv("MESSAGING_INBOUND_BATCH_SIZE", "5"))
 
 
+# ---------------------------------------------------------------------------
+# Thread / Agent resolution
+# ---------------------------------------------------------------------------
+
 def _resolve_thread_agent(session: Session, message: UnifiedMessage) -> Optional[Agent]:
+    """
+    Find the Agent assigned to this thread.
+    If none is assigned yet, pick one from the lead's workspace (or the first
+    agent in the tenant) and persist it on the thread for future messages.
+    """
     if not message.thread_id:
         return None
 
@@ -40,7 +51,11 @@ def _resolve_thread_agent(session: Session, message: UnifiedMessage) -> Optional
             return None
 
         workspace = session.get(Workspace, lead.workspace_id)
-        candidate_agent_id = workspace.agent_id if workspace and workspace.tenant_id == message.tenant_id else None
+        candidate_agent_id = (
+            workspace.agent_id
+            if workspace and workspace.tenant_id == message.tenant_id
+            else None
+        )
         if candidate_agent_id is None:
             fallback = session.exec(
                 select(Agent)
@@ -50,6 +65,10 @@ def _resolve_thread_agent(session: Session, message: UnifiedMessage) -> Optional
             candidate_agent_id = fallback.id if fallback else None
 
         if candidate_agent_id is None:
+            logger.warning(
+                "No agent found for tenant_id=%s, message_id=%s — marking human_takeover",
+                message.tenant_id, message.id,
+            )
             return None
 
         thread.agent_id = candidate_agent_id
@@ -64,14 +83,24 @@ def _resolve_thread_agent(session: Session, message: UnifiedMessage) -> Optional
     return agent
 
 
+# ---------------------------------------------------------------------------
+# History builder — reads from et_messages (UnifiedMessage), NOT ChatMessageNew
+# ---------------------------------------------------------------------------
+
 def _build_thread_history(session: Session, message: UnifiedMessage) -> List[Dict[str, str]]:
+    """
+    Return the last 12 messages in this thread as OpenAI-style role/content dicts.
+    Excludes the current inbound message (it will be passed as user_message separately).
+    """
     if not message.thread_id:
         return []
+
     items = session.exec(
         select(UnifiedMessage)
         .where(
             UnifiedMessage.tenant_id == message.tenant_id,
             UnifiedMessage.thread_id == message.thread_id,
+            UnifiedMessage.id != message.id,          # exclude current message
         )
         .order_by(UnifiedMessage.created_at.desc())
         .limit(12)
@@ -87,91 +116,16 @@ def _build_thread_history(session: Session, message: UnifiedMessage) -> List[Dic
     return history
 
 
-async def _decide_action_and_reply(agent: Agent, history: List[Dict[str, str]]) -> Dict[str, Any]:
-    system_prompt = (
-        f"{agent.system_prompt}\n\n"
-        "You are deciding inbound handling. Return strict JSON only with keys: "
-        "action, reply_text, summary, label. "
-        "action must be one of: auto_reply, follow_up, human_takeover."
-    )
-    if not history:
-        history = [{"role": "user", "content": "No inbound content available."}]
+# ---------------------------------------------------------------------------
+# Outbound enqueue — writes reply to et_messages + et_outbound_queue
+# ---------------------------------------------------------------------------
 
-    try:
-        response = await llm_router.execute(
-            task=LLMTask.EXTRACTION,
-            messages=[{"role": "system", "content": system_prompt}] + history,
-            response_format={"type": "json_object"},
-            temperature=0.2,
-        )
-    except Exception as exc:
-        logger.warning("Inbound decision LLM failed, using fallback auto reply: %s", exc)
-        return {
-            "action": "auto_reply",
-            "reply_text": "Thanks for your message. I got it and will help you shortly.",
-            "summary": "fallback due to llm error",
-            "label": "fallback_auto_reply",
-        }
-
-    raw = (response.content or "").strip()
-    if not raw:
-        return {"action": "human_takeover", "reply_text": "", "summary": "", "label": "unknown"}
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        return {"action": "human_takeover", "reply_text": "", "summary": raw[:500], "label": "parse_error"}
-
-    action = str(data.get("action", "human_takeover")).strip().lower()
-    if action not in {"auto_reply", "follow_up", "human_takeover"}:
-        action = "human_takeover"
-    return {
-        "action": action,
-        "reply_text": str(data.get("reply_text") or "").strip(),
-        "summary": str(data.get("summary") or "").strip(),
-        "label": str(data.get("label") or action).strip()[:64],
-    }
-
-
-def _persist_thread_insight(
-    session: Session,
-    message: UnifiedMessage,
-    action: str,
-    summary: str,
-    label: str,
-):
-    if not message.thread_id:
-        return
-    insight = session.exec(
-        select(ThreadInsight).where(
-            ThreadInsight.tenant_id == message.tenant_id,
-            ThreadInsight.thread_id == message.thread_id,
-        )
-    ).first()
-    now = datetime.utcnow()
-    if not insight:
-        insight = ThreadInsight(
-            tenant_id=message.tenant_id,
-            thread_id=message.thread_id,
-            lead_id=message.lead_id,
-            label=label or action,
-            next_step=action,
-            summary=summary or None,
-            updated_at=now,
-        )
-    else:
-        insight.label = label or action
-        insight.next_step = action
-        insight.summary = summary or insight.summary
-        insight.updated_at = now
-    session.add(insight)
-
-
-def _enqueue_auto_reply(
+def _enqueue_outbound_reply(
     session: Session,
     inbound_message: UnifiedMessage,
     agent_id: int,
     text: str,
-):
+) -> UnifiedMessage:
     now = datetime.utcnow()
     outbound = UnifiedMessage(
         tenant_id=inbound_message.tenant_id,
@@ -184,7 +138,7 @@ def _enqueue_auto_reply(
         message_type="text",
         text_content=text,
         raw_payload={
-            "source": "inbound_worker",
+            "source": "ai_agent",
             "inbound_message_id": inbound_message.id,
             "agent_id": agent_id,
         },
@@ -209,15 +163,22 @@ def _enqueue_auto_reply(
     )
     session.add(queue)
     session.commit()
+    return outbound
 
+
+# ---------------------------------------------------------------------------
+# Core processor — one inbound message through the real AI agent pipeline
+# ---------------------------------------------------------------------------
 
 async def _process_one_inbound(session: Session, message: UnifiedMessage):
+    # Mark as in-progress immediately so the batch loop doesn't re-pick it
     message.delivery_status = "inbound_processing"
     message.updated_at = datetime.utcnow()
     session.add(message)
     session.commit()
     session.refresh(message)
 
+    # 1. Resolve which agent handles this thread
     agent = _resolve_thread_agent(session, message)
     if not agent:
         message.delivery_status = "inbound_human_takeover"
@@ -226,30 +187,75 @@ async def _process_one_inbound(session: Session, message: UnifiedMessage):
         session.commit()
         return
 
-    history = _build_thread_history(session, message)
-    decision = await _decide_action_and_reply(agent, history)
-    action = decision["action"]
+    # 2. Resolve workspace_id from the lead (required by ConversationAgentRuntime)
+    lead = session.get(Lead, message.lead_id)
+    if not lead or not lead.workspace_id:
+        logger.error(
+            "Cannot process inbound message_id=%s: lead %s has no workspace_id",
+            message.id, message.lead_id,
+        )
+        message.delivery_status = "inbound_error"
+        message.updated_at = datetime.utcnow()
+        session.add(message)
+        session.commit()
+        return
 
-    _persist_thread_insight(
-        session=session,
-        message=message,
-        action=action,
-        summary=decision["summary"],
-        label=decision["label"],
+    # 3. Build conversation history from et_messages (the real message store)
+    history = _build_thread_history(session, message)
+
+    # 4. Run the REAL AI agent pipeline
+    #    - Uses agent.system_prompt
+    #    - Runs RAG over agent's knowledge files
+    #    - Loads lead memory
+    #    - Respects policy / risk checks
+    #    - history_override bypasses ChatMessageNew so we stay in et_messages
+    logger.info(
+        "Running AI agent (id=%s, name=%s) for inbound message_id=%s (lead=%s)",
+        agent.id, agent.name, message.id, message.lead_id,
+    )
+    runtime = ConversationAgentRuntime(session, llm_router)
+    result = await runtime.run_turn(
+        lead_id=message.lead_id,
+        workspace_id=lead.workspace_id,
+        user_message=message.text_content or "",
+        agent_id_override=agent.id,
+        bypass_safety=False,
+        history_override=history,
     )
 
-    if action == "auto_reply" and decision["reply_text"]:
-        _enqueue_auto_reply(session, message, agent.id, decision["reply_text"])
-        message.delivery_status = "inbound_auto_reply_queued"
-    elif action == "follow_up":
-        message.delivery_status = "inbound_follow_up"
-    else:
+    # 5. Handle the result
+    status = result.get("status")
+
+    if status == "sent":
+        reply_text = result["content"]
+        _enqueue_outbound_reply(session, message, agent.id, reply_text)
+        message.delivery_status = "inbound_ai_replied"
+        logger.info(
+            "AI reply enqueued for message_id=%s: %.80s…", message.id, reply_text
+        )
+
+    elif status == "blocked":
+        reason = result.get("reason", "unknown")
+        logger.warning(
+            "AI reply blocked by policy for message_id=%s: %s", message.id, reason
+        )
         message.delivery_status = "inbound_human_takeover"
+
+    else:
+        # status == "error" or anything unexpected — raise so outer handler logs it
+        raise RuntimeError(
+            f"ConversationAgentRuntime returned unexpected status '{status}' "
+            f"for message_id={message.id}: {result}"
+        )
 
     message.updated_at = datetime.utcnow()
     session.add(message)
     session.commit()
 
+
+# ---------------------------------------------------------------------------
+# Background worker loop
+# ---------------------------------------------------------------------------
 
 async def background_inbound_worker_loop():
     logger.info(
@@ -277,7 +283,10 @@ async def background_inbound_worker_loop():
                         await _process_one_inbound(session, inbound)
                         processed += 1
                     except Exception as exc:
-                        logger.exception("Inbound processing error for message_id=%s: %s", inbound.id, exc)
+                        logger.exception(
+                            "Inbound processing error for message_id=%s: %s",
+                            inbound.id, exc,
+                        )
                         session.rollback()
                         db_inbound = session.get(UnifiedMessage, inbound.id)
                         if db_inbound:
@@ -285,6 +294,7 @@ async def background_inbound_worker_loop():
                             db_inbound.updated_at = datetime.utcnow()
                             session.add(db_inbound)
                             session.commit()
+
         except Exception as exc:
             logger.exception("Inbound worker loop error: %s", exc)
 

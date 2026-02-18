@@ -123,32 +123,6 @@ const setLeadMode = async (lead, mode) => {
   }
 }
 
-const verifyLeadLid = async (lead) => {
-  actionError.value = ''
-  actionMessage.value = ''
-  actionLoadingLeadId.value = lead.id
-  try {
-    const updated = await request(`/workspaces/${store.activeWorkspaceId}/leads/${lead.id}/verify-whatsapp`, {
-      method: 'POST'
-    })
-    if (updated?.is_whatsapp_valid === true) {
-      actionMessage.value = updated?.whatsapp_lid
-        ? `Lead ${lead.name || lead.id}: valid WhatsApp, LID=${updated.whatsapp_lid}.`
-        : `Lead ${lead.name || lead.id}: valid WhatsApp (LID not returned).`
-    } else if (updated?.is_whatsapp_valid === false) {
-      actionMessage.value = `Lead ${lead.name || lead.id}: not a valid WhatsApp (${updated?.verify_error || 'no detail'}).`
-    } else {
-      actionMessage.value = `Lead ${lead.name || lead.id}: verification completed with unknown status.`
-    }
-    await fetchLeads()
-    await runMvpCheck()
-  } catch (e) {
-    actionError.value = e.message || 'Failed to verify LID'
-  } finally {
-    actionLoadingLeadId.value = null
-  }
-}
-
 const deleteLead = async (lead) => {
   actionError.value = ''
   actionMessage.value = ''
@@ -344,7 +318,7 @@ watch(() => store.activeWorkspaceId, async () => {
             <th class="px-8 py-5">Contact</th>
             <th class="px-8 py-5">Status</th>
             <th class="px-8 py-5">Agent Activity</th>
-            <th class="px-8 py-5">Identity</th>
+            <th class="px-8 py-5">Contact ID</th>
             <th class="px-8 py-5 text-right">Conversation</th>
           </tr>
         </thead>
@@ -383,24 +357,8 @@ watch(() => store.activeWorkspaceId, async () => {
                 </div>
             </td>
             <td class="px-8 py-6">
-                <div class="flex items-center gap-2">
-                  <TuiBadge :variant="lead.is_whatsapp_valid === true ? 'success' : lead.is_whatsapp_valid === false ? 'warning' : 'muted'" class="!rounded-lg px-2 py-1 text-[10px] font-black uppercase tracking-wider">
-                    {{ lead.is_whatsapp_valid === true ? 'WHATSAPP VALID' : lead.is_whatsapp_valid === false ? 'WHATSAPP INVALID' : 'NOT VERIFIED' }}
-                  </TuiBadge>
-                </div>
                 <div class="mt-2 text-[10px] text-slate-500 font-mono break-all">
-                  LID: {{ lead.whatsapp_lid || 'none' }}
-                </div>
-                <div class="mt-2 text-[10px] text-slate-500 font-mono break-all">
-                  Last verify: {{ lead.last_verify_at ? new Date(lead.last_verify_at).toLocaleString() : 'never' }}
-                </div>
-                <div class="mt-1 text-[10px] text-rose-600 break-all" v-if="lead.verify_error">
-                  Error: {{ lead.verify_error }}
-                </div>
-                <div class="mt-2">
-                  <TuiButton variant="outline" size="sm" class="!rounded-xl" :loading="actionLoadingLeadId === lead.id" @click="verifyLeadLid(lead)">
-                    Verify LID
-                  </TuiButton>
+                  {{ lead.external_id || 'none' }}
                 </div>
             </td>
             <td class="px-8 py-6 text-right">
