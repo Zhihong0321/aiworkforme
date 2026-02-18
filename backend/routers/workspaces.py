@@ -13,6 +13,9 @@ from src.adapters.db.crm_models import Workspace, Lead, StrategyVersion, Strateg
 from src.adapters.db.agent_models import Agent
 from src.adapters.api.dependencies import require_tenant_access, AuthContext
 from src.adapters.db.channel_models import ChannelSession, ChannelType, SessionStatus
+from src.adapters.db.messaging_models import UnifiedMessage, UnifiedThread, OutboundQueue, ThreadInsight
+from src.adapters.db.crm_models import ConversationThread, ChatMessageNew, PolicyDecision, LeadMemory
+from src.adapters.db.calendar_models import CalendarEvent
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["Workspace Management"])
 logger = logging.getLogger(__name__)
@@ -242,6 +245,114 @@ def verify_lead_whatsapp(
     _verify_lead_with_baileys(session, auth.tenant.id, lead)
     session.refresh(lead)
     return lead
+
+
+@router.delete("/{workspace_id}/leads/{lead_id}")
+def delete_lead(
+    workspace_id: int,
+    lead_id: int,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    ws = session.get(Workspace, workspace_id)
+    if not ws or ws.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    lead = session.get(Lead, lead_id)
+    if not lead or lead.tenant_id != auth.tenant.id or lead.workspace_id != workspace_id:
+        raise HTTPException(status_code=404, detail="Lead not found")
+
+    # Unified messaging cleanup.
+    unified_messages = session.exec(
+        select(UnifiedMessage).where(
+            UnifiedMessage.tenant_id == auth.tenant.id,
+            UnifiedMessage.lead_id == lead.id,
+        )
+    ).all()
+    message_ids = [m.id for m in unified_messages if m.id is not None]
+    if message_ids:
+        queue_rows = session.exec(
+            select(OutboundQueue).where(
+                OutboundQueue.tenant_id == auth.tenant.id,
+                OutboundQueue.message_id.in_(message_ids),
+            )
+        ).all()
+        for row in queue_rows:
+            session.delete(row)
+
+    thread_rows = session.exec(
+        select(UnifiedThread).where(
+            UnifiedThread.tenant_id == auth.tenant.id,
+            UnifiedThread.lead_id == lead.id,
+        )
+    ).all()
+    thread_ids = [t.id for t in thread_rows if t.id is not None]
+    if thread_ids:
+        insight_rows = session.exec(
+            select(ThreadInsight).where(
+                ThreadInsight.tenant_id == auth.tenant.id,
+                ThreadInsight.thread_id.in_(thread_ids),
+            )
+        ).all()
+        for row in insight_rows:
+            session.delete(row)
+
+    for row in unified_messages:
+        session.delete(row)
+    for row in thread_rows:
+        session.delete(row)
+
+    # Legacy conversation cleanup.
+    legacy_threads = session.exec(
+        select(ConversationThread).where(
+            ConversationThread.tenant_id == auth.tenant.id,
+            ConversationThread.lead_id == lead.id,
+        )
+    ).all()
+    legacy_thread_ids = [t.id for t in legacy_threads if t.id is not None]
+    if legacy_thread_ids:
+        legacy_messages = session.exec(
+            select(ChatMessageNew).where(
+                ChatMessageNew.tenant_id == auth.tenant.id,
+                ChatMessageNew.thread_id.in_(legacy_thread_ids),
+            )
+        ).all()
+        for row in legacy_messages:
+            session.delete(row)
+    for row in legacy_threads:
+        session.delete(row)
+
+    # Other lead-linked rows.
+    policy_rows = session.exec(
+        select(PolicyDecision).where(
+            PolicyDecision.tenant_id == auth.tenant.id,
+            PolicyDecision.lead_id == lead.id,
+        )
+    ).all()
+    for row in policy_rows:
+        session.delete(row)
+
+    memory_row = session.exec(
+        select(LeadMemory).where(
+            LeadMemory.tenant_id == auth.tenant.id,
+            LeadMemory.lead_id == lead.id,
+        )
+    ).first()
+    if memory_row:
+        session.delete(memory_row)
+
+    calendar_rows = session.exec(
+        select(CalendarEvent).where(
+            CalendarEvent.tenant_id == auth.tenant.id,
+            CalendarEvent.lead_id == lead.id,
+        )
+    ).all()
+    for row in calendar_rows:
+        session.delete(row)
+
+    session.delete(lead)
+    session.commit()
+    return {"status": "deleted", "lead_id": lead_id}
 
 
 @router.post("/{workspace_id}/leads/{lead_id}/mode", response_model=Lead)

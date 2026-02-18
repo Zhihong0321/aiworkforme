@@ -123,6 +123,52 @@ const setLeadMode = async (lead, mode) => {
   }
 }
 
+const verifyLeadLid = async (lead) => {
+  actionError.value = ''
+  actionMessage.value = ''
+  actionLoadingLeadId.value = lead.id
+  try {
+    const updated = await request(`/workspaces/${store.activeWorkspaceId}/leads/${lead.id}/verify-whatsapp`, {
+      method: 'POST'
+    })
+    actionMessage.value = updated?.whatsapp_lid
+      ? `Lead ${lead.name || lead.id}: LID verified (${updated.whatsapp_lid}).`
+      : `Lead ${lead.name || lead.id}: LID not resolved yet (check Baileys session/number).`
+    await fetchLeads()
+    await runMvpCheck()
+  } catch (e) {
+    actionError.value = e.message || 'Failed to verify LID'
+  } finally {
+    actionLoadingLeadId.value = null
+  }
+}
+
+const deleteLead = async (lead) => {
+  actionError.value = ''
+  actionMessage.value = ''
+  const ok = window.confirm(`Delete lead "${lead.name || lead.external_id}" and clear all conversation history?`)
+  if (!ok) return
+
+  actionLoadingLeadId.value = lead.id
+  try {
+    await request(`/workspaces/${store.activeWorkspaceId}/leads/${lead.id}`, {
+      method: 'DELETE'
+    })
+    actionMessage.value = `Lead ${lead.name || lead.id} deleted. Conversation cleared.`
+    await fetchLeads()
+    await runMvpCheck()
+    if (chatOpen.value && chatLead.value?.id === lead.id) {
+      chatOpen.value = false
+      chatLead.value = null
+      chatMessages.value = []
+    }
+  } catch (e) {
+    actionError.value = e.message || 'Failed to delete lead'
+  } finally {
+    actionLoadingLeadId.value = null
+  }
+}
+
 const reviewLeadChat = async (lead) => {
   chatOpen.value = true
   chatLoading.value = true
@@ -292,6 +338,7 @@ watch(() => store.activeWorkspaceId, async () => {
             <th class="px-8 py-5">Contact</th>
             <th class="px-8 py-5">Status</th>
             <th class="px-8 py-5">Agent Activity</th>
+            <th class="px-8 py-5">Identity</th>
             <th class="px-8 py-5 text-right">Conversation</th>
           </tr>
         </thead>
@@ -313,6 +360,7 @@ watch(() => store.activeWorkspaceId, async () => {
                 <div class="flex items-center gap-3 mt-2">
                    <TuiButton variant="outline" size="sm" class="!rounded-xl" :loading="actionLoadingLeadId === lead.id" @click="setLeadMode(lead, 'on_hold')">On Hold</TuiButton>
                    <TuiButton size="sm" class="!rounded-xl" :loading="actionLoadingLeadId === lead.id" @click="setLeadMode(lead, 'working')">Working</TuiButton>
+                   <TuiButton variant="outline" size="sm" class="!rounded-xl !border-red-200 !text-red-700 hover:!bg-red-50" :loading="actionLoadingLeadId === lead.id" @click="deleteLead(lead)">Delete</TuiButton>
                 </div>
                 <div class="flex items-center gap-3 mt-2">
                    <div v-if="lead.next_followup_at" class="flex flex-col">
@@ -326,6 +374,21 @@ watch(() => store.activeWorkspaceId, async () => {
                        <span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
                        <span class="text-[10px] font-black uppercase tracking-tight">On Hold</span>
                    </div>
+                </div>
+            </td>
+            <td class="px-8 py-6">
+                <div class="flex items-center gap-2">
+                  <TuiBadge :variant="lead.whatsapp_lid ? 'success' : 'warning'" class="!rounded-lg px-2 py-1 text-[10px] font-black uppercase tracking-wider">
+                    {{ lead.whatsapp_lid ? 'LID VERIFIED' : 'LID MISSING' }}
+                  </TuiBadge>
+                </div>
+                <div class="mt-2 text-[10px] text-slate-500 font-mono break-all">
+                  {{ lead.whatsapp_lid || 'No LID yet' }}
+                </div>
+                <div class="mt-2">
+                  <TuiButton variant="outline" size="sm" class="!rounded-xl" :loading="actionLoadingLeadId === lead.id" @click="verifyLeadLid(lead)">
+                    Verify LID
+                  </TuiButton>
                 </div>
             </td>
             <td class="px-8 py-6 text-right">
