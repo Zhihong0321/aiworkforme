@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from sqlmodel import text
 from sqlalchemy.engine import Engine
+from sqlalchemy import inspect
 
 logger = logging.getLogger(__name__)
 
@@ -111,3 +112,62 @@ def apply_sql_migration_file(engine: Engine, sql_file_path: str) -> bool:
 
     logger.info("SQL migration applied successfully: %s", path)
     return True
+
+
+def apply_message_usage_columns_migration(engine: Engine):
+    """
+    Ensures et_messages has LLM usage columns required by current code.
+    Safe to run repeatedly.
+    """
+    llm_columns = {
+        "llm_provider": "VARCHAR(32)",
+        "llm_model": "VARCHAR(128)",
+        "llm_prompt_tokens": "INTEGER",
+        "llm_completion_tokens": "INTEGER",
+        "llm_total_tokens": "INTEGER",
+        "llm_estimated_cost_usd": "NUMERIC(12,6)",
+    }
+
+    dialect = engine.dialect.name
+    if dialect == "postgresql":
+        with engine.begin() as conn:
+            for name, ddl in llm_columns.items():
+                conn.execute(text(f"ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS {name} {ddl}"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_messages_llm_provider ON et_messages(llm_provider)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_messages_llm_model ON et_messages(llm_model)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_messages_llm_total_tokens ON et_messages(llm_total_tokens)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_messages_tenant_created ON et_messages(tenant_id, created_at)"))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_messages_tenant_provider_created "
+                    "ON et_messages(tenant_id, llm_provider, created_at)"
+                )
+            )
+        logger.info("Message usage columns migration applied for PostgreSQL.")
+        return
+
+    if dialect == "sqlite":
+        insp = inspect(engine)
+        tables = set(insp.get_table_names())
+        if "et_messages" not in tables:
+            logger.warning("Skipping message usage migration: et_messages not found (sqlite).")
+            return
+        existing_cols = {col["name"] for col in insp.get_columns("et_messages")}
+        with engine.begin() as conn:
+            for name, ddl in llm_columns.items():
+                if name not in existing_cols:
+                    conn.execute(text(f"ALTER TABLE et_messages ADD COLUMN {name} {ddl}"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_messages_llm_provider ON et_messages(llm_provider)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_messages_llm_model ON et_messages(llm_model)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_messages_llm_total_tokens ON et_messages(llm_total_tokens)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_messages_tenant_created ON et_messages(tenant_id, created_at)"))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_messages_tenant_provider_created "
+                    "ON et_messages(tenant_id, llm_provider, created_at)"
+                )
+            )
+        logger.info("Message usage columns migration applied for SQLite.")
+        return
+
+    logger.warning("Skipping message usage columns migration for unsupported dialect: %s", dialect)

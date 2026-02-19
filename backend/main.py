@@ -13,7 +13,11 @@ from sqlmodel import Session, select
 from datetime import datetime
 
 from src.infra.database import engine, get_session
-from src.infra.migrations import apply_multitenant_additive_migration, apply_sql_migration_file
+from src.infra.migrations import (
+    apply_multitenant_additive_migration,
+    apply_sql_migration_file,
+    apply_message_usage_columns_migration,
+)
 from src.infra.seeding import (
     seed_identity_data, 
     seed_mcp_scripts, 
@@ -101,6 +105,7 @@ async def on_startup():
         apply_multitenant_additive_migration(engine, default_tenant_id)
         sql_migration_path = os.path.join(os.path.dirname(__file__), "sql", "messaging_m1_unified_schema.sql")
         apply_sql_migration_file(engine, sql_migration_path)
+        apply_message_usage_columns_migration(engine)
         
         # 3. Content Seeding
         seed_mcp_scripts()
