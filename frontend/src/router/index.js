@@ -12,6 +12,8 @@ import Calendar from '../views/Calendar.vue'
 import Agents from '../views/Agents.vue'
 import Login from '../views/Login.vue'
 import PlatformLogin from '../views/PlatformLogin.vue'
+import MessageHistory from '../views/MessageHistory.vue'
+import ModelBenchmark from '../views/ModelBenchmark.vue'
 
 const routes = [
   {
@@ -88,6 +90,18 @@ const routes = [
     path: '/settings',
     name: 'Settings',
     component: Settings,
+    meta: { requiresAuth: true, requiresPlatformAdmin: true }
+  },
+  {
+    path: '/settings/history',
+    name: 'Message History',
+    component: MessageHistory,
+    meta: { requiresAuth: true, requiresPlatformAdmin: true }
+  },
+  {
+    path: '/settings/benchmark',
+    name: 'Model Benchmark',
+    component: ModelBenchmark,
     meta: { requiresAuth: true, requiresPlatformAdmin: true }
   },
   {

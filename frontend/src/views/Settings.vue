@@ -32,6 +32,7 @@ const isValidating = ref(false)
 const llmTasks = ref([])
 const llmProviders = ref([])
 const llmRouting = ref({})
+const llmModels = ref([])
 const llmRoutingLoading = ref(true)
 const recordContextPrompt = ref(false)
 const recordContextPromptLoading = ref(true)
@@ -53,12 +54,13 @@ const fetchStatus = async () => {
   llmRoutingLoading.value = true
   recordContextPromptLoading.value = true
   try {
-    const [zaiData, uniData, tasksData, providersData, routingData, contextPromptData] = await Promise.all([
+    const [zaiData, uniData, tasksData, providersData, routingData, modelsData, contextPromptData] = await Promise.all([
       request('/settings/zai-key'),
       request('/settings/uniapi-key'),
       request('/platform/llm/tasks'),
       request('/platform/llm/providers'),
       request('/platform/llm/routing'),
+      request('/platform/llm/models'),
       request('/platform/settings/record-context-prompt')
     ])
     
@@ -71,6 +73,7 @@ const fetchStatus = async () => {
     llmTasks.value = tasksData
     llmProviders.value = providersData
     llmRouting.value = routingData
+    llmModels.value = Array.isArray(modelsData) ? modelsData : []
     recordContextPrompt.value = !!contextPromptData.value
     
   } catch (error) {
@@ -297,7 +300,7 @@ onMounted(() => {
         </TuiCard>
 
         <!-- UNIAPI CARD -->
-        <TuiCard title="UniAPI (Fallback)" subtitle="targeting Google Gemini models">
+        <TuiCard title="UniAPI" subtitle="OpenAI-compatible + Gemini-native support">
           <div class="space-y-4">
             <div class="flex items-center gap-2">
               <TuiBadge :variant="uniStatus === 'set' ? 'success' : 'warning'">
@@ -354,6 +357,21 @@ onMounted(() => {
           <div class="pt-4 border-t border-slate-100 flex justify-end">
             <TuiButton @click="saveRouting" :loading="isSaving" size="sm">Save Routing Strategy</TuiButton>
           </div>
+        </div>
+      </TuiCard>
+
+      <TuiCard title="Available LLM Models" subtitle="Configured provider catalog returned by platform API">
+        <div v-if="llmRoutingLoading" class="text-sm text-slate-500 py-4">Loading models...</div>
+        <div v-else-if="llmModels.length === 0" class="text-sm text-slate-500 py-4">No models published.</div>
+        <div v-else class="space-y-2">
+          <article
+            v-for="item in llmModels"
+            :key="`${item.provider}:${item.schema}:${item.model}`"
+            class="rounded-xl border border-slate-200 bg-white px-3 py-2"
+          >
+            <p class="text-xs font-black text-slate-800">{{ item.model }}</p>
+            <p class="text-[10px] uppercase tracking-widest text-slate-500">{{ item.provider }} · {{ item.schema }}</p>
+          </article>
         </div>
       </TuiCard>
 

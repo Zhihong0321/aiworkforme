@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+import time
 from datetime import datetime
 from typing import List, Optional
 
@@ -26,7 +27,7 @@ from src.infra.schema_checks import evaluate_message_schema_compat
 from src.adapters.zai.client import ZaiClient
 from src.adapters.db.audit_recorder import record_admin_audit
 from src.infra.llm.schemas import LLMTask
-from src.adapters.api.dependencies import refresh_llm_router_config
+from src.adapters.api.dependencies import refresh_llm_router_config, refresh_provider_keys_from_db
 
 
 router = APIRouter(prefix="/api/v1/platform", tags=["Platform Admin"])
@@ -167,6 +168,52 @@ class BooleanSettingResponse(SQLModel):
 
 class BooleanSettingUpdateRequest(SQLModel):
     value: bool
+
+
+class BenchmarkRunItem(SQLModel):
+    model: str
+    provider: str
+    schema: str | None = None
+    run_index: int
+    ok: bool
+    latency_ms: int | None = None
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    error: str | None = None
+
+
+class BenchmarkModelSummary(SQLModel):
+    model: str
+    provider: str
+    schema: str | None = None
+    runs: int
+    success_runs: int
+    failed_runs: int
+    avg_latency_ms: float | None = None
+    min_latency_ms: int | None = None
+    max_latency_ms: int | None = None
+    avg_total_tokens: float | None = None
+    avg_prompt_tokens: float | None = None
+    avg_completion_tokens: float | None = None
+
+
+class ModelBenchmarkRequest(SQLModel):
+    models: List[str]
+    prompt: str = "Summarize solar lead qualification in one sentence."
+    runs_per_model: int = 2
+    max_tokens: int = 256
+    temperature: float = 0.2
+    provider: str = "uniapi"
+
+
+class ModelBenchmarkResponse(SQLModel):
+    provider: str
+    generated_at: datetime
+    prompt: str
+    runs_per_model: int
+    results: List[BenchmarkRunItem]
+    summary: List[BenchmarkModelSummary]
 
 
 PROVIDER_SETTINGS = {
@@ -781,11 +828,8 @@ def upsert_api_key(
 
     if setting_key == "zai_api_key":
         zai_client.update_api_key(api_key)
-        import os
-        os.environ["ZAI_API_KEY"] = api_key
-    elif setting_key == "uniapi_key":
-        import os
-        os.environ["UNIAPI_API_KEY"] = api_key
+
+    refresh_provider_keys_from_db(session)
 
     masked = _mask_secret(api_key, head, tail)
     record_admin_audit(
@@ -814,6 +858,8 @@ def revoke_api_key(
 
     if setting_key == "zai_api_key":
         zai_client.update_api_key("")
+
+    refresh_provider_keys_from_db(session)
 
     record_admin_audit(
         session,
@@ -926,6 +972,172 @@ def list_llm_tasks(
     _context: AuthContext = Depends(require_platform_admin),
 ):
     return [t.value for t in LLMTask]
+
+
+@router.get("/llm/models")
+def list_llm_models(
+    _context: AuthContext = Depends(require_platform_admin),
+):
+    from src.adapters.api.dependencies import llm_router
+
+    results: List[dict] = []
+    for provider_name, provider in llm_router.providers.items():
+        if hasattr(provider, "list_supported_models"):
+            try:
+                items = provider.list_supported_models()
+                if isinstance(items, list):
+                    results.extend(items)
+            except Exception:
+                continue
+        else:
+            results.append({"provider": provider_name, "model": "dynamic", "schema": "runtime"})
+    return results
+
+
+@router.post("/llm/benchmark", response_model=ModelBenchmarkResponse)
+async def benchmark_llm_models(
+    payload: ModelBenchmarkRequest,
+    _context: AuthContext = Depends(require_platform_admin),
+):
+    from src.adapters.api.dependencies import llm_router
+
+    provider_name = (payload.provider or "").strip().lower() or "uniapi"
+    if provider_name not in llm_router.providers:
+        raise HTTPException(status_code=400, detail=f"Unknown provider: {provider_name}")
+
+    provider = llm_router.providers.get(provider_name)
+    if not provider or not provider.is_healthy():
+        raise HTTPException(status_code=400, detail=f"Provider '{provider_name}' is not configured")
+
+    models = [m.strip() for m in (payload.models or []) if isinstance(m, str) and m.strip()]
+    if not models:
+        raise HTTPException(status_code=400, detail="At least one model is required")
+
+    runs_per_model = min(max(int(payload.runs_per_model or 1), 1), 20)
+    prompt = (payload.prompt or "").strip()
+    if not prompt:
+        raise HTTPException(status_code=400, detail="Prompt is required")
+
+    max_tokens = min(max(int(payload.max_tokens or 64), 1), 4096)
+    temperature = float(payload.temperature if payload.temperature is not None else 0.2)
+    if temperature < 0:
+        temperature = 0
+    if temperature > 2:
+        temperature = 2
+
+    run_results: List[BenchmarkRunItem] = []
+    summary_map: dict[str, dict] = {}
+
+    for model in models:
+        for run_index in range(1, runs_per_model + 1):
+            t0 = time.perf_counter()
+            try:
+                response = await llm_router.execute(
+                    task=LLMTask.CONVERSATION,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    model=model,
+                    provider=provider_name,
+                    disable_fallback=True,
+                )
+                latency_ms = int((time.perf_counter() - t0) * 1000)
+                usage = response.usage or {}
+                prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+                completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+                total_tokens = int(usage.get("total_tokens", 0) or (prompt_tokens + completion_tokens))
+                provider_info = response.provider_info or {}
+                schema = provider_info.get("schema")
+
+                row = BenchmarkRunItem(
+                    model=model,
+                    provider=provider_info.get("provider") or provider_name,
+                    schema=schema,
+                    run_index=run_index,
+                    ok=True,
+                    latency_ms=latency_ms,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    total_tokens=total_tokens,
+                )
+            except Exception as exc:
+                latency_ms = int((time.perf_counter() - t0) * 1000)
+                row = BenchmarkRunItem(
+                    model=model,
+                    provider=provider_name,
+                    schema=None,
+                    run_index=run_index,
+                    ok=False,
+                    latency_ms=latency_ms,
+                    error=str(exc),
+                )
+            run_results.append(row)
+
+            key = f"{row.provider}|{row.model}|{row.schema or ''}"
+            bucket = summary_map.setdefault(
+                key,
+                {
+                    "model": row.model,
+                    "provider": row.provider,
+                    "schema": row.schema,
+                    "runs": 0,
+                    "success_runs": 0,
+                    "failed_runs": 0,
+                    "latencies": [],
+                    "prompt_tokens": [],
+                    "completion_tokens": [],
+                    "total_tokens": [],
+                },
+            )
+            bucket["runs"] += 1
+            if row.ok:
+                bucket["success_runs"] += 1
+                if row.latency_ms is not None:
+                    bucket["latencies"].append(row.latency_ms)
+                bucket["prompt_tokens"].append(row.prompt_tokens)
+                bucket["completion_tokens"].append(row.completion_tokens)
+                bucket["total_tokens"].append(row.total_tokens)
+            else:
+                bucket["failed_runs"] += 1
+
+    summaries: List[BenchmarkModelSummary] = []
+    for item in summary_map.values():
+        latencies = item["latencies"]
+        prompt_tokens = item["prompt_tokens"]
+        completion_tokens = item["completion_tokens"]
+        total_tokens = item["total_tokens"]
+        summaries.append(
+            BenchmarkModelSummary(
+                model=item["model"],
+                provider=item["provider"],
+                schema=item["schema"],
+                runs=item["runs"],
+                success_runs=item["success_runs"],
+                failed_runs=item["failed_runs"],
+                avg_latency_ms=(sum(latencies) / len(latencies)) if latencies else None,
+                min_latency_ms=min(latencies) if latencies else None,
+                max_latency_ms=max(latencies) if latencies else None,
+                avg_total_tokens=(sum(total_tokens) / len(total_tokens)) if total_tokens else None,
+                avg_prompt_tokens=(sum(prompt_tokens) / len(prompt_tokens)) if prompt_tokens else None,
+                avg_completion_tokens=(sum(completion_tokens) / len(completion_tokens)) if completion_tokens else None,
+            )
+        )
+
+    summaries.sort(
+        key=lambda x: (
+            x.avg_latency_ms if x.avg_latency_ms is not None else float("inf"),
+            -(x.success_runs or 0),
+        )
+    )
+
+    return ModelBenchmarkResponse(
+        provider=provider_name,
+        generated_at=datetime.utcnow(),
+        prompt=prompt,
+        runs_per_model=runs_per_model,
+        results=run_results,
+        summary=summaries,
+    )
 
 
 @router.get("/settings/record-context-prompt", response_model=BooleanSettingResponse)

@@ -24,7 +24,11 @@ const isActive = (path) => {
 
 const navItems = computed(() => {
   if (isPlatformAdmin.value) {
-    return [{ label: 'System Settings', path: '/settings' }]
+    return [
+      { label: 'System Settings', path: '/settings' },
+      { label: 'Message History', path: '/settings/history' },
+      { label: 'Model Benchmark', path: '/settings/benchmark' }
+    ]
   }
   return [
     { label: 'My AI Agent', path: '/agents' },

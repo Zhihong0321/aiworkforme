@@ -2,7 +2,6 @@
 MODULE: API Dependencies
 PURPOSE: FastAPI dependency functions for authentication and injection.
 """
-import os
 import logging
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -14,7 +13,7 @@ from sqlmodel import Session, select
 # Internal Imports (Refactored paths)
 from src.adapters.db.audit_models import SecurityEventLog
 from src.adapters.db.user_models import User, TenantMembership
-from src.adapters.db.tenant_models import Tenant
+from src.adapters.db.tenant_models import Tenant, SystemSetting
 from src.domain.entities.enums import Role, TenantStatus
 from src.adapters.mcp.manager import MCPManager
 from src.infra.llm.schemas import LLMTask
@@ -27,9 +26,9 @@ from src.infra.security import TokenError, decode_access_token
 # Singletons (Ideally managed by DI, but kept as is for safe refactor)
 mcp_manager = MCPManager()
 
-# Initialize Providers
-zai_provider = ZaiProvider(api_key=os.getenv("ZAI_API_KEY"))
-uniapi_provider = UniAPIProvider(api_key=os.getenv("UNIAPI_API_KEY"))
+# Initialize Providers (API keys are loaded from Platform Admin settings at startup/runtime)
+zai_provider = ZaiProvider(api_key=None)
+uniapi_provider = UniAPIProvider(api_key=None)
 
 # Initialize Global Router
 llm_router = LLMRouter(
@@ -158,6 +157,15 @@ def get_mcp_manager() -> MCPManager:
 def get_llm_router() -> LLMRouter:
     return llm_router
 
+
+def refresh_provider_keys_from_db(session: Session) -> None:
+    zai_setting = session.get(SystemSetting, "zai_api_key")
+    uni_setting = session.get(SystemSetting, "uniapi_key")
+
+    zai_provider.set_api_key(zai_setting.value if zai_setting and zai_setting.value else "")
+    uniapi_provider.set_api_key(uni_setting.value if uni_setting and uni_setting.value else "")
+
+
 def refresh_llm_router_config(session: Session):
     """
     Reloads the LLM routing configuration from the database.
@@ -175,6 +183,8 @@ def refresh_llm_router_config(session: Session):
             logger.error(f"Failed to refresh LLM routing config: {e}")
 
 # Deprecated: Kept for temporary backward compatibility during refactor
-def get_zai_client():
+def get_zai_client(session: Session = Depends(get_session)):
     from src.adapters.zai.client import ZaiClient
-    return ZaiClient(api_key=os.getenv("ZAI_API_KEY"))
+    setting = session.get(SystemSetting, "zai_api_key")
+    key = setting.value if setting and setting.value else ""
+    return ZaiClient(api_key=key)

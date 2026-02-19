@@ -34,8 +34,10 @@ class LLMRouter:
             else:
                 normalized_messages.append(msg)
 
-        # 2. Select Provider
-        provider_name = self.routing_config.get(task, self.default_provider)
+        # 2. Select Provider (can be explicitly overridden)
+        requested_provider = kwargs.pop("provider", None)
+        disable_fallback = bool(kwargs.pop("disable_fallback", False))
+        provider_name = requested_provider or self.routing_config.get(task, self.default_provider)
         provider = self.providers.get(provider_name)
 
         if not provider:
@@ -70,6 +72,8 @@ class LLMRouter:
         try:
             return await provider.generate(request)
         except Exception as e:
+            if disable_fallback:
+                raise
             logger.warning(f"Primary provider {provider_name} failed for task {task}: {e}. Attempting fallback...")
             return await self._execute_fallback(request, provider_name)
 

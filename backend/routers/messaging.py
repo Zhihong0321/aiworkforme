@@ -447,6 +447,7 @@ async def _generate_initial_outreach_text(
             ],
             temperature=0.7,
             max_tokens=220,
+            model=getattr(agent, "model", None),
         )
         text = (response.content or "").strip()
         if text:

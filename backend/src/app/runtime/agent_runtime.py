@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Optional
 from sqlmodel import Session
 
 from src.adapters.db.crm_models import Lead, Workspace, PolicyDecision, ChatMessageNew, ConversationThread
+from src.adapters.db.agent_models import Agent
 from src.adapters.db.system_settings import get_bool_system_setting
 from src.domain.entities.enums import LeadStage
 from src.app.policy.evaluator import PolicyEvaluator
@@ -96,9 +97,17 @@ class ConversationAgentRuntime:
                 self._save_message(thread.id, "user", user_message)
 
         # 4. EXECUTE LLM CALL — let exceptions propagate so callers see real errors
+        model_override = None
+        workspace = self.session.get(Workspace, workspace_id)
+        candidate_agent_id = agent_id_override or (workspace.agent_id if workspace else None)
+        if candidate_agent_id:
+            agent = self.session.get(Agent, candidate_agent_id)
+            model_override = getattr(agent, "model", None)
+
         response = await self.router.execute(
             task=LLMTask.CONVERSATION,
             messages=messages,
+            model=model_override,
         )
         model_text = response.content
         if not model_text:

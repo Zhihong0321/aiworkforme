@@ -207,6 +207,7 @@ async def chat_with_agent(
                     task=task,
                     messages=messages,
                     tools=tools if tools else None,
+                    model=getattr(agent, "model", None),
                 )
                 t_llm1 = time.perf_counter()
                 logger.info(

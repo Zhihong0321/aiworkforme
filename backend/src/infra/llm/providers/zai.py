@@ -1,4 +1,3 @@
-import os
 import logging
 from typing import List, Dict, Optional, Any
 from openai import AsyncOpenAI
@@ -14,7 +13,7 @@ class ZaiProvider(BaseLLMProvider):
     Adapter for Z.ai (GLM-based) LLM provider.
     """
     def __init__(self, api_key: Optional[str] = None, base_url: str = "https://api.z.ai/api/coding/paas/v4"):
-        self.api_key = api_key or os.getenv("ZAI_API_KEY")
+        self.api_key = api_key
         self.base_url = base_url
         self._client: Optional[AsyncOpenAI] = None
         self._http_client: Optional[httpx.AsyncClient] = None
@@ -38,13 +37,14 @@ class ZaiProvider(BaseLLMProvider):
     def is_healthy(self) -> bool:
         return bool(self.api_key and self.api_key != "EMPTY_KEY" and len(self.api_key) > 5)
 
-    async def generate(self, request: LLMRequest) -> LLMResponse:
-        # Check if we need to re-init with a new key from env
-        current_env_key = os.getenv("ZAI_API_KEY")
-        if current_env_key and current_env_key != self.api_key:
-            self.api_key = current_env_key
+    def set_api_key(self, api_key: str) -> None:
+        self.api_key = api_key.strip() if api_key else None
+        if self.is_healthy():
             self._init_client()
+        else:
+            self._client = None
 
+    async def generate(self, request: LLMRequest) -> LLMResponse:
         if not self._client:
             if self.is_healthy():
                 self._init_client()
