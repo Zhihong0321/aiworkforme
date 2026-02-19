@@ -137,6 +137,27 @@ class SimulateInboundResponse(SQLModel):
     detail: Optional[str] = None
 
 
+class WhatsAppConversationImportRequest(SQLModel):
+    channel_session_id: Optional[int] = None
+    chat_limit: int = 200
+    message_limit_per_chat: int = 100
+    include_group_chats: bool = False
+
+
+class WhatsAppConversationImportResponse(SQLModel):
+    workspace_id: int
+    channel_session_id: int
+    chats_scanned: int
+    chats_imported: int
+    leads_created: int
+    threads_touched: int
+    messages_created: int
+    messages_skipped_existing: int
+    lead_names_updated: int
+    skipped_group_chats: int
+    errors: List[str] = []
+
+
 def _validate_lead_tenant(session: Session, lead_id: int, tenant_id: int) -> Lead:
     lead = session.get(Lead, lead_id)
     if not lead or lead.tenant_id != tenant_id:
@@ -429,6 +450,149 @@ def _normalize_usage(usage: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _extract_list(body: Dict[str, Any], key: str) -> List[Dict[str, Any]]:
+    if isinstance(body.get(key), list):
+        return [item for item in body.get(key, []) if isinstance(item, dict)]
+    if isinstance(body.get("result"), dict) and isinstance(body["result"].get(key), list):
+        return [item for item in body["result"].get(key, []) if isinstance(item, dict)]
+    if key == "chats" and isinstance(body.get("result"), list):
+        return [item for item in body.get("result", []) if isinstance(item, dict)]
+    if key == "messages" and isinstance(body.get("result"), list):
+        return [item for item in body.get("result", []) if isinstance(item, dict)]
+    if isinstance(body.get("data"), list):
+        return [item for item in body.get("data", []) if isinstance(item, dict)]
+    return []
+
+
+def _chat_jid(chat: Dict[str, Any]) -> Optional[str]:
+    raw_id = chat.get("id") or chat.get("jid") or chat.get("chatId")
+    if isinstance(raw_id, dict):
+        raw_id = raw_id.get("_serialized") or raw_id.get("id") or raw_id.get("jid")
+    if raw_id is None:
+        return None
+    value = str(raw_id).strip()
+    return value or None
+
+
+def _chat_display_name(chat: Dict[str, Any], fallback_jid: str) -> str:
+    for key in ("name", "subject", "notify", "pushName", "formattedName"):
+        value = chat.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return fallback_jid
+
+
+def _name_confidence_score(name: Optional[str], external_id: Optional[str], jid: Optional[str]) -> int:
+    value = (name or "").strip()
+    if not value:
+        return 0
+    lowered = value.lower()
+    if lowered in {"unknown", "null", "none", "n/a", "whatsapp"}:
+        return 0
+    digits_only = re.sub(r"\D+", "", value)
+    if len(digits_only) >= 8 and len(digits_only) >= max(1, len(value) - 2):
+        return 0
+
+    score = 1
+    if " " in value:
+        score += 1
+    if re.search(r"[a-zA-Z]", value):
+        score += 1
+    if len(value) >= 4:
+        score += 1
+
+    candidate_tokens = {
+        (external_id or "").strip().lower(),
+        (jid or "").strip().lower(),
+        ((jid or "").split("@", 1)[0] if jid else "").strip().lower(),
+        digits_only.strip().lower(),
+    }
+    if lowered in candidate_tokens:
+        score = 0
+    return score
+
+
+def _normalize_whatsapp_external_id_from_jid(jid: str) -> Optional[str]:
+    if not jid:
+        return None
+    left = jid.split("@", 1)[0]
+    digits = re.sub(r"\D+", "", left)
+    if 8 <= len(digits) <= 15:
+        return digits
+    normalized = left.strip()
+    return normalized or None
+
+
+def _to_datetime(value: Any) -> datetime:
+    if value is None:
+        return datetime.utcnow()
+    try:
+        ts = float(value)
+        # Baileys timestamps may come as unix seconds, milliseconds, or stringified.
+        if ts > 1_000_000_000_000:
+            ts = ts / 1000.0
+        if ts < 0:
+            return datetime.utcnow()
+        return datetime.utcfromtimestamp(ts)
+    except Exception:
+        return datetime.utcnow()
+
+
+def _message_external_id(message: Dict[str, Any]) -> Optional[str]:
+    key = message.get("key") if isinstance(message.get("key"), dict) else {}
+    candidates = [
+        key.get("id"),
+        message.get("id"),
+        message.get("messageId"),
+        message.get("_id"),
+    ]
+    for raw in candidates:
+        if raw is None:
+            continue
+        value = str(raw).strip()
+        if value:
+            return value
+    return None
+
+
+def _message_direction(message: Dict[str, Any]) -> str:
+    key = message.get("key") if isinstance(message.get("key"), dict) else {}
+    from_me = message.get("fromMe")
+    if from_me is None:
+        from_me = key.get("fromMe")
+    return "outbound" if bool(from_me) else "inbound"
+
+
+def _message_text(message: Dict[str, Any]) -> Optional[str]:
+    if isinstance(message.get("text"), str) and message["text"].strip():
+        return message["text"].strip()
+
+    body = message.get("message")
+    if not isinstance(body, dict):
+        return None
+
+    if isinstance(body.get("conversation"), str) and body["conversation"].strip():
+        return body["conversation"].strip()
+
+    for msg_key in ("extendedTextMessage", "imageMessage", "videoMessage", "documentMessage"):
+        container = body.get(msg_key)
+        if isinstance(container, dict):
+            for text_key in ("text", "caption"):
+                text_val = container.get(text_key)
+                if isinstance(text_val, str) and text_val.strip():
+                    return text_val.strip()
+    return None
+
+
+def _message_timestamp(message: Dict[str, Any]) -> datetime:
+    ts = (
+        message.get("messageTimestamp")
+        or message.get("timestamp")
+        or (message.get("key") or {}).get("timestamp")
+    )
+    return _to_datetime(ts)
+
+
 async def _generate_initial_outreach_text(
     router: LLMRouter, agent: Agent, lead: Lead, include_context_prompt: bool
 ) -> Tuple[str, Dict[str, Any]]:
@@ -716,6 +880,211 @@ def disconnect_whatsapp_session(
     session.add(channel_session)
     session.commit()
     return {"status": "disconnected", "channel_session_id": channel_session.id}
+
+
+@router.post(
+    "/workspaces/{workspace_id}/import-whatsapp-conversations",
+    response_model=WhatsAppConversationImportResponse,
+)
+def import_whatsapp_conversations(
+    workspace_id: int,
+    payload: WhatsAppConversationImportRequest,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    ws = session.get(Workspace, workspace_id)
+    if not ws or ws.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    chat_limit = max(1, min(int(payload.chat_limit or 200), 500))
+    message_limit = max(1, min(int(payload.message_limit_per_chat or 100), 500))
+    channel_session = _resolve_whatsapp_channel_session_for_tenant(
+        session=session,
+        tenant_id=auth.tenant.id,
+        channel_session_id=payload.channel_session_id,
+    )
+    base_url = _resolve_whatsapp_base_url(channel_session)
+
+    existing_leads = session.exec(
+        select(Lead).where(
+            Lead.tenant_id == auth.tenant.id,
+            Lead.workspace_id == workspace_id,
+        )
+    ).all()
+    leads_by_external: Dict[str, Lead] = {}
+    leads_by_digits: Dict[str, Lead] = {}
+    for lead in existing_leads:
+        external = (lead.external_id or "").strip()
+        if external:
+            leads_by_external[external] = lead
+            digits = re.sub(r"\D+", "", external)
+            if digits:
+                leads_by_digits[digits] = lead
+
+    errors: List[str] = []
+    chats_scanned = 0
+    chats_imported = 0
+    leads_created = 0
+    threads_touched: set[int] = set()
+    messages_created = 0
+    messages_skipped_existing = 0
+    lead_names_updated = 0
+    skipped_group_chats = 0
+
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            chats_res = client.get(
+                f"{base_url}/chats",
+                headers=_provider_headers(),
+                params={"sessionId": channel_session.session_identifier, "limit": chat_limit},
+            )
+            chats_res.raise_for_status()
+            chats_body = chats_res.json() if chats_res.content else {}
+            chats = _extract_list(chats_body, "chats")
+
+            for chat in chats:
+                chats_scanned += 1
+                jid = _chat_jid(chat)
+                if not jid:
+                    errors.append(f"Skipped chat with missing jid at index {chats_scanned}.")
+                    continue
+                if (not payload.include_group_chats) and jid.endswith("@g.us"):
+                    skipped_group_chats += 1
+                    continue
+
+                external_id = _normalize_whatsapp_external_id_from_jid(jid)
+                if not external_id:
+                    errors.append(f"Skipped chat {jid}: cannot derive external_id.")
+                    continue
+                digits = re.sub(r"\D+", "", external_id)
+                display_name = _chat_display_name(chat, jid)
+
+                lead = leads_by_external.get(external_id) or leads_by_digits.get(digits)
+                if not lead:
+                    lead = Lead(
+                        tenant_id=auth.tenant.id,
+                        workspace_id=workspace_id,
+                        external_id=external_id,
+                        name=display_name if display_name != jid else None,
+                        stage="CONTACTED",
+                        tags=[],
+                        is_whatsapp_valid=bool(8 <= len(digits) <= 15),
+                        created_at=datetime.utcnow(),
+                    )
+                    session.add(lead)
+                    session.commit()
+                    session.refresh(lead)
+                    leads_by_external[external_id] = lead
+                    if digits:
+                        leads_by_digits[digits] = lead
+                    leads_created += 1
+                elif display_name and display_name != jid:
+                    existing_name = (lead.name or "").strip()
+                    existing_score = _name_confidence_score(existing_name, lead.external_id, jid)
+                    incoming_score = _name_confidence_score(display_name, lead.external_id, jid)
+                    # Update only when existing name is empty/weak and imported value looks stronger.
+                    if incoming_score >= 3 and incoming_score > existing_score:
+                        lead.name = display_name
+                        session.add(lead)
+                        session.commit()
+                        session.refresh(lead)
+                        lead_names_updated += 1
+
+                thread = _get_or_create_thread(session, auth.tenant.id, lead.id, "whatsapp")
+                if thread.id is not None:
+                    threads_touched.add(thread.id)
+
+                try:
+                    msg_res = client.get(
+                        f"{base_url}/chats/{quote(jid, safe='')}/messages",
+                        headers=_provider_headers(),
+                        params={
+                            "sessionId": channel_session.session_identifier,
+                            "limit": message_limit,
+                        },
+                    )
+                    msg_res.raise_for_status()
+                    msg_body = msg_res.json() if msg_res.content else {}
+                except Exception as exc:
+                    errors.append(f"Failed messages fetch for {jid}: {str(exc)}")
+                    continue
+
+                raw_messages = _extract_list(msg_body, "messages")
+                if not raw_messages:
+                    chats_imported += 1
+                    continue
+
+                indexed_messages: List[Tuple[datetime, int, Dict[str, Any], str]] = []
+                for idx, message in enumerate(raw_messages):
+                    external_message_id = _message_external_id(message)
+                    if not external_message_id:
+                        fallback_ts = int(_message_timestamp(message).timestamp())
+                        external_message_id = f"import_{jid}_{fallback_ts}_{idx}"
+                    indexed_messages.append((_message_timestamp(message), idx, message, external_message_id))
+
+                external_ids = list({item[3] for item in indexed_messages})
+                existing_ids = set(
+                    session.exec(
+                        select(UnifiedMessage.external_message_id).where(
+                            UnifiedMessage.tenant_id == auth.tenant.id,
+                            UnifiedMessage.channel == "whatsapp",
+                            UnifiedMessage.external_message_id.in_(external_ids),
+                        )
+                    ).all()
+                )
+
+                for created_at, _, message, external_message_id in sorted(
+                    indexed_messages, key=lambda item: (item[0], item[1])
+                ):
+                    if external_message_id in existing_ids:
+                        messages_skipped_existing += 1
+                        continue
+                    direction = _message_direction(message)
+                    text_content = _message_text(message)
+                    imported = UnifiedMessage(
+                        tenant_id=auth.tenant.id,
+                        lead_id=lead.id,
+                        thread_id=thread.id,
+                        channel_session_id=channel_session.id,
+                        channel="whatsapp",
+                        external_message_id=external_message_id,
+                        direction=direction,
+                        message_type="text",
+                        text_content=text_content,
+                        raw_payload={"source": "baileys_import", "chat": chat, "message": message},
+                        delivery_status="sent" if direction == "outbound" else "received",
+                        created_at=created_at,
+                        updated_at=datetime.utcnow(),
+                    )
+                    session.add(imported)
+                    existing_ids.add(external_message_id)
+                    messages_created += 1
+
+                thread.updated_at = datetime.utcnow()
+                session.add(thread)
+                session.commit()
+                chats_imported += 1
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"WhatsApp import failed (provider status {exc.response.status_code}): {exc}",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"WhatsApp import failed: {exc}") from exc
+
+    return WhatsAppConversationImportResponse(
+        workspace_id=workspace_id,
+        channel_session_id=channel_session.id or 0,
+        chats_scanned=chats_scanned,
+        chats_imported=chats_imported,
+        leads_created=leads_created,
+        threads_touched=len(threads_touched),
+        messages_created=messages_created,
+        messages_skipped_existing=messages_skipped_existing,
+        lead_names_updated=lead_names_updated,
+        skipped_group_chats=skipped_group_chats,
+        errors=errors[:30],
+    )
 
 
 @router.post("/outbound", response_model=MessageCreateResponse)

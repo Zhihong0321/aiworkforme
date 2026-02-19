@@ -27,6 +27,11 @@ const simLeadId = ref('')
 const simText = ref('Hi, I want to know more about your service.')
 const simLoading = ref(false)
 const simResult = ref('')
+const importLoading = ref(false)
+const importDialogOpen = ref(false)
+const importChatLimit = ref('300')
+const importMessageLimit = ref('100')
+const importIncludeGroups = ref(false)
 
 const fetchLeads = async () => {
   if (!store.activeWorkspaceId) {
@@ -225,6 +230,40 @@ const simulateInbound = async () => {
   }
 }
 
+const importWhatsAppConversations = async () => {
+  actionError.value = ''
+  actionMessage.value = ''
+  if (!store.activeWorkspaceId) {
+    actionError.value = 'No active workspace selected.'
+    return
+  }
+
+  importLoading.value = true
+  try {
+    const chatLimit = Math.max(1, Math.min(500, Number(importChatLimit.value || 300)))
+    const messageLimit = Math.max(1, Math.min(500, Number(importMessageLimit.value || 100)))
+    const result = await request(`/messaging/workspaces/${store.activeWorkspaceId}/import-whatsapp-conversations`, {
+      method: 'POST',
+      body: JSON.stringify({
+        chat_limit: chatLimit,
+        message_limit_per_chat: messageLimit,
+        include_group_chats: !!importIncludeGroups.value
+      })
+    })
+    actionMessage.value = `Imported ${result.messages_created} messages from ${result.chats_imported}/${result.chats_scanned} chats. Leads created: ${result.leads_created}, names updated: ${result.lead_names_updated}.`
+    if (Array.isArray(result.errors) && result.errors.length > 0) {
+      actionError.value = result.errors.join(' | ')
+    }
+    importDialogOpen.value = false
+    await fetchLeads()
+    await refreshOperationalChecks()
+  } catch (e) {
+    actionError.value = e.message || 'Failed to import WhatsApp conversations'
+  } finally {
+    importLoading.value = false
+  }
+}
+
 const startAllLeads = async () => {
   actionError.value = ''
   if (!leads.value.length) {
@@ -234,6 +273,12 @@ const startAllLeads = async () => {
   for (const lead of leads.value) {
     await setLeadMode(lead, 'working')
   }
+}
+
+const openImportDialog = () => {
+  actionError.value = ''
+  actionMessage.value = ''
+  importDialogOpen.value = true
 }
 
 onMounted(async () => {
@@ -257,7 +302,7 @@ watch(() => store.activeWorkspaceId, async () => {
         <p class="text-slate-500 text-sm">You have {{ leads.length }} potential conversations ready for your teammate to handle.</p>
       </div>
       <div class="flex gap-3">
-          <TuiButton variant="outline" size="lg" class="!rounded-2xl border-slate-200">Import Contacts</TuiButton>
+          <TuiButton variant="outline" size="lg" class="!rounded-2xl border-slate-200" :loading="importLoading" @click="openImportDialog">Import WhatsApp Conversations</TuiButton>
           <TuiButton size="lg" class="!rounded-2xl bg-indigo-600 shadow-xl shadow-indigo-600/20 px-8" @click="startAllLeads">Send Agent to Work</TuiButton>
       </div>
     </header>
@@ -347,7 +392,7 @@ watch(() => store.activeWorkspaceId, async () => {
       </div>
       <h3 class="text-slate-900 font-bold mb-2">Your contact list is empty</h3>
       <p class="text-slate-500 text-sm mb-8 max-w-sm mx-auto">Add some contacts to give your AI teammate someone to talk to.</p>
-      <TuiButton variant="outline" class="!rounded-xl">Import Sample Contacts</TuiButton>
+      <TuiButton variant="outline" class="!rounded-xl" :loading="importLoading" @click="openImportDialog">Import WhatsApp Conversations</TuiButton>
     </div>
 
     <div v-else class="bg-white border border-slate-200 rounded-[2rem] overflow-hidden shadow-xl shadow-slate-200/50">
@@ -429,6 +474,33 @@ watch(() => store.activeWorkspaceId, async () => {
             </div>
             <p class="whitespace-pre-wrap break-words">{{ msg.text_content || '(non-text message)' }}</p>
             <p class="text-[10px] mt-1 opacity-80">status: {{ msg.delivery_status }}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="importDialogOpen" class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+      <div class="w-full max-w-lg rounded-3xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div>
+            <h3 class="text-lg font-black text-slate-900 tracking-tight">Import WhatsApp Conversations</h3>
+            <p class="text-xs text-slate-500">Choose how much history to pull from Baileys into this workspace.</p>
+          </div>
+          <TuiButton variant="outline" size="sm" @click="importDialogOpen = false">Close</TuiButton>
+        </div>
+        <div class="p-6 space-y-4 bg-slate-50">
+          <TuiInput v-model="importChatLimit" label="Max Chats" placeholder="300" />
+          <TuiInput v-model="importMessageLimit" label="Max Messages Per Chat" placeholder="100" />
+          <label class="flex items-center gap-3 text-sm text-slate-700">
+            <input v-model="importIncludeGroups" type="checkbox" class="rounded border-slate-300" />
+            Include group chats
+          </label>
+          <p class="text-xs text-slate-500">
+            Tips: higher limits import more history but take longer. Existing messages are deduplicated.
+          </p>
+          <div class="flex items-center justify-end gap-3 pt-2">
+            <TuiButton variant="outline" @click="importDialogOpen = false">Cancel</TuiButton>
+            <TuiButton :loading="importLoading" @click="importWhatsAppConversations">Start Import</TuiButton>
           </div>
         </div>
       </div>
