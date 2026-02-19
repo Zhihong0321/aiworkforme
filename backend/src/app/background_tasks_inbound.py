@@ -351,7 +351,7 @@ def _claim_inbound_message(session: Session, message_id: int) -> Optional[Unifie
     Returns the claimed UnifiedMessage or None if already claimed/invalid.
     """
     if engine.dialect.name == "postgresql":
-        row = session.exec(
+        row = session.connection().execute(
             text(
                 """
                 UPDATE et_messages
