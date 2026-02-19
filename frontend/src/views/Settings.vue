@@ -32,6 +32,7 @@ const isValidating = ref(false)
 const llmTasks = ref([])
 const llmProviders = ref([])
 const llmRouting = ref({})
+const llmTaskModels = ref({})
 const llmModels = ref([])
 const llmRoutingLoading = ref(true)
 const recordContextPrompt = ref(false)
@@ -54,12 +55,13 @@ const fetchStatus = async () => {
   llmRoutingLoading.value = true
   recordContextPromptLoading.value = true
   try {
-    const [zaiData, uniData, tasksData, providersData, routingData, modelsData, contextPromptData] = await Promise.all([
+    const [zaiData, uniData, tasksData, providersData, routingData, taskModelsData, modelsData, contextPromptData] = await Promise.all([
       request('/settings/zai-key'),
       request('/settings/uniapi-key'),
       request('/platform/llm/tasks'),
       request('/platform/llm/providers'),
       request('/platform/llm/routing'),
+      request('/platform/llm/task-models'),
       request('/platform/llm/models'),
       request('/platform/settings/record-context-prompt')
     ])
@@ -73,6 +75,7 @@ const fetchStatus = async () => {
     llmTasks.value = tasksData
     llmProviders.value = providersData
     llmRouting.value = routingData
+    llmTaskModels.value = taskModelsData || {}
     llmModels.value = Array.isArray(modelsData) ? modelsData : []
     recordContextPrompt.value = !!contextPromptData.value
     
@@ -165,6 +168,23 @@ const saveRouting = async () => {
     })
 
     message.value = 'LLM Routing Strategy Updated'
+    await fetchStatus()
+  } catch (e) {
+    message.value = `Error: ${e.message}`
+  } finally {
+    isSaving.value = false
+  }
+}
+
+const saveTaskModels = async () => {
+  isSaving.value = true
+  message.value = 'Saving...'
+  try {
+    await request('/platform/llm/task-models', {
+      method: 'POST',
+      body: JSON.stringify({ config: llmTaskModels.value })
+    })
+    message.value = 'Default task models updated'
     await fetchStatus()
   } catch (e) {
     message.value = `Error: ${e.message}`
@@ -356,6 +376,33 @@ onMounted(() => {
           </div>
           <div class="pt-4 border-t border-slate-100 flex justify-end">
             <TuiButton @click="saveRouting" :loading="isSaving" size="sm">Save Routing Strategy</TuiButton>
+          </div>
+        </div>
+      </TuiCard>
+
+      <TuiCard title="Default Model Per Workflow" subtitle="Set the default model for conversation, extraction, reasoning, and tool use">
+        <div v-if="llmRoutingLoading" class="text-sm text-slate-500 py-4">Loading task model defaults...</div>
+        <div v-else class="space-y-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div v-for="task in llmTasks" :key="`model-${task}`" class="space-y-2">
+              <label class="text-xs font-bold uppercase tracking-wider text-slate-700 block">{{ task }}</label>
+              <select
+                v-model="llmTaskModels[task]"
+                class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200"
+              >
+                <option :value="null">Use provider default</option>
+                <option
+                  v-for="model in llmModels"
+                  :key="`${task}:${model.provider}:${model.schema}:${model.model}`"
+                  :value="model.model"
+                >
+                  {{ model.model }} ({{ model.provider }} · {{ model.schema }})
+                </option>
+              </select>
+            </div>
+          </div>
+          <div class="pt-4 border-t border-slate-100 flex justify-end">
+            <TuiButton @click="saveTaskModels" :loading="isSaving" size="sm">Save Task Model Defaults</TuiButton>
           </div>
         </div>
       </TuiCard>

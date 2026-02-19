@@ -143,8 +143,9 @@ async def on_startup():
             logger.info("LLM provider API keys loaded from Database settings.")
 
             # Refresh LLM Router routing config from DB
-            from src.adapters.api.dependencies import refresh_llm_router_config
+            from src.adapters.api.dependencies import refresh_llm_router_config, refresh_llm_task_model_config
             refresh_llm_router_config(session)
+            refresh_llm_task_model_config(session)
                 
     except Exception as e:
         logger.error(f"CRITICAL: Startup sequence failed: {e}")

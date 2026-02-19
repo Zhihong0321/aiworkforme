@@ -27,7 +27,11 @@ from src.infra.schema_checks import evaluate_message_schema_compat
 from src.adapters.zai.client import ZaiClient
 from src.adapters.db.audit_recorder import record_admin_audit
 from src.infra.llm.schemas import LLMTask
-from src.adapters.api.dependencies import refresh_llm_router_config, refresh_provider_keys_from_db
+from src.adapters.api.dependencies import (
+    refresh_llm_router_config,
+    refresh_provider_keys_from_db,
+    refresh_llm_task_model_config,
+)
 
 
 router = APIRouter(prefix="/api/v1/platform", tags=["Platform Admin"])
@@ -159,6 +163,10 @@ class ApiKeyValidationResponse(SQLModel):
 
 class LLMRoutingUpdateRequest(SQLModel):
     config: dict # Dict[str, str] where key is LLMTask value and value is provider name
+
+
+class LLMTaskModelConfigUpdateRequest(SQLModel):
+    config: dict  # Dict[str, Optional[str]] where key is LLMTask value
 
 
 class BooleanSettingResponse(SQLModel):
@@ -924,6 +932,23 @@ def get_llm_routing(
     from src.adapters.api.dependencies import llm_router
     return {k.value: v for k, v in llm_router.routing_config.items()}
 
+
+@router.get("/llm/task-models")
+def get_llm_task_models(
+    session: Session = Depends(get_session),
+    _context: AuthContext = Depends(require_platform_admin),
+):
+    setting = session.get(SystemSetting, "llm_task_model_config")
+    if setting and setting.value:
+        return json.loads(setting.value)
+
+    from src.adapters.api.dependencies import llm_router
+    current = {k.value: v for k, v in llm_router.task_model_config.items() if v}
+    if current:
+        return current
+    return {t.value: None for t in LLMTask}
+
+
 @router.post("/llm/routing")
 def update_llm_routing(
     payload: LLMRoutingUpdateRequest,
@@ -959,6 +984,41 @@ def update_llm_routing(
     )
     
     return {"status": "updated", "config": payload.config}
+
+
+@router.post("/llm/task-models")
+def update_llm_task_models(
+    payload: LLMTaskModelConfigUpdateRequest,
+    session: Session = Depends(get_session),
+    context: AuthContext = Depends(require_platform_admin),
+):
+    valid_tasks = {t.value for t in LLMTask}
+    normalized: dict = {}
+    for task, model in payload.config.items():
+        if task not in valid_tasks:
+            raise HTTPException(status_code=400, detail=f"Invalid LLM task: {task}")
+        normalized[task] = (str(model).strip() if model is not None else None)
+
+    setting = session.get(SystemSetting, "llm_task_model_config")
+    if not setting:
+        setting = SystemSetting(key="llm_task_model_config", value=json.dumps(normalized))
+    else:
+        setting.value = json.dumps(normalized)
+
+    session.add(setting)
+    session.commit()
+    refresh_llm_task_model_config(session)
+
+    record_admin_audit(
+        session,
+        actor_user_id=context.user.id,
+        action="llm_task_model_config.update",
+        target_type="system_setting",
+        target_id="llm_task_model_config",
+        metadata={"config": normalized},
+    )
+
+    return {"status": "updated", "config": normalized}
 
 @router.get("/llm/providers")
 def list_llm_providers(

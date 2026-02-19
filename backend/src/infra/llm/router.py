@@ -10,10 +10,12 @@ class LLMRouter:
         self, 
         providers: Dict[str, BaseLLMProvider], 
         routing_config: Dict[LLMTask, str],
+        task_model_config: Optional[Dict[LLMTask, Optional[str]]] = None,
         default_provider: str = "zai"
     ):
         self.providers = providers
         self.routing_config = routing_config
+        self.task_model_config = task_model_config or {}
         self.default_provider = default_provider
 
     async def execute(
@@ -61,6 +63,13 @@ class LLMRouter:
             else:
                 extra_kwargs[k] = v
 
+        # Apply per-task default model unless caller explicitly provided one.
+        explicit_model = extra_kwargs.get("model") or extra_kwargs.get("llm_model")
+        if not explicit_model:
+            configured_model = self.task_model_config.get(task)
+            if configured_model:
+                extra_kwargs["model"] = configured_model
+
         request = LLMRequest(
             task=task,
             messages=normalized_messages,
@@ -83,6 +92,13 @@ class LLMRouter:
         """
         self.routing_config = config
         logger.info(f"LLM Routing configuration updated: {config}")
+
+    def update_task_model_config(self, config: Dict[LLMTask, Optional[str]]):
+        """
+        Updates per-task default model selection.
+        """
+        self.task_model_config = config
+        logger.info(f"LLM task model config updated: {config}")
 
     async def _execute_fallback(self, request: LLMRequest, failed_provider: str) -> LLMResponse:
         """

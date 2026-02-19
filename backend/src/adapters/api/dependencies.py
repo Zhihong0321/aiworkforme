@@ -4,7 +4,7 @@ PURPOSE: FastAPI dependency functions for authentication and injection.
 """
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Optional, Dict
 
 from fastapi import Depends, Header, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -42,6 +42,7 @@ llm_router = LLMRouter(
         LLMTask.REASONING: "uniapi",
         LLMTask.TOOL_USE: "uniapi",
     },
+    task_model_config={},
     default_provider="uniapi",
 )
 
@@ -181,6 +182,30 @@ def refresh_llm_router_config(session: Session):
             llm_router.update_routing_config(new_config)
         except Exception as e:
             logger.error(f"Failed to refresh LLM routing config: {e}")
+
+
+def refresh_llm_task_model_config(session: Session):
+    """
+    Reloads per-task default model mapping from DB.
+    """
+    setting = session.get(SystemSetting, "llm_task_model_config")
+    if setting and setting.value:
+        try:
+            import json
+            raw_config = json.loads(setting.value)
+            valid_tasks = {t.value for t in LLMTask}
+            sanitized: Dict[LLMTask, Optional[str]] = {}
+            for task_key, model_name in raw_config.items():
+                if task_key not in valid_tasks:
+                    continue
+                model = (str(model_name).strip() if model_name is not None else "")
+                sanitized[LLMTask(task_key)] = model or None
+            llm_router.update_task_model_config(sanitized)
+        except Exception as e:
+            logger.error(f"Failed to refresh LLM task model config: {e}")
+            llm_router.update_task_model_config({})
+    else:
+        llm_router.update_task_model_config({})
 
 # Deprecated: Kept for temporary backward compatibility during refactor
 def get_zai_client(session: Session = Depends(get_session)):
