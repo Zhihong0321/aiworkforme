@@ -40,6 +40,8 @@ const platformMessagesLoading = ref(true)
 const historyDirection = ref('')
 const historyAiOnly = ref(true)
 const historyLimit = ref(100)
+const platformSystemHealth = ref(null)
+const platformSystemHealthLoading = ref(true)
 
 const { theme, toggleTheme, setTheme } = useTheme()
 const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'))
@@ -95,6 +97,18 @@ const fetchPlatformMessages = async () => {
     platformMessages.value = []
   } finally {
     platformMessagesLoading.value = false
+  }
+}
+
+const fetchPlatformSystemHealth = async () => {
+  platformSystemHealthLoading.value = true
+  try {
+    platformSystemHealth.value = await request('/platform/system-health')
+  } catch (e) {
+    message.value = `Error: ${e.message}`
+    platformSystemHealth.value = null
+  } finally {
+    platformSystemHealthLoading.value = false
   }
 }
 
@@ -209,6 +223,7 @@ const validateProviderKey = async (provider) => {
 onMounted(() => {
   fetchStatus()
   fetchPlatformMessages()
+  fetchPlatformSystemHealth()
 })
 </script>
 
@@ -387,6 +402,19 @@ onMounted(() => {
               <pre class="mt-3 rounded-xl bg-slate-950 text-slate-100 text-[11px] leading-5 p-3 overflow-x-auto">{{ JSON.stringify(msg.ai_trace || {}, null, 2) }}</pre>
             </article>
           </div>
+        </div>
+      </TuiCard>
+
+      <TuiCard title="Platform System Health" subtitle="Permanent readiness and schema diagnostics">
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <div v-if="platformSystemHealthLoading" class="text-sm text-slate-500">Loading system health...</div>
+            <div v-else class="text-sm font-bold" :class="platformSystemHealth?.ready ? 'text-emerald-700' : 'text-red-700'">
+              {{ platformSystemHealth?.ready ? 'READY' : 'NOT READY' }}
+            </div>
+            <TuiButton @click="fetchPlatformSystemHealth" :loading="platformSystemHealthLoading" size="sm">Refresh Health</TuiButton>
+          </div>
+          <pre v-if="platformSystemHealth" class="rounded-xl bg-slate-950 text-slate-100 text-[11px] leading-5 p-3 overflow-x-auto">{{ JSON.stringify(platformSystemHealth, null, 2) }}</pre>
         </div>
       </TuiCard>
 

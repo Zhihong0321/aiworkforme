@@ -18,6 +18,7 @@ from src.infra.migrations import (
     apply_sql_migration_file,
     apply_message_usage_columns_migration,
 )
+from src.infra.schema_checks import evaluate_message_schema_compat
 from src.infra.seeding import (
     seed_identity_data, 
     seed_mcp_scripts, 
@@ -46,6 +47,11 @@ from routers import (
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+STARTUP_HEALTH = {
+    "ready": False,
+    "schema": {},
+    "checked_at": None,
+}
 
 app = FastAPI(
     title="Aiworkfor.me API",
@@ -112,6 +118,16 @@ async def on_startup():
             logger.exception("Messaging SQL migration failed; continuing with additive fallback migration.")
         # Re-run to guarantee columns exist even if the SQL migration partially failed.
         apply_message_usage_columns_migration(engine)
+
+        schema_check = evaluate_message_schema_compat(engine)
+        STARTUP_HEALTH["schema"] = schema_check
+        STARTUP_HEALTH["ready"] = bool(schema_check.get("ok"))
+        STARTUP_HEALTH["checked_at"] = datetime.utcnow().isoformat()
+        if not STARTUP_HEALTH["ready"]:
+            logger.error(
+                "Schema compatibility failed at startup. Missing columns: %s",
+                schema_check.get("missing_columns"),
+            )
         
         # 3. Content Seeding
         seed_mcp_scripts()
@@ -156,6 +172,8 @@ async def on_startup():
                 
     except Exception as e:
         logger.error(f"CRITICAL: Startup sequence failed: {e}")
+        STARTUP_HEALTH["ready"] = False
+        STARTUP_HEALTH["checked_at"] = datetime.utcnow().isoformat()
         # Not exiting to allow health checks
 
     # 5. Background Loops
@@ -180,9 +198,30 @@ def health_check():
 @app.get("/api/v1/ready", tags=["Health Check"])
 def readiness_check(db_session: Session = Depends(get_session)):
     from sqlalchemy import text
+    from fastapi import HTTPException as FastAPIHTTPException
     try:
         db_session.execute(text("SELECT 1"))
-        return {"status": "ready", "database": "connected", "timestamp": datetime.utcnow().isoformat()}
+        live_schema = evaluate_message_schema_compat(engine)
+        startup_ready = bool(STARTUP_HEALTH.get("ready"))
+        schema_ready = bool(live_schema.get("ok"))
+        if not startup_ready or not schema_ready:
+            raise HTTPException(
+                status_code=503,
+                detail={
+                    "status": "not_ready",
+                    "reason": "schema_incompatible",
+                    "startup_health": STARTUP_HEALTH,
+                    "live_schema": live_schema,
+                },
+            )
+        return {
+            "status": "ready",
+            "database": "connected",
+            "timestamp": datetime.utcnow().isoformat(),
+            "schema": {"ok": True},
+        }
+    except FastAPIHTTPException:
+        raise
     except Exception as e:
         logger.error(f"Readiness check failed: {e}")
         raise HTTPException(status_code=503, detail="Database unreachable")

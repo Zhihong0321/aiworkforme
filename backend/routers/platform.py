@@ -21,6 +21,8 @@ from src.adapters.db.messaging_models import UnifiedMessage
 from src.adapters.db.crm_models import Lead
 from src.domain.entities.enums import Role, TenantStatus
 from src.infra.security import hash_password
+from src.infra.database import engine
+from src.infra.schema_checks import evaluate_message_schema_compat
 from src.adapters.zai.client import ZaiClient
 from src.adapters.db.audit_recorder import record_admin_audit
 from src.infra.llm.schemas import LLMTask
@@ -124,6 +126,13 @@ class PlatformMessageHistoryItem(SQLModel):
     llm_total_tokens: int | None = None
     llm_estimated_cost_usd: float | None = None
     created_at: datetime
+
+
+class PlatformSystemHealthResponse(SQLModel):
+    ready: bool
+    checks: dict
+    blockers: List[str]
+    checked_at: datetime
 
 
 class ApiKeyRequest(SQLModel):
@@ -678,6 +687,51 @@ def list_platform_message_history(
             )
         )
     return results
+
+
+@router.get("/system-health", response_model=PlatformSystemHealthResponse)
+def get_platform_system_health(
+    session: Session = Depends(get_session),
+    _context: AuthContext = Depends(require_platform_admin),
+):
+    checks: dict = {}
+    blockers: List[str] = []
+
+    schema_check = evaluate_message_schema_compat(engine)
+    checks["schema"] = schema_check
+    if not schema_check.get("ok"):
+        blockers.append(
+            f"Schema incompatible for et_messages. Missing columns: {schema_check.get('missing_columns', [])}"
+        )
+
+    from src.app.background_tasks_inbound import get_inbound_worker_debug_snapshot
+    checks["inbound_worker"] = get_inbound_worker_debug_snapshot()
+
+    from src.adapters.api.dependencies import llm_router
+    provider_health = {}
+    for provider_name, provider in llm_router.providers.items():
+        try:
+            provider_health[provider_name] = bool(provider.is_healthy())
+        except Exception:
+            provider_health[provider_name] = False
+    checks["llm_provider_health"] = provider_health
+
+    pending_inbound = session.exec(
+        select(UnifiedMessage)
+        .where(
+            UnifiedMessage.direction == "inbound",
+            UnifiedMessage.delivery_status == "received",
+        )
+        .limit(1)
+    ).first()
+    checks["inbound_backlog_present"] = bool(pending_inbound)
+
+    return PlatformSystemHealthResponse(
+        ready=len(blockers) == 0,
+        checks=checks,
+        blockers=blockers,
+        checked_at=datetime.utcnow(),
+    )
 
 
 @router.get("/api-keys", response_model=List[ApiKeyStatus])
