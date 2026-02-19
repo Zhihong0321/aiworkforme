@@ -523,6 +523,16 @@ def _normalize_whatsapp_external_id_from_jid(jid: str) -> Optional[str]:
     return normalized or None
 
 
+def _chat_phone_number(chat: Dict[str, Any]) -> Optional[str]:
+    phone = chat.get("phoneNumber")
+    if not isinstance(phone, str):
+        return None
+    digits = re.sub(r"\D+", "", phone)
+    if not digits:
+        return None
+    return digits
+
+
 def _to_datetime(value: Any) -> datetime:
     if value is None:
         return datetime.utcnow()
@@ -564,6 +574,9 @@ def _message_direction(message: Dict[str, Any]) -> str:
 
 
 def _message_text(message: Dict[str, Any]) -> Optional[str]:
+    if isinstance(message.get("content"), str) and message["content"].strip():
+        return message["content"].strip()
+
     if isinstance(message.get("text"), str) and message["text"].strip():
         return message["text"].strip()
 
@@ -591,6 +604,40 @@ def _message_timestamp(message: Dict[str, Any]) -> datetime:
         or (message.get("key") or {}).get("timestamp")
     )
     return _to_datetime(ts)
+
+
+def _message_type(message: Dict[str, Any]) -> str:
+    raw_type = message.get("type")
+    if isinstance(raw_type, str) and raw_type.strip():
+        mapped = raw_type.strip().lower()
+        if mapped in {"conversation", "extendedtextmessage"}:
+            return "text"
+        return mapped
+
+    body = message.get("message")
+    if isinstance(body, dict):
+        if "conversation" in body or "extendedTextMessage" in body:
+            return "text"
+        if "imageMessage" in body:
+            return "image"
+        if "videoMessage" in body:
+            return "video"
+        if "audioMessage" in body:
+            return "audio"
+        if "documentMessage" in body:
+            return "document"
+        if "stickerMessage" in body:
+            return "sticker"
+        if "reactionMessage" in body:
+            return "reaction"
+    return "unknown"
+
+
+def _message_raw_payload(message: Dict[str, Any]) -> Dict[str, Any]:
+    raw = message.get("raw")
+    if isinstance(raw, dict):
+        return raw
+    return message
 
 
 async def _generate_initial_outreach_text(
@@ -948,23 +995,42 @@ def import_whatsapp_conversations(
                 if not jid:
                     errors.append(f"Skipped chat with missing jid at index {chats_scanned}.")
                     continue
-                if (not payload.include_group_chats) and jid.endswith("@g.us"):
+                is_group_chat = bool(chat.get("isGroup")) or jid.endswith("@g.us")
+                if (not payload.include_group_chats) and is_group_chat:
                     skipped_group_chats += 1
                     continue
 
-                external_id = _normalize_whatsapp_external_id_from_jid(jid)
+                is_lid_chat = jid.endswith("@lid")
+                phone_number = _chat_phone_number(chat)
+                external_id = phone_number
+                if not external_id:
+                    if jid.endswith("@s.whatsapp.net"):
+                        external_id = _normalize_whatsapp_external_id_from_jid(jid)
+                    else:
+                        external_id = jid
                 if not external_id:
                     errors.append(f"Skipped chat {jid}: cannot derive external_id.")
                     continue
                 digits = re.sub(r"\D+", "", external_id)
                 display_name = _chat_display_name(chat, jid)
 
-                lead = leads_by_external.get(external_id) or leads_by_digits.get(digits)
+                lead: Optional[Lead] = None
+                if is_lid_chat:
+                    lead = session.exec(
+                        select(Lead).where(
+                            Lead.tenant_id == auth.tenant.id,
+                            Lead.workspace_id == workspace_id,
+                            Lead.whatsapp_lid == jid,
+                        )
+                    ).first()
+                if not lead:
+                    lead = leads_by_external.get(external_id) or leads_by_digits.get(digits)
                 if not lead:
                     lead = Lead(
                         tenant_id=auth.tenant.id,
                         workspace_id=workspace_id,
                         external_id=external_id,
+                        whatsapp_lid=jid if is_lid_chat else None,
                         name=display_name if display_name != jid else None,
                         stage="CONTACTED",
                         tags=[],
@@ -985,10 +1051,17 @@ def import_whatsapp_conversations(
                     # Update only when existing name is empty/weak and imported value looks stronger.
                     if incoming_score >= 3 and incoming_score > existing_score:
                         lead.name = display_name
+                        if is_lid_chat and not lead.whatsapp_lid:
+                            lead.whatsapp_lid = jid
                         session.add(lead)
                         session.commit()
                         session.refresh(lead)
                         lead_names_updated += 1
+                elif is_lid_chat and not lead.whatsapp_lid:
+                    lead.whatsapp_lid = jid
+                    session.add(lead)
+                    session.commit()
+                    session.refresh(lead)
 
                 thread = _get_or_create_thread(session, auth.tenant.id, lead.id, "whatsapp")
                 if thread.id is not None:
@@ -1041,6 +1114,7 @@ def import_whatsapp_conversations(
                         continue
                     direction = _message_direction(message)
                     text_content = _message_text(message)
+                    message_type = _message_type(message)
                     imported = UnifiedMessage(
                         tenant_id=auth.tenant.id,
                         lead_id=lead.id,
@@ -1049,9 +1123,13 @@ def import_whatsapp_conversations(
                         channel="whatsapp",
                         external_message_id=external_message_id,
                         direction=direction,
-                        message_type="text",
+                        message_type=message_type,
                         text_content=text_content,
-                        raw_payload={"source": "baileys_import", "chat": chat, "message": message},
+                        raw_payload={
+                            "source": "baileys_import",
+                            "chat": chat,
+                            "message": _message_raw_payload(message),
+                        },
                         delivery_status="sent" if direction == "outbound" else "received",
                         created_at=created_at,
                         updated_at=datetime.utcnow(),
@@ -1065,9 +1143,17 @@ def import_whatsapp_conversations(
                 session.commit()
                 chats_imported += 1
     except httpx.HTTPStatusError as exc:
+        body_detail = ""
+        try:
+            parsed = exc.response.json()
+            body_detail = parsed.get("error") or parsed.get("detail") or str(parsed)
+        except Exception:
+            body_detail = (exc.response.text or "").strip()
+        if body_detail:
+            body_detail = f" - {body_detail[:400]}"
         raise HTTPException(
             status_code=502,
-            detail=f"WhatsApp import failed (provider status {exc.response.status_code}): {exc}",
+            detail=f"WhatsApp import failed (provider status {exc.response.status_code}){body_detail}",
         ) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"WhatsApp import failed: {exc}") from exc
