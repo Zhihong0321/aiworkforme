@@ -78,6 +78,13 @@ CREATE TABLE IF NOT EXISTS et_messages (
     UNIQUE (tenant_id, channel, external_message_id)
 );
 
+ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_provider VARCHAR(32);
+ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_model VARCHAR(128);
+ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_prompt_tokens INTEGER;
+ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_completion_tokens INTEGER;
+ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_total_tokens INTEGER;
+ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_estimated_cost_usd NUMERIC(12,6);
+
 CREATE INDEX IF NOT EXISTS idx_messages_tenant ON et_messages(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_messages_thread ON et_messages(thread_id);
 CREATE INDEX IF NOT EXISTS idx_messages_lead ON et_messages(lead_id);
@@ -88,13 +95,6 @@ CREATE INDEX IF NOT EXISTS idx_messages_llm_model ON et_messages(llm_model);
 CREATE INDEX IF NOT EXISTS idx_messages_llm_total_tokens ON et_messages(llm_total_tokens);
 CREATE INDEX IF NOT EXISTS idx_messages_tenant_created ON et_messages(tenant_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_messages_tenant_provider_created ON et_messages(tenant_id, llm_provider, created_at);
-
-ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_provider VARCHAR(32);
-ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_model VARCHAR(128);
-ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_prompt_tokens INTEGER;
-ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_completion_tokens INTEGER;
-ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_total_tokens INTEGER;
-ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_estimated_cost_usd NUMERIC(12,6);
 
 UPDATE et_messages
 SET

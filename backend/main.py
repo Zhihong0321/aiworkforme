@@ -103,8 +103,14 @@ async def on_startup():
         
         # 2. Schema Migrations (Additive)
         apply_multitenant_additive_migration(engine, default_tenant_id)
+        # Ensure et_messages has LLM usage columns before any SQL script/indexes rely on them.
+        apply_message_usage_columns_migration(engine)
         sql_migration_path = os.path.join(os.path.dirname(__file__), "sql", "messaging_m1_unified_schema.sql")
-        apply_sql_migration_file(engine, sql_migration_path)
+        try:
+            apply_sql_migration_file(engine, sql_migration_path)
+        except Exception:
+            logger.exception("Messaging SQL migration failed; continuing with additive fallback migration.")
+        # Re-run to guarantee columns exist even if the SQL migration partially failed.
         apply_message_usage_columns_migration(engine)
         
         # 3. Content Seeding
