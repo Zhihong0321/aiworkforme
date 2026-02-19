@@ -406,18 +406,30 @@ def _claim_inbound_message(session: Session, message_id: int) -> Optional[Unifie
     return message
 
 
-def _mark_inbound_error(session: Session, message_id: int):
+def _mark_inbound_error(session: Session, message_id: int, reason: Optional[str] = None):
     db_inbound = session.get(UnifiedMessage, message_id)
     if db_inbound:
         db_inbound.delivery_status = "inbound_error"
         db_inbound.updated_at = datetime.utcnow()
+        payload = dict(db_inbound.raw_payload or {})
+        if reason:
+            payload["inbound_error_reason"] = str(reason)[:1000]
+            payload["inbound_error_at"] = _iso_now()
+        db_inbound.raw_payload = payload
         session.add(db_inbound)
         session.commit()
-    _mark_worker_state(
-        last_error_at=_iso_now(),
-        last_error_message=f"inbound_error state set for message_id={message_id}",
-        errors_total=INBOUND_WORKER_STATE.get("errors_total", 0) + 1,
-    )
+    if reason:
+        _mark_worker_state(
+            last_error_at=_iso_now(),
+            last_error_message=f"message_id={message_id}: {reason}",
+            errors_total=INBOUND_WORKER_STATE.get("errors_total", 0) + 1,
+        )
+    else:
+        _mark_worker_state(
+            last_error_at=_iso_now(),
+            last_error_message=f"inbound_error state set for message_id={message_id}",
+            errors_total=INBOUND_WORKER_STATE.get("errors_total", 0) + 1,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -477,7 +489,7 @@ async def background_inbound_worker_loop():
                             errors_total=INBOUND_WORKER_STATE.get("errors_total", 0) + 1,
                         )
                         session.rollback()
-                        _mark_inbound_error(session, message_id)
+                        _mark_inbound_error(session, message_id, reason=str(exc))
 
                 remaining = max(INBOUND_BATCH_SIZE - processed, 0)
                 if remaining > 0:
@@ -515,7 +527,7 @@ async def background_inbound_worker_loop():
                                 errors_total=INBOUND_WORKER_STATE.get("errors_total", 0) + 1,
                             )
                             session.rollback()
-                            _mark_inbound_error(session, inbound.id)
+                            _mark_inbound_error(session, inbound.id, reason=str(exc))
 
         except Exception as exc:
             logger.exception("Inbound worker loop error: %s", exc)

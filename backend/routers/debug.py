@@ -11,6 +11,8 @@ from sqlmodel import Session, select
 
 from src.infra.database import get_session
 from src.adapters.db.messaging_models import UnifiedMessage, OutboundQueue
+from src.adapters.db.crm_models import Lead, Workspace
+from src.adapters.db.messaging_models import UnifiedThread
 from src.app.background_tasks_inbound import get_inbound_worker_debug_snapshot
 
 
@@ -56,6 +58,33 @@ def inbound_debug(
             "created_at": row.created_at.isoformat() if row.created_at else None,
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,
             "text_preview": (row.text_content or "")[:120],
+            "inbound_error_reason": (
+                row.raw_payload.get("inbound_error_reason")
+                if isinstance(row.raw_payload, dict)
+                else None
+            ),
+            "inbound_error_at": (
+                row.raw_payload.get("inbound_error_at")
+                if isinstance(row.raw_payload, dict)
+                else None
+            ),
+            "lead_workspace_id": (
+                session.get(Lead, row.lead_id).workspace_id
+                if session.get(Lead, row.lead_id)
+                else None
+            ),
+            "thread_agent_id": (
+                session.get(UnifiedThread, row.thread_id).agent_id
+                if row.thread_id and session.get(UnifiedThread, row.thread_id)
+                else None
+            ),
+            "workspace_agent_id": (
+                (lambda lead_obj: (
+                    session.get(Workspace, lead_obj.workspace_id).agent_id
+                    if lead_obj and lead_obj.workspace_id and session.get(Workspace, lead_obj.workspace_id)
+                    else None
+                ))(session.get(Lead, row.lead_id))
+            ),
         }
         for row in recent_inbound_rows
     ]
@@ -124,4 +153,3 @@ def inbound_debug(
         "recent_outbound_from_inbound": recent_outbound_from_inbound,
         "queue_snapshot": queue_snapshot,
     }
-
