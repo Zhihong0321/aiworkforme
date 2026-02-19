@@ -4,6 +4,19 @@ PURPOSE: Estimate per-call USD cost from provider/model token usage.
 """
 import os
 
+DEFAULT_MODEL_RATES_PER_1M = {
+    "uniapi": {
+        "deepseek-v3.2": {"input": 0.236776, "output": 0.236776},
+        "deepseek-v3.2-speciale": {"input": 0.240199, "output": 0.240199},
+        "doubao-seed-1-6-251015": {"input": 0.890750, "output": 0.890750},
+        "gemini-3-flash-preview": {"input": 0.891334, "output": 0.891334},
+        "gpt-5-nano-2025-08-07": {"input": 0.339729, "output": 0.339729},
+        "gpt-5.1-chat-latest": {"input": 6.698630, "output": 6.698630},
+        "gpt-oss-120b": {"input": 0.133501, "output": 0.133501},
+        "grok-4-1-fast": {"input": 0.180311, "output": 0.180311},
+    }
+}
+
 
 def _env_key(provider: str, model: str, side: str) -> str:
     provider_key = "".join(ch if ch.isalnum() else "_" for ch in (provider or "")).upper()
@@ -31,6 +44,15 @@ def _read_rate(provider: str, model: str, side: str) -> float:
         try:
             return float(generic)
         except ValueError:
+            return 0.0
+
+    provider_rates = DEFAULT_MODEL_RATES_PER_1M.get((provider or "").strip().lower(), {})
+    model_rates = provider_rates.get((model or "").strip(), {})
+    default_rate = model_rates.get(side.lower())
+    if default_rate is not None:
+        try:
+            return float(default_rate)
+        except (TypeError, ValueError):
             return 0.0
     return 0.0
 

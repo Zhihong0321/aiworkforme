@@ -46,6 +46,70 @@
       </div>
     </div>
 
+    <div v-if="summary?.llm_cost_window" class="bg-white p-6 border border-[var(--border)] rounded-lg shadow-sm mb-8">
+      <div class="flex items-center justify-between mb-4">
+        <h4 class="font-bold text-sm">LLM Cost Analysis</h4>
+        <span class="text-xs text-[var(--muted)]">Window {{ windowHours }}h</span>
+      </div>
+
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div class="rounded border border-[var(--border)] p-3">
+          <p class="text-[10px] uppercase tracking-wide text-[var(--muted)]">Total Cost</p>
+          <p class="text-lg font-semibold">{{ formatUsd(summary.llm_cost_window.total_cost_usd, 6) }}</p>
+        </div>
+        <div class="rounded border border-[var(--border)] p-3">
+          <p class="text-[10px] uppercase tracking-wide text-[var(--muted)]">Total Tokens</p>
+          <p class="text-lg font-semibold">{{ formatNumber(summary.llm_cost_window.total_tokens) }}</p>
+        </div>
+        <div class="rounded border border-[var(--border)] p-3">
+          <p class="text-[10px] uppercase tracking-wide text-[var(--muted)]">Cost / Token</p>
+          <p class="text-lg font-semibold">{{ formatUsd(summary.llm_cost_window.cost_per_token_usd, 9) }}</p>
+        </div>
+        <div class="rounded border border-[var(--border)] p-3">
+          <p class="text-[10px] uppercase tracking-wide text-[var(--muted)]">Cost / 1M Tokens</p>
+          <p class="text-lg font-semibold">{{ formatUsd(summary.llm_cost_window.cost_per_1m_tokens_usd, 3) }}</p>
+        </div>
+      </div>
+
+      <div v-if="!summary.llm_cost_window.models || summary.llm_cost_window.models.length === 0" class="text-sm text-[var(--muted)] italic">
+        No model usage in selected window.
+      </div>
+      <div v-else class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="text-left border-b border-[var(--border)]">
+              <th class="py-2 pr-3">Model</th>
+              <th class="py-2 pr-3">Provider</th>
+              <th class="py-2 pr-3">Messages</th>
+              <th class="py-2 pr-3">Prompt Tokens</th>
+              <th class="py-2 pr-3">Completion Tokens</th>
+              <th class="py-2 pr-3">Total Tokens</th>
+              <th class="py-2 pr-3">Total Cost</th>
+              <th class="py-2 pr-3">Cost / Token</th>
+              <th class="py-2 pr-3">Cost / 1M</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="row in summary.llm_cost_window.models"
+              :key="`${row.provider}:${row.model}`"
+              class="border-b border-[var(--border)] last:border-b-0"
+            >
+              <td class="py-2 pr-3 font-medium">{{ row.model }}</td>
+              <td class="py-2 pr-3">{{ row.provider || 'unknown' }}</td>
+              <td class="py-2 pr-3">{{ formatNumber(row.message_count) }}</td>
+              <td class="py-2 pr-3">{{ formatNumber(row.prompt_tokens) }}</td>
+              <td class="py-2 pr-3">{{ formatNumber(row.completion_tokens) }}</td>
+              <td class="py-2 pr-3">{{ formatNumber(row.total_tokens) }}</td>
+              <td class="py-2 pr-3">{{ formatUsd(row.total_cost_usd, 6) }}</td>
+              <td class="py-2 pr-3">{{ formatUsd(row.cost_per_token_usd, 9) }}</td>
+              <td class="py-2 pr-3">{{ formatUsd(row.cost_per_1m_tokens_usd, 3) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="bg-white p-6 border border-[var(--border)] rounded-lg shadow-sm">
       <div class="flex items-center justify-between mb-4">
         <h4 class="font-bold text-sm">Recent Security Events</h4>
@@ -114,6 +178,14 @@ function formatTs(value) {
   } catch {
     return value
   }
+}
+
+function formatUsd(value, digits = 6) {
+  return `$${Number(value || 0).toFixed(digits)}`
+}
+
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString()
 }
 
 async function loadAnalytics() {
