@@ -32,6 +32,36 @@ INBOUND_POLL_SECONDS = float(os.getenv("MESSAGING_INBOUND_POLL_SECONDS", "2"))
 INBOUND_BATCH_SIZE = int(os.getenv("MESSAGING_INBOUND_BATCH_SIZE", "5"))
 INBOUND_NOTIFY_CHANNEL = os.getenv("MESSAGING_INBOUND_NOTIFY_CHANNEL", "inbound_new_message")
 
+INBOUND_WORKER_STATE: Dict[str, Any] = {
+    "started_at": None,
+    "last_loop_at": None,
+    "last_listen_connected_at": None,
+    "last_notify_received_at": None,
+    "last_notified_message_id": None,
+    "last_claimed_at": None,
+    "last_claimed_message_id": None,
+    "last_processed_at": None,
+    "last_processed_message_id": None,
+    "last_error_at": None,
+    "last_error_message": None,
+    "notify_events_total": 0,
+    "claimed_total": 0,
+    "processed_total": 0,
+    "errors_total": 0,
+}
+
+
+def _iso_now() -> str:
+    return datetime.utcnow().isoformat()
+
+
+def _mark_worker_state(**kwargs):
+    INBOUND_WORKER_STATE.update(kwargs)
+
+
+def get_inbound_worker_debug_snapshot() -> Dict[str, Any]:
+    return dict(INBOUND_WORKER_STATE)
+
 
 # ---------------------------------------------------------------------------
 # Thread / Agent resolution
@@ -268,6 +298,7 @@ def _open_inbound_listen_connection():
         cursor.execute(f"LISTEN {INBOUND_NOTIFY_CHANNEL};")
     finally:
         cursor.close()
+    _mark_worker_state(last_listen_connected_at=_iso_now())
     logger.info("Inbound worker listening on PostgreSQL channel: %s", INBOUND_NOTIFY_CHANNEL)
     return raw_conn
 
@@ -302,6 +333,11 @@ def _wait_for_inbound_notify(listen_conn, timeout_seconds: float) -> List[int]:
                 logger.warning("Inbound NOTIFY payload parse failed: %s", payload)
                 continue
             if message_id > 0:
+                _mark_worker_state(
+                    last_notify_received_at=_iso_now(),
+                    last_notified_message_id=message_id,
+                    notify_events_total=INBOUND_WORKER_STATE.get("notify_events_total", 0) + 1,
+                )
                 message_ids.append(message_id)
     except Exception as exc:
         logger.warning("Inbound NOTIFY wait failed: %s", exc)
@@ -341,6 +377,11 @@ def _claim_inbound_message(session: Session, message_id: int) -> Optional[Unifie
         else:
             claimed_raw = row
         claimed_id = int(claimed_raw)
+        _mark_worker_state(
+            last_claimed_at=_iso_now(),
+            last_claimed_message_id=claimed_id,
+            claimed_total=INBOUND_WORKER_STATE.get("claimed_total", 0) + 1,
+        )
         return session.get(UnifiedMessage, claimed_id)
 
     # Non-Postgres fallback for local/test environments.
@@ -357,6 +398,11 @@ def _claim_inbound_message(session: Session, message_id: int) -> Optional[Unifie
     session.add(message)
     session.commit()
     session.refresh(message)
+    _mark_worker_state(
+        last_claimed_at=_iso_now(),
+        last_claimed_message_id=message.id,
+        claimed_total=INBOUND_WORKER_STATE.get("claimed_total", 0) + 1,
+    )
     return message
 
 
@@ -367,6 +413,11 @@ def _mark_inbound_error(session: Session, message_id: int):
         db_inbound.updated_at = datetime.utcnow()
         session.add(db_inbound)
         session.commit()
+    _mark_worker_state(
+        last_error_at=_iso_now(),
+        last_error_message=f"inbound_error state set for message_id={message_id}",
+        errors_total=INBOUND_WORKER_STATE.get("errors_total", 0) + 1,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -379,6 +430,7 @@ async def background_inbound_worker_loop():
         INBOUND_POLL_SECONDS,
         INBOUND_BATCH_SIZE,
     )
+    _mark_worker_state(started_at=_iso_now())
     listen_conn = None
     if engine.dialect.name == "postgresql":
         try:
@@ -388,6 +440,7 @@ async def background_inbound_worker_loop():
             listen_conn = None
 
     while True:
+        _mark_worker_state(last_loop_at=_iso_now())
         processed = 0
         try:
             with Session(engine) as session:
@@ -408,10 +461,20 @@ async def background_inbound_worker_loop():
                     try:
                         await _process_one_inbound(session, claimed)
                         processed += 1
+                        _mark_worker_state(
+                            last_processed_at=_iso_now(),
+                            last_processed_message_id=message_id,
+                            processed_total=INBOUND_WORKER_STATE.get("processed_total", 0) + 1,
+                        )
                     except Exception as exc:
                         logger.exception(
                             "Inbound processing error for message_id=%s: %s",
                             message_id, exc,
+                        )
+                        _mark_worker_state(
+                            last_error_at=_iso_now(),
+                            last_error_message=f"message_id={message_id}: {exc}",
+                            errors_total=INBOUND_WORKER_STATE.get("errors_total", 0) + 1,
                         )
                         session.rollback()
                         _mark_inbound_error(session, message_id)
@@ -436,16 +499,31 @@ async def background_inbound_worker_loop():
                         try:
                             await _process_one_inbound(session, claimed)
                             processed += 1
+                            _mark_worker_state(
+                                last_processed_at=_iso_now(),
+                                last_processed_message_id=inbound.id,
+                                processed_total=INBOUND_WORKER_STATE.get("processed_total", 0) + 1,
+                            )
                         except Exception as exc:
                             logger.exception(
                                 "Inbound processing error for message_id=%s: %s",
                                 inbound.id, exc,
+                            )
+                            _mark_worker_state(
+                                last_error_at=_iso_now(),
+                                last_error_message=f"message_id={inbound.id}: {exc}",
+                                errors_total=INBOUND_WORKER_STATE.get("errors_total", 0) + 1,
                             )
                             session.rollback()
                             _mark_inbound_error(session, inbound.id)
 
         except Exception as exc:
             logger.exception("Inbound worker loop error: %s", exc)
+            _mark_worker_state(
+                last_error_at=_iso_now(),
+                last_error_message=f"loop_error: {exc}",
+                errors_total=INBOUND_WORKER_STATE.get("errors_total", 0) + 1,
+            )
             if listen_conn is not None:
                 try:
                     listen_conn.close()

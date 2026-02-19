@@ -112,6 +112,13 @@ class InboundHealthResponse(SQLModel):
     blockers: List[str]
 
 
+class InboundDebugResponse(SQLModel):
+    worker_state: Dict[str, Any]
+    recent_inbound: List[Dict[str, Any]]
+    recent_outbound_from_inbound: List[Dict[str, Any]]
+    queue_snapshot: List[Dict[str, Any]]
+
+
 class SimulateInboundRequest(SQLModel):
     lead_id: int
     text_content: str
@@ -1001,6 +1008,94 @@ def mvp_inbound_health(
         notify_channel=INBOUND_NOTIFY_CHANNEL,
         checks=checks,
         blockers=blockers,
+    )
+
+
+@router.get("/mvp/inbound-debug", response_model=InboundDebugResponse)
+def mvp_inbound_debug(
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    tenant_id = auth.tenant.id
+
+    from src.app.background_tasks_inbound import get_inbound_worker_debug_snapshot
+
+    recent_inbound_rows = session.exec(
+        select(UnifiedMessage)
+        .where(
+            UnifiedMessage.tenant_id == tenant_id,
+            UnifiedMessage.direction == "inbound",
+        )
+        .order_by(UnifiedMessage.id.desc())
+        .limit(20)
+    ).all()
+    recent_inbound = [
+        {
+            "id": row.id,
+            "thread_id": row.thread_id,
+            "lead_id": row.lead_id,
+            "channel": row.channel,
+            "delivery_status": row.delivery_status,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+            "text_preview": (row.text_content or "")[:120],
+        }
+        for row in recent_inbound_rows
+    ]
+
+    outbound_rows = session.exec(
+        select(UnifiedMessage)
+        .where(
+            UnifiedMessage.tenant_id == tenant_id,
+            UnifiedMessage.direction == "outbound",
+        )
+        .order_by(UnifiedMessage.id.desc())
+        .limit(50)
+    ).all()
+    recent_outbound_from_inbound = [
+        {
+            "id": row.id,
+            "thread_id": row.thread_id,
+            "lead_id": row.lead_id,
+            "delivery_status": row.delivery_status,
+            "created_at": row.created_at.isoformat() if row.created_at else None,
+            "source": row.raw_payload.get("source") if isinstance(row.raw_payload, dict) else None,
+            "inbound_message_id": (
+                row.raw_payload.get("inbound_message_id")
+                if isinstance(row.raw_payload, dict)
+                else None
+            ),
+            "text_preview": (row.text_content or "")[:120],
+        }
+        for row in outbound_rows
+        if isinstance(row.raw_payload, dict) and row.raw_payload.get("inbound_message_id") is not None
+    ][:20]
+
+    queue_rows = session.exec(
+        select(OutboundQueue)
+        .where(OutboundQueue.tenant_id == tenant_id)
+        .order_by(OutboundQueue.id.desc())
+        .limit(20)
+    ).all()
+    queue_snapshot = [
+        {
+            "id": q.id,
+            "message_id": q.message_id,
+            "channel": q.channel,
+            "status": q.status,
+            "retry_count": q.retry_count,
+            "next_attempt_at": q.next_attempt_at.isoformat() if q.next_attempt_at else None,
+            "last_error": q.last_error,
+            "updated_at": q.updated_at.isoformat() if q.updated_at else None,
+        }
+        for q in queue_rows
+    ]
+
+    return InboundDebugResponse(
+        worker_state=get_inbound_worker_debug_snapshot(),
+        recent_inbound=recent_inbound,
+        recent_outbound_from_inbound=recent_outbound_from_inbound,
+        queue_snapshot=queue_snapshot,
     )
 
 
