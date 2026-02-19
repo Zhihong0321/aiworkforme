@@ -36,7 +36,7 @@ from src.app.background_tasks_inbound import background_inbound_worker_loop
 from routers import (
     analytics, auth, platform, mcp, chat, 
     agents, knowledge, settings, policy, 
-    playground, workspaces, catalog, calendar, messaging
+    playground, workspaces, catalog, calendar, messaging, debug
 )
 
 # Configure logging
@@ -66,6 +66,7 @@ app.include_router(analytics.router, dependencies=tenant_dependencies)
 app.include_router(calendar.router, dependencies=tenant_dependencies)
 app.include_router(messaging.router, dependencies=tenant_dependencies)
 app.include_router(settings.router, dependencies=[Depends(require_platform_admin)])
+app.include_router(debug.router)
 
 # CORS Configuration
 origins = ["*"]
