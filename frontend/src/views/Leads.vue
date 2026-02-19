@@ -32,6 +32,9 @@ const importDialogOpen = ref(false)
 const importChatLimit = ref('300')
 const importMessageLimit = ref('100')
 const importIncludeGroups = ref(false)
+const importSeedPhone = ref('')
+const importSeedText = ref('Hi, this is a test message to initialize chat import.')
+const importSendSeedMessage = ref(true)
 
 const fetchLeads = async () => {
   if (!store.activeWorkspaceId) {
@@ -242,12 +245,20 @@ const importWhatsAppConversations = async () => {
   try {
     const chatLimit = Math.max(1, Math.min(500, Number(importChatLimit.value || 300)))
     const messageLimit = Math.max(1, Math.min(500, Number(importMessageLimit.value || 100)))
+    const seedPhone = String(importSeedPhone.value || '').trim()
+    if (importSendSeedMessage.value && !seedPhone) {
+      actionError.value = 'Please provide a WhatsApp contact number for the test message.'
+      importLoading.value = false
+      return
+    }
     const result = await request(`/messaging/workspaces/${store.activeWorkspaceId}/import-whatsapp-conversations`, {
       method: 'POST',
       body: JSON.stringify({
         chat_limit: chatLimit,
         message_limit_per_chat: messageLimit,
-        include_group_chats: !!importIncludeGroups.value
+        include_group_chats: !!importIncludeGroups.value,
+        seed_phone: importSendSeedMessage.value ? seedPhone : null,
+        seed_text: importSendSeedMessage.value ? String(importSeedText.value || '').trim() : null
       })
     })
     actionMessage.value = `Imported ${result.messages_created} messages from ${result.chats_imported}/${result.chats_scanned} chats. Leads created: ${result.leads_created}, names updated: ${result.lead_names_updated}.`
@@ -491,6 +502,12 @@ watch(() => store.activeWorkspaceId, async () => {
         <div class="p-6 space-y-4 bg-slate-50">
           <TuiInput v-model="importChatLimit" label="Max Chats" placeholder="300" />
           <TuiInput v-model="importMessageLimit" label="Max Messages Per Chat" placeholder="100" />
+          <label class="flex items-center gap-3 text-sm text-slate-700">
+            <input v-model="importSendSeedMessage" type="checkbox" class="rounded border-slate-300" />
+            Send test message first (recommended when no chats yet)
+          </label>
+          <TuiInput v-model="importSeedPhone" label="WhatsApp Contact For Test Message" placeholder="60123456789" />
+          <TuiInput v-model="importSeedText" label="Test Message Text" placeholder="Hi, this is a test message to initialize chat import." />
           <label class="flex items-center gap-3 text-sm text-slate-700">
             <input v-model="importIncludeGroups" type="checkbox" class="rounded border-slate-300" />
             Include group chats

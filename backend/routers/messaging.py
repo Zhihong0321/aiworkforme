@@ -1,5 +1,6 @@
 import os
 import re
+import time
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 from urllib.parse import quote
@@ -142,6 +143,8 @@ class WhatsAppConversationImportRequest(SQLModel):
     chat_limit: int = 200
     message_limit_per_chat: int = 100
     include_group_chats: bool = False
+    seed_phone: Optional[str] = None
+    seed_text: Optional[str] = None
 
 
 class WhatsAppConversationImportResponse(SQLModel):
@@ -528,6 +531,15 @@ def _chat_phone_number(chat: Dict[str, Any]) -> Optional[str]:
     if not isinstance(phone, str):
         return None
     digits = re.sub(r"\D+", "", phone)
+    if not digits:
+        return None
+    return digits
+
+
+def _normalize_seed_phone(phone: Optional[str]) -> Optional[str]:
+    if not phone:
+        return None
+    digits = re.sub(r"\D+", "", str(phone))
     if not digits:
         return None
     return digits
@@ -980,6 +992,38 @@ def import_whatsapp_conversations(
 
     try:
         with httpx.Client(timeout=30.0) as client:
+            seed_phone = _normalize_seed_phone(payload.seed_phone)
+            if payload.seed_phone is not None and not seed_phone:
+                raise HTTPException(
+                    status_code=400,
+                    detail="seed_phone must contain digits with country code (example: 60123456789)",
+                )
+            if seed_phone:
+                seed_text = (payload.seed_text or "").strip() or "Hi, this is a test message to initialize chat import."
+                seed_res = client.post(
+                    f"{base_url}/messages/send",
+                    headers=_provider_headers(),
+                    json={
+                        "sessionId": channel_session.session_identifier,
+                        "to": seed_phone,
+                        "text": seed_text,
+                    },
+                )
+                try:
+                    seed_res.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    detail = ""
+                    try:
+                        detail = str(seed_res.json())
+                    except Exception:
+                        detail = seed_res.text or str(exc)
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"Seed message failed for {seed_phone}: {detail[:400]}",
+                    ) from exc
+                # Allow provider cache to include the fresh chat before listing chats.
+                time.sleep(1.2)
+
             chats_res = client.get(
                 f"{base_url}/chats",
                 headers=_provider_headers(),
