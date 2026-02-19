@@ -18,6 +18,26 @@ DEFAULT_MODEL_RATES_PER_1M = {
 }
 
 
+def _to_positive_float(value: str | None) -> float | None:
+    if value is None:
+        return None
+    try:
+        parsed = float(value)
+    except ValueError:
+        return None
+    if parsed <= 0:
+        return None
+    return parsed
+
+
+def _normalize_provider(provider: str) -> str:
+    return (provider or "").strip().lower()
+
+
+def _normalize_model(model: str) -> str:
+    return (model or "").strip().lower()
+
+
 def _env_key(provider: str, model: str, side: str) -> str:
     provider_key = "".join(ch if ch.isalnum() else "_" for ch in (provider or "")).upper()
     model_key = "".join(ch if ch.isalnum() else "_" for ch in (model or "")).upper()
@@ -32,28 +52,35 @@ def _provider_env_key(provider: str, side: str) -> str:
 
 
 def _read_rate(provider: str, model: str, side: str) -> float:
-    specific = os.getenv(_env_key(provider, model, side))
+    specific = _to_positive_float(os.getenv(_env_key(provider, model, side)))
     if specific is not None:
-        try:
-            return float(specific)
-        except ValueError:
-            return 0.0
+        return specific
 
-    generic = os.getenv(_provider_env_key(provider, side))
+    generic = _to_positive_float(os.getenv(_provider_env_key(provider, side)))
     if generic is not None:
-        try:
-            return float(generic)
-        except ValueError:
-            return 0.0
+        return generic
 
-    provider_rates = DEFAULT_MODEL_RATES_PER_1M.get((provider or "").strip().lower(), {})
-    model_rates = provider_rates.get((model or "").strip(), {})
+    provider_rates = DEFAULT_MODEL_RATES_PER_1M.get(_normalize_provider(provider), {})
+    model_key = _normalize_model(model)
+
+    # 1) Exact model match.
+    model_rates = provider_rates.get(model_key, {})
     default_rate = model_rates.get(side.lower())
     if default_rate is not None:
         try:
             return float(default_rate)
         except (TypeError, ValueError):
-            return 0.0
+            pass
+
+    # 2) Prefix match for versioned aliases, e.g. "gemini-3-flash-preview-2026-01".
+    for known_model, known_rates in provider_rates.items():
+        if model_key.startswith(f"{known_model}-") or model_key.startswith(f"{known_model}:") or model_key.startswith(f"{known_model}@"):
+            maybe = known_rates.get(side.lower())
+            if maybe is not None:
+                try:
+                    return float(maybe)
+                except (TypeError, ValueError):
+                    pass
     return 0.0
 
 
