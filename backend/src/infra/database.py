@@ -5,7 +5,12 @@ PURPOSE: Shared SQLAlchemy engine and session management.
 import os
 from sqlmodel import Session, create_engine
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test.db")
+DATABASE_URL = (
+    os.getenv("DATABASE_URL")
+    or os.getenv("POSTGRES_URL")
+    or os.getenv("POSTGRESQL_URL")
+    or "postgresql://user:password@db:5432/chatbot_db"
+)
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 

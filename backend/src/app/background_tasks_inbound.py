@@ -160,6 +160,13 @@ def _enqueue_outbound_reply(
     inbound_message: UnifiedMessage,
     agent_id: int,
     text: str,
+    ai_trace: Optional[Dict[str, Any]] = None,
+    llm_provider: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    llm_prompt_tokens: Optional[int] = None,
+    llm_completion_tokens: Optional[int] = None,
+    llm_total_tokens: Optional[int] = None,
+    llm_estimated_cost_usd: Optional[float] = None,
 ) -> UnifiedMessage:
     now = datetime.utcnow()
     outbound = UnifiedMessage(
@@ -172,10 +179,17 @@ def _enqueue_outbound_reply(
         direction="outbound",
         message_type="text",
         text_content=text,
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        llm_prompt_tokens=llm_prompt_tokens,
+        llm_completion_tokens=llm_completion_tokens,
+        llm_total_tokens=llm_total_tokens,
+        llm_estimated_cost_usd=llm_estimated_cost_usd,
         raw_payload={
             "source": "ai_agent",
             "inbound_message_id": inbound_message.id,
             "agent_id": agent_id,
+            "ai_trace": ai_trace or {},
         },
         delivery_status="queued",
         created_at=now,
@@ -259,7 +273,19 @@ async def _process_one_inbound(session: Session, message: UnifiedMessage):
 
     if status == "sent":
         reply_text = result["content"]
-        _enqueue_outbound_reply(session, message, agent.id, reply_text)
+        _enqueue_outbound_reply(
+            session,
+            message,
+            agent.id,
+            reply_text,
+            ai_trace=result.get("ai_trace"),
+            llm_provider=result.get("llm_provider"),
+            llm_model=result.get("llm_model"),
+            llm_prompt_tokens=result.get("llm_prompt_tokens"),
+            llm_completion_tokens=result.get("llm_completion_tokens"),
+            llm_total_tokens=result.get("llm_total_tokens"),
+            llm_estimated_cost_usd=result.get("llm_estimated_cost_usd"),
+        )
         message.delivery_status = "inbound_ai_replied"
         logger.info(
             "AI reply enqueued for message_id=%s: %.80s…", message.id, reply_text

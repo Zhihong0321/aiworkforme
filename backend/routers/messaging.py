@@ -1,7 +1,7 @@
 import os
 import re
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from urllib.parse import quote
 from uuid import uuid4
 import logging
@@ -17,8 +17,10 @@ from src.adapters.db.crm_models import Lead, Workspace
 from src.adapters.db.agent_models import Agent
 from src.adapters.db.channel_models import ChannelSession, ChannelType, SessionStatus
 from src.adapters.db.messaging_models import UnifiedThread, UnifiedMessage, OutboundQueue
+from src.adapters.db.system_settings import get_bool_system_setting
 from src.infra.llm.router import LLMRouter
 from src.infra.llm.schemas import LLMTask
+from src.infra.llm.costs import estimate_llm_cost_usd
 
 
 router = APIRouter(prefix="/api/v1/messaging", tags=["Unified Messaging"])
@@ -412,7 +414,24 @@ def _resolve_whatsapp_channel_session_for_tenant(
     return any_session
 
 
-async def _generate_initial_outreach_text(router: LLMRouter, agent: Agent, lead: Lead) -> str:
+def _normalize_usage(usage: Dict[str, Any]) -> Dict[str, Any]:
+    usage = usage or {}
+    prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+    completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+    total_tokens = int(usage.get("total_tokens", 0) or 0)
+    if total_tokens <= 0:
+        total_tokens = prompt_tokens + completion_tokens
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "raw_usage": usage.get("raw_usage", usage),
+    }
+
+
+async def _generate_initial_outreach_text(
+    router: LLMRouter, agent: Agent, lead: Lead, include_context_prompt: bool
+) -> Tuple[str, Dict[str, Any]]:
     lead_name = lead.name or "there"
     prompt = (
         "Generate one short first outreach WhatsApp message for this lead. "
@@ -431,10 +450,44 @@ async def _generate_initial_outreach_text(router: LLMRouter, agent: Agent, lead:
         )
         text = (response.content or "").strip()
         if text:
-            return text
+            provider_info = response.provider_info or {}
+            ai_trace = {
+                "schema_version": "1.0",
+                "task": LLMTask.CONVERSATION.value,
+                "provider": provider_info.get("provider") or "unknown",
+                "model": provider_info.get("model") or "unknown",
+                "usage": _normalize_usage(response.usage or {}),
+                "context_prompt": agent.system_prompt if include_context_prompt else None,
+                "recorded_at": datetime.utcnow().isoformat(),
+            }
+            usage = ai_trace["usage"]
+            ai_trace["usage"]["estimated_cost_usd"] = estimate_llm_cost_usd(
+                ai_trace["provider"],
+                ai_trace["model"],
+                usage.get("prompt_tokens", 0) or 0,
+                usage.get("completion_tokens", 0) or 0,
+            )
+            return text, ai_trace
     except Exception as exc:
         logger.warning("Initial outreach generation failed for lead_id=%s: %s", lead.id, exc)
-    return f"Hi {lead_name}, I wanted to follow up and see how I can help you today."
+    return (
+        f"Hi {lead_name}, I wanted to follow up and see how I can help you today.",
+        {
+            "schema_version": "1.0",
+            "task": LLMTask.CONVERSATION.value,
+            "provider": "fallback_template",
+            "model": "none",
+            "usage": {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "raw_usage": {},
+                "estimated_cost_usd": 0,
+            },
+            "context_prompt": agent.system_prompt if include_context_prompt else None,
+            "recorded_at": datetime.utcnow().isoformat(),
+        },
+    )
 
 
 def _send_whatsapp_message(session: Session, message: UnifiedMessage) -> str:
@@ -763,7 +816,13 @@ async def start_lead_work(
     if not agent or agent.tenant_id != auth.tenant.id:
         raise HTTPException(status_code=400, detail="Assigned agent is unavailable")
 
-    text_content = await _generate_initial_outreach_text(router, agent, lead)
+    include_context_prompt = get_bool_system_setting(
+        session, "record_context_prompt", default=False
+    )
+    text_content, ai_trace = await _generate_initial_outreach_text(
+        router, agent, lead, include_context_prompt
+    )
+    usage = ai_trace.get("usage") if isinstance(ai_trace.get("usage"), dict) else {}
     now = datetime.utcnow()
     message = UnifiedMessage(
         tenant_id=auth.tenant.id,
@@ -775,7 +834,13 @@ async def start_lead_work(
         direction="outbound",
         message_type="text",
         text_content=text_content,
-        raw_payload={"source": "manual_working_mode", "agent_id": agent.id},
+        llm_provider=ai_trace.get("provider"),
+        llm_model=ai_trace.get("model"),
+        llm_prompt_tokens=int(usage.get("prompt_tokens", 0) or 0),
+        llm_completion_tokens=int(usage.get("completion_tokens", 0) or 0),
+        llm_total_tokens=int(usage.get("total_tokens", 0) or 0),
+        llm_estimated_cost_usd=float(usage.get("estimated_cost_usd", 0) or 0),
+        raw_payload={"source": "manual_working_mode", "agent_id": agent.id, "ai_trace": ai_trace},
         delivery_status="queued",
         created_at=now,
         updated_at=now,

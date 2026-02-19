@@ -106,10 +106,17 @@ class UniAPIProvider(BaseLLMProvider):
             # Parse Gemini response
             candidate = data["candidates"][0]
             content = candidate["content"]["parts"][0]["text"]
+            usage_metadata = data.get("usageMetadata", {}) if isinstance(data, dict) else {}
+            usage = {
+                "prompt_tokens": int(usage_metadata.get("promptTokenCount", 0) or 0),
+                "completion_tokens": int(usage_metadata.get("candidatesTokenCount", 0) or 0),
+                "total_tokens": int(usage_metadata.get("totalTokenCount", 0) or 0),
+                "raw_usage": usage_metadata,
+            }
             
             return LLMResponse(
                 content=content,
-                usage=data.get("usageMetadata", {}),
+                usage=usage,
                 provider_info={
                     "provider": "uniapi",
                     "model": model

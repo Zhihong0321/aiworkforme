@@ -38,10 +38,12 @@ llm_router = LLMRouter(
         "uniapi": uniapi_provider
     },
     routing_config={
-        LLMTask.CONVERSATION: "zai",
-        LLMTask.EXTRACTION: "uniapi",  # Gemini is better for extraction
-        LLMTask.TOOL_USE: "zai"
-    }
+        LLMTask.CONVERSATION: "uniapi",
+        LLMTask.EXTRACTION: "uniapi",
+        LLMTask.REASONING: "uniapi",
+        LLMTask.TOOL_USE: "uniapi",
+    },
+    default_provider="uniapi",
 )
 
 bearer_scheme = HTTPBearer(auto_error=False)

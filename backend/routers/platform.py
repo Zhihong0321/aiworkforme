@@ -15,7 +15,10 @@ from src.infra.database import get_session
 from src.adapters.api.dependencies import AuthContext, get_zai_client, require_platform_admin
 from src.adapters.db.audit_models import AdminAuditLog, SecurityEventLog
 from src.adapters.db.tenant_models import Tenant, SystemSetting
+from src.adapters.db.system_settings import get_bool_system_setting
 from src.adapters.db.user_models import User, TenantMembership
+from src.adapters.db.messaging_models import UnifiedMessage
+from src.adapters.db.crm_models import Lead
 from src.domain.entities.enums import Role, TenantStatus
 from src.infra.security import hash_password
 from src.adapters.zai.client import ZaiClient
@@ -101,6 +104,28 @@ class SecurityEventLogResponse(SQLModel):
     created_at: datetime
 
 
+class PlatformMessageHistoryItem(SQLModel):
+    message_id: int
+    tenant_id: int
+    tenant_name: str | None = None
+    lead_id: int
+    lead_external_id: str | None = None
+    thread_id: int | None = None
+    channel: str
+    direction: str
+    text_content: str | None = None
+    delivery_status: str
+    ai_generated: bool
+    ai_trace: dict
+    llm_provider: str | None = None
+    llm_model: str | None = None
+    llm_prompt_tokens: int | None = None
+    llm_completion_tokens: int | None = None
+    llm_total_tokens: int | None = None
+    llm_estimated_cost_usd: float | None = None
+    created_at: datetime
+
+
 class ApiKeyRequest(SQLModel):
     api_key: str
 
@@ -124,6 +149,15 @@ class ApiKeyValidationResponse(SQLModel):
 
 class LLMRoutingUpdateRequest(SQLModel):
     config: dict # Dict[str, str] where key is LLMTask value and value is provider name
+
+
+class BooleanSettingResponse(SQLModel):
+    key: str
+    value: bool
+
+
+class BooleanSettingUpdateRequest(SQLModel):
+    value: bool
 
 
 PROVIDER_SETTINGS = {
@@ -582,6 +616,70 @@ def list_security_events(
     ]
 
 
+@router.get("/messages/history", response_model=List[PlatformMessageHistoryItem])
+def list_platform_message_history(
+    limit: int = 200,
+    tenant_id: int | None = None,
+    direction: str | None = None,
+    ai_only: bool = False,
+    session: Session = Depends(get_session),
+    _context: AuthContext = Depends(require_platform_admin),
+):
+    safe_limit = min(max(limit, 1), 1000)
+    statement = select(UnifiedMessage).order_by(UnifiedMessage.created_at.desc()).limit(safe_limit)
+    if tenant_id is not None:
+        statement = statement.where(UnifiedMessage.tenant_id == tenant_id)
+    if direction in {"inbound", "outbound"}:
+        statement = statement.where(UnifiedMessage.direction == direction)
+
+    rows = session.exec(statement).all()
+    if ai_only:
+        rows = [
+            row for row in rows
+            if (
+                isinstance(row.raw_payload, dict) and isinstance(row.raw_payload.get("ai_trace"), dict)
+            ) or bool(row.llm_provider)
+        ]
+
+    tenant_ids = {row.tenant_id for row in rows}
+    lead_ids = {row.lead_id for row in rows}
+
+    tenants = session.exec(select(Tenant).where(Tenant.id.in_(tenant_ids))).all() if tenant_ids else []
+    leads = session.exec(select(Lead).where(Lead.id.in_(lead_ids))).all() if lead_ids else []
+    tenant_map = {t.id: t.name for t in tenants}
+    lead_map = {l.id: l.external_id for l in leads}
+
+    results: List[PlatformMessageHistoryItem] = []
+    for row in rows:
+        payload = row.raw_payload if isinstance(row.raw_payload, dict) else {}
+        ai_trace = payload.get("ai_trace") if isinstance(payload.get("ai_trace"), dict) else {}
+        ai_generated = bool(ai_trace) or bool(row.llm_provider)
+        results.append(
+            PlatformMessageHistoryItem(
+                message_id=row.id,
+                tenant_id=row.tenant_id,
+                tenant_name=tenant_map.get(row.tenant_id),
+                lead_id=row.lead_id,
+                lead_external_id=lead_map.get(row.lead_id),
+                thread_id=row.thread_id,
+                channel=row.channel,
+                direction=row.direction,
+                text_content=row.text_content,
+                delivery_status=row.delivery_status,
+                ai_generated=ai_generated,
+                ai_trace=ai_trace,
+                llm_provider=row.llm_provider,
+                llm_model=row.llm_model,
+                llm_prompt_tokens=row.llm_prompt_tokens,
+                llm_completion_tokens=row.llm_completion_tokens,
+                llm_total_tokens=row.llm_total_tokens,
+                llm_estimated_cost_usd=row.llm_estimated_cost_usd,
+                created_at=row.created_at,
+            )
+        )
+    return results
+
+
 @router.get("/api-keys", response_model=List[ApiKeyStatus])
 def list_api_keys(
     session: Session = Depends(get_session),
@@ -774,3 +872,39 @@ def list_llm_tasks(
     _context: AuthContext = Depends(require_platform_admin),
 ):
     return [t.value for t in LLMTask]
+
+
+@router.get("/settings/record-context-prompt", response_model=BooleanSettingResponse)
+def get_record_context_prompt_setting(
+    session: Session = Depends(get_session),
+    _context: AuthContext = Depends(require_platform_admin),
+):
+    value = get_bool_system_setting(session, "record_context_prompt", default=False)
+    return BooleanSettingResponse(key="record_context_prompt", value=value)
+
+
+@router.put("/settings/record-context-prompt", response_model=BooleanSettingResponse)
+def upsert_record_context_prompt_setting(
+    payload: BooleanSettingUpdateRequest,
+    session: Session = Depends(get_session),
+    context: AuthContext = Depends(require_platform_admin),
+):
+    setting = session.get(SystemSetting, "record_context_prompt")
+    value_as_string = "true" if payload.value else "false"
+    if not setting:
+        setting = SystemSetting(key="record_context_prompt", value=value_as_string)
+    else:
+        setting.value = value_as_string
+
+    session.add(setting)
+    session.commit()
+
+    record_admin_audit(
+        session,
+        actor_user_id=context.user.id,
+        action="platform_setting.update",
+        target_type="system_setting",
+        target_id="record_context_prompt",
+        metadata={"value": payload.value},
+    )
+    return BooleanSettingResponse(key="record_context_prompt", value=payload.value)

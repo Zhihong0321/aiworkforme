@@ -37,6 +37,12 @@ class UnifiedMessage(SQLModel, table=True):
 
     text_content: Optional[str] = None
     media_url: Optional[str] = None
+    llm_provider: Optional[str] = Field(default=None, max_length=32, index=True)
+    llm_model: Optional[str] = Field(default=None, max_length=128, index=True)
+    llm_prompt_tokens: Optional[int] = Field(default=None, index=True)
+    llm_completion_tokens: Optional[int] = Field(default=None, index=True)
+    llm_total_tokens: Optional[int] = Field(default=None, index=True)
+    llm_estimated_cost_usd: Optional[float] = Field(default=None, index=True)
     raw_payload: Dict[str, Any] = Field(default={}, sa_column=Column(JSON))
     delivery_status: str = Field(default="received", max_length=32, index=True)
 

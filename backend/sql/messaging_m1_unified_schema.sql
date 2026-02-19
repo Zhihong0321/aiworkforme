@@ -65,6 +65,12 @@ CREATE TABLE IF NOT EXISTS et_messages (
     message_type VARCHAR(32) NOT NULL DEFAULT 'text',
     text_content TEXT,
     media_url TEXT,
+    llm_provider VARCHAR(32),
+    llm_model VARCHAR(128),
+    llm_prompt_tokens INTEGER,
+    llm_completion_tokens INTEGER,
+    llm_total_tokens INTEGER,
+    llm_estimated_cost_usd NUMERIC(12,6),
     raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
     delivery_status VARCHAR(32) NOT NULL DEFAULT 'received',
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
@@ -77,6 +83,56 @@ CREATE INDEX IF NOT EXISTS idx_messages_thread ON et_messages(thread_id);
 CREATE INDEX IF NOT EXISTS idx_messages_lead ON et_messages(lead_id);
 CREATE INDEX IF NOT EXISTS idx_messages_direction ON et_messages(direction);
 CREATE INDEX IF NOT EXISTS idx_messages_created_at ON et_messages(created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_llm_provider ON et_messages(llm_provider);
+CREATE INDEX IF NOT EXISTS idx_messages_llm_model ON et_messages(llm_model);
+CREATE INDEX IF NOT EXISTS idx_messages_llm_total_tokens ON et_messages(llm_total_tokens);
+CREATE INDEX IF NOT EXISTS idx_messages_tenant_created ON et_messages(tenant_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_messages_tenant_provider_created ON et_messages(tenant_id, llm_provider, created_at);
+
+ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_provider VARCHAR(32);
+ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_model VARCHAR(128);
+ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_prompt_tokens INTEGER;
+ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_completion_tokens INTEGER;
+ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_total_tokens INTEGER;
+ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS llm_estimated_cost_usd NUMERIC(12,6);
+
+UPDATE et_messages
+SET
+    llm_provider = COALESCE(llm_provider, NULLIF(raw_payload->'ai_trace'->>'provider', '')),
+    llm_model = COALESCE(llm_model, NULLIF(raw_payload->'ai_trace'->>'model', '')),
+    llm_prompt_tokens = COALESCE(
+        llm_prompt_tokens,
+        CASE
+            WHEN (raw_payload->'ai_trace'->'usage'->>'prompt_tokens') ~ '^[0-9]+$'
+            THEN (raw_payload->'ai_trace'->'usage'->>'prompt_tokens')::INTEGER
+            ELSE NULL
+        END
+    ),
+    llm_completion_tokens = COALESCE(
+        llm_completion_tokens,
+        CASE
+            WHEN (raw_payload->'ai_trace'->'usage'->>'completion_tokens') ~ '^[0-9]+$'
+            THEN (raw_payload->'ai_trace'->'usage'->>'completion_tokens')::INTEGER
+            ELSE NULL
+        END
+    ),
+    llm_total_tokens = COALESCE(
+        llm_total_tokens,
+        CASE
+            WHEN (raw_payload->'ai_trace'->'usage'->>'total_tokens') ~ '^[0-9]+$'
+            THEN (raw_payload->'ai_trace'->'usage'->>'total_tokens')::INTEGER
+            ELSE NULL
+        END
+    ),
+    llm_estimated_cost_usd = COALESCE(
+        llm_estimated_cost_usd,
+        CASE
+            WHEN (raw_payload->'ai_trace'->'usage'->>'estimated_cost_usd') ~ '^[0-9]+(\.[0-9]+)?$'
+            THEN (raw_payload->'ai_trace'->'usage'->>'estimated_cost_usd')::NUMERIC(12,6)
+            ELSE NULL
+        END
+    )
+WHERE direction = 'outbound';
 
 CREATE TABLE IF NOT EXISTS et_outbound_queue (
     id BIGSERIAL PRIMARY KEY,

@@ -33,6 +33,13 @@ const llmTasks = ref([])
 const llmProviders = ref([])
 const llmRouting = ref({})
 const llmRoutingLoading = ref(true)
+const recordContextPrompt = ref(false)
+const recordContextPromptLoading = ref(true)
+const platformMessages = ref([])
+const platformMessagesLoading = ref(true)
+const historyDirection = ref('')
+const historyAiOnly = ref(true)
+const historyLimit = ref(100)
 
 const { theme, toggleTheme, setTheme } = useTheme()
 const themeLabel = computed(() => (theme.value === 'dark' ? 'Dark' : 'Light'))
@@ -42,13 +49,15 @@ const fetchStatus = async () => {
   zaiLoading.value = true
   uniLoading.value = true
   llmRoutingLoading.value = true
+  recordContextPromptLoading.value = true
   try {
-    const [zaiData, uniData, tasksData, providersData, routingData] = await Promise.all([
+    const [zaiData, uniData, tasksData, providersData, routingData, contextPromptData] = await Promise.all([
       request('/settings/zai-key'),
       request('/settings/uniapi-key'),
       request('/platform/llm/tasks'),
       request('/platform/llm/providers'),
-      request('/platform/llm/routing')
+      request('/platform/llm/routing'),
+      request('/platform/settings/record-context-prompt')
     ])
     
     zaiStatus.value = zaiData.status
@@ -60,6 +69,7 @@ const fetchStatus = async () => {
     llmTasks.value = tasksData
     llmProviders.value = providersData
     llmRouting.value = routingData
+    recordContextPrompt.value = !!contextPromptData.value
     
   } catch (error) {
     console.error('Failed to load settings', error)
@@ -67,6 +77,24 @@ const fetchStatus = async () => {
     zaiLoading.value = false
     uniLoading.value = false
     llmRoutingLoading.value = false
+    recordContextPromptLoading.value = false
+  }
+}
+
+const fetchPlatformMessages = async () => {
+  platformMessagesLoading.value = true
+  try {
+    const params = new URLSearchParams()
+    params.set('limit', String(historyLimit.value || 100))
+    if (historyDirection.value) params.set('direction', historyDirection.value)
+    params.set('ai_only', historyAiOnly.value ? 'true' : 'false')
+    const data = await request(`/platform/messages/history?${params.toString()}`)
+    platformMessages.value = Array.isArray(data) ? data : []
+  } catch (e) {
+    message.value = `Error: ${e.message}`
+    platformMessages.value = []
+  } finally {
+    platformMessagesLoading.value = false
   }
 }
 
@@ -128,6 +156,23 @@ const saveRouting = async () => {
   }
 }
 
+const saveRecordContextPrompt = async () => {
+  isSaving.value = true
+  message.value = 'Saving...'
+  try {
+    await request('/platform/settings/record-context-prompt', {
+      method: 'PUT',
+      body: JSON.stringify({ value: recordContextPrompt.value })
+    })
+    message.value = 'Context prompt recording updated'
+    await fetchStatus()
+  } catch (e) {
+    message.value = `Error: ${e.message}`
+  } finally {
+    isSaving.value = false
+  }
+}
+
 const validateProviderKey = async (provider) => {
   isValidating.value = true
   message.value = `Validating ${provider} key...`
@@ -163,6 +208,7 @@ const validateProviderKey = async (provider) => {
 
 onMounted(() => {
   fetchStatus()
+  fetchPlatformMessages()
 })
 </script>
 
@@ -254,6 +300,25 @@ onMounted(() => {
         </TuiCard>
       </div>
 
+      <TuiCard title="Platform Context Recording" subtitle="Control whether built context prompts are recorded in outbound AI metadata">
+        <div v-if="recordContextPromptLoading" class="text-sm text-slate-500 py-4">Loading setting...</div>
+        <div v-else class="space-y-4">
+          <div class="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div>
+              <p class="text-sm font-bold text-slate-800">record_context_prompt</p>
+              <p class="text-[11px] text-slate-500">When enabled, outbound AI rows include `raw_payload.ai_trace.context_prompt`.</p>
+            </div>
+            <label class="inline-flex items-center gap-2 text-xs font-bold text-slate-700">
+              <input v-model="recordContextPrompt" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+              {{ recordContextPrompt ? 'True' : 'False' }}
+            </label>
+          </div>
+          <div class="flex justify-end">
+            <TuiButton @click="saveRecordContextPrompt" :loading="isSaving" size="sm">Save Platform Setting</TuiButton>
+          </div>
+        </div>
+      </TuiCard>
+
       <!-- LLM ROUTING CARD -->
       <TuiCard title="LLM Routing Strategy" subtitle="Control which provider handles specific tasks">
         <div v-if="llmRoutingLoading" class="text-sm text-slate-500 py-4">Loading strategy...</div>
@@ -273,6 +338,54 @@ onMounted(() => {
           </div>
           <div class="pt-4 border-t border-slate-100 flex justify-end">
             <TuiButton @click="saveRouting" :loading="isSaving" size="sm">Save Routing Strategy</TuiButton>
+          </div>
+        </div>
+      </TuiCard>
+
+      <TuiCard title="Platform Message History" subtitle="Review inbound/outbound messages with AI trace JSON">
+        <div class="space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <div>
+              <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Direction</label>
+              <select v-model="historyDirection" class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800">
+                <option value="">All</option>
+                <option value="inbound">Inbound</option>
+                <option value="outbound">Outbound</option>
+              </select>
+            </div>
+            <div>
+              <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Limit</label>
+              <input v-model.number="historyLimit" type="number" min="1" max="1000" class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800" />
+            </div>
+            <div class="flex items-end">
+              <label class="inline-flex items-center gap-2 text-xs font-bold text-slate-700">
+                <input v-model="historyAiOnly" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
+                AI only
+              </label>
+            </div>
+            <div class="flex items-end justify-end">
+              <TuiButton @click="fetchPlatformMessages" :loading="platformMessagesLoading" size="sm">Refresh History</TuiButton>
+            </div>
+          </div>
+
+          <div v-if="platformMessagesLoading" class="text-sm text-slate-500 py-4">Loading message history...</div>
+          <div v-else-if="platformMessages.length === 0" class="text-sm text-slate-500 py-4">No messages found for the selected filters.</div>
+          <div v-else class="space-y-3 max-h-[28rem] overflow-y-auto pr-1">
+            <article v-for="msg in platformMessages" :key="msg.message_id" class="rounded-2xl border border-slate-200 bg-white p-4">
+              <div class="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest font-black text-slate-500">
+                <span>#{{ msg.message_id }}</span>
+                <span>{{ msg.direction }}</span>
+                <span>{{ msg.channel }}</span>
+                <span>tenant {{ msg.tenant_id }}</span>
+                <span>lead {{ msg.lead_external_id || msg.lead_id }}</span>
+                <span v-if="msg.llm_provider">provider {{ msg.llm_provider }}</span>
+                <span v-if="msg.llm_model">model {{ msg.llm_model }}</span>
+                <span v-if="msg.llm_total_tokens !== null && msg.llm_total_tokens !== undefined">tokens {{ msg.llm_total_tokens }}</span>
+                <span v-if="msg.llm_estimated_cost_usd !== null && msg.llm_estimated_cost_usd !== undefined">cost ${{ Number(msg.llm_estimated_cost_usd).toFixed(6) }}</span>
+              </div>
+              <p class="mt-2 text-sm text-slate-800 whitespace-pre-wrap">{{ msg.text_content || '(empty)' }}</p>
+              <pre class="mt-3 rounded-xl bg-slate-950 text-slate-100 text-[11px] leading-5 p-3 overflow-x-auto">{{ JSON.stringify(msg.ai_trace || {}, null, 2) }}</pre>
+            </article>
           </div>
         </div>
       </TuiCard>

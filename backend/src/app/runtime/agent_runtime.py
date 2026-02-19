@@ -4,18 +4,37 @@ PURPOSE: Unified conversation runtime orchestration.
 """
 import logging
 import json
+from datetime import datetime
 from typing import Dict, Any, List, Optional
 from sqlmodel import Session
 
 from src.adapters.db.crm_models import Lead, Workspace, PolicyDecision, ChatMessageNew, ConversationThread
+from src.adapters.db.system_settings import get_bool_system_setting
 from src.domain.entities.enums import LeadStage
 from src.app.policy.evaluator import PolicyEvaluator
 from src.app.runtime.context_builder import ContextBuilder
 from src.app.runtime.memory_service import MemoryService
 from src.infra.llm.router import LLMRouter
 from src.infra.llm.schemas import LLMTask
+from src.infra.llm.costs import estimate_llm_cost_usd
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_usage(usage: Dict[str, Any]) -> Dict[str, Any]:
+    usage = usage or {}
+    prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+    completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+    total_tokens = int(usage.get("total_tokens", 0) or 0)
+    if total_tokens <= 0:
+        total_tokens = prompt_tokens + completion_tokens
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "total_tokens": total_tokens,
+        "raw_usage": usage.get("raw_usage", usage),
+    }
+
 
 class ConversationAgentRuntime:
     """
@@ -103,7 +122,40 @@ class ConversationAgentRuntime:
             memory_service = MemoryService(self.session, self.router)
             await memory_service.refresh_memory(lead_id, thread.id)
 
-        return {"status": "sent", "content": model_text}
+        provider_info = response.provider_info or {}
+        usage = _normalize_usage(response.usage or {})
+        provider_name = provider_info.get("provider") or "unknown"
+        model_name = provider_info.get("model") or "unknown"
+        estimated_cost_usd = estimate_llm_cost_usd(
+            provider_name,
+            model_name,
+            usage["prompt_tokens"],
+            usage["completion_tokens"],
+        )
+        include_context_prompt = get_bool_system_setting(
+            self.session, "record_context_prompt", default=False
+        )
+        ai_trace = {
+            "schema_version": "1.0",
+            "task": LLMTask.CONVERSATION.value,
+            "provider": provider_name,
+            "model": model_name,
+            "usage": {**usage, "estimated_cost_usd": estimated_cost_usd},
+            "context_prompt": context["system_instruction"] if include_context_prompt else None,
+            "recorded_at": datetime.utcnow().isoformat(),
+        }
+        result: Dict[str, Any] = {
+            "status": "sent",
+            "content": model_text,
+            "ai_trace": ai_trace,
+            "llm_provider": provider_name,
+            "llm_model": model_name,
+            "llm_prompt_tokens": usage["prompt_tokens"],
+            "llm_completion_tokens": usage["completion_tokens"],
+            "llm_total_tokens": usage["total_tokens"],
+            "llm_estimated_cost_usd": estimated_cost_usd,
+        }
+        return result
 
     def _get_or_create_thread(self, lead_id: int, workspace_id: int) -> ConversationThread:
         from sqlmodel import select
