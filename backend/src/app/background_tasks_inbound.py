@@ -6,17 +6,20 @@ PURPOSE: Process inbound messages through the real AI agent pipeline.
          and MCP tools — exactly the same pipeline as the Playground.
 """
 import asyncio
+import json
 import logging
 import os
+import select as pyselect
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from uuid import uuid4
 
+from sqlalchemy import text
 from sqlmodel import Session, select
 
 from src.infra.database import engine
 from src.adapters.api.dependencies import llm_router
-from src.adapters.db.messaging_models import UnifiedMessage, UnifiedThread, OutboundQueue, ThreadInsight
+from src.adapters.db.messaging_models import UnifiedMessage, UnifiedThread, OutboundQueue
 from src.adapters.db import channel_models  # must be imported before crm_models — ConversationThread.channel_session relationship
 from src.adapters.db.crm_models import Lead, Workspace
 from src.adapters.db.agent_models import Agent
@@ -27,6 +30,7 @@ logger = logging.getLogger(__name__)
 
 INBOUND_POLL_SECONDS = float(os.getenv("MESSAGING_INBOUND_POLL_SECONDS", "2"))
 INBOUND_BATCH_SIZE = int(os.getenv("MESSAGING_INBOUND_BATCH_SIZE", "5"))
+INBOUND_NOTIFY_CHANNEL = os.getenv("MESSAGING_INBOUND_NOTIFY_CHANNEL", "inbound_new_message")
 
 
 # ---------------------------------------------------------------------------
@@ -101,7 +105,7 @@ def _build_thread_history(session: Session, message: UnifiedMessage) -> List[Dic
         .where(
             UnifiedMessage.tenant_id == message.tenant_id,
             UnifiedMessage.thread_id == message.thread_id,
-            UnifiedMessage.id != message.id,          # exclude current message
+            UnifiedMessage.id != message.id,
         )
         .order_by(UnifiedMessage.created_at.desc())
         .limit(12)
@@ -172,12 +176,13 @@ def _enqueue_outbound_reply(
 # ---------------------------------------------------------------------------
 
 async def _process_one_inbound(session: Session, message: UnifiedMessage):
-    # Mark as in-progress immediately so the batch loop doesn't re-pick it
-    message.delivery_status = "inbound_processing"
-    message.updated_at = datetime.utcnow()
-    session.add(message)
-    session.commit()
-    session.refresh(message)
+    # Legacy fallback path: callers that do not pre-claim can still process safely.
+    if message.delivery_status != "inbound_processing":
+        message.delivery_status = "inbound_processing"
+        message.updated_at = datetime.utcnow()
+        session.add(message)
+        session.commit()
+        session.refresh(message)
 
     # 1. Resolve which agent handles this thread
     agent = _resolve_thread_agent(session, message)
@@ -205,11 +210,6 @@ async def _process_one_inbound(session: Session, message: UnifiedMessage):
     history = _build_thread_history(session, message)
 
     # 4. Run the REAL AI agent pipeline
-    #    - Uses agent.system_prompt
-    #    - Runs RAG over agent's knowledge files
-    #    - Loads lead memory
-    #    - Respects policy / risk checks
-    #    - history_override bypasses ChatMessageNew so we stay in et_messages
     logger.info(
         "Running AI agent (id=%s, name=%s) for inbound message_id=%s (lead=%s)",
         agent.id, agent.name, message.id, message.lead_id,
@@ -220,7 +220,7 @@ async def _process_one_inbound(session: Session, message: UnifiedMessage):
         workspace_id=lead.workspace_id,
         user_message=message.text_content or "",
         agent_id_override=agent.id,
-        bypass_safety=True,   # inbound reply — must not be blocked by 24h outbound cap
+        bypass_safety=True,
         history_override=history,
     )
 
@@ -243,7 +243,6 @@ async def _process_one_inbound(session: Session, message: UnifiedMessage):
         message.delivery_status = "inbound_human_takeover"
 
     else:
-        # status == "error" or anything unexpected — raise so outer handler logs it
         raise RuntimeError(
             f"ConversationAgentRuntime returned unexpected status '{status}' "
             f"for message_id={message.id}: {result}"
@@ -252,6 +251,122 @@ async def _process_one_inbound(session: Session, message: UnifiedMessage):
     message.updated_at = datetime.utcnow()
     session.add(message)
     session.commit()
+
+
+# ---------------------------------------------------------------------------
+# LISTEN/NOTIFY + claim helpers
+# ---------------------------------------------------------------------------
+
+def _open_inbound_listen_connection():
+    if engine.dialect.name != "postgresql":
+        return None
+
+    raw_conn = engine.raw_connection()
+    raw_conn.autocommit = True
+    cursor = raw_conn.cursor()
+    try:
+        cursor.execute(f"LISTEN {INBOUND_NOTIFY_CHANNEL};")
+    finally:
+        cursor.close()
+    logger.info("Inbound worker listening on PostgreSQL channel: %s", INBOUND_NOTIFY_CHANNEL)
+    return raw_conn
+
+
+def _wait_for_inbound_notify(listen_conn, timeout_seconds: float) -> List[int]:
+    """
+    Blocks up to timeout_seconds for Postgres NOTIFY and returns message ids.
+    Payload format: {"message_id": <int>, ...}
+    """
+    if not listen_conn:
+        return []
+
+    message_ids: List[int] = []
+    try:
+        ready, _, _ = pyselect.select([listen_conn], [], [], timeout_seconds)
+        if not ready:
+            return []
+
+        listen_conn.poll()
+        notifications = list(getattr(listen_conn, "notifies", []) or [])
+        if hasattr(listen_conn, "notifies"):
+            listen_conn.notifies.clear()
+
+        for notify in notifications:
+            payload = getattr(notify, "payload", "") or ""
+            if not payload:
+                continue
+            try:
+                data = json.loads(payload)
+                message_id = int(data.get("message_id"))
+            except Exception:
+                logger.warning("Inbound NOTIFY payload parse failed: %s", payload)
+                continue
+            if message_id > 0:
+                message_ids.append(message_id)
+    except Exception as exc:
+        logger.warning("Inbound NOTIFY wait failed: %s", exc)
+    return message_ids
+
+
+def _claim_inbound_message(session: Session, message_id: int) -> Optional[UnifiedMessage]:
+    """
+    Atomically claim one inbound row for processing by transitioning:
+    received -> inbound_processing.
+    Returns the claimed UnifiedMessage or None if already claimed/invalid.
+    """
+    if engine.dialect.name == "postgresql":
+        row = session.exec(
+            text(
+                """
+                UPDATE et_messages
+                SET delivery_status = 'inbound_processing',
+                    updated_at = NOW()
+                WHERE id = :message_id
+                  AND direction = 'inbound'
+                  AND delivery_status = 'received'
+                  AND thread_id IS NOT NULL
+                RETURNING id
+                """
+            ),
+            {"message_id": message_id},
+        ).first()
+        if not row:
+            session.rollback()
+            return None
+        session.commit()
+        if isinstance(row, (tuple, list)):
+            claimed_raw = row[0]
+        elif hasattr(row, "_mapping"):
+            claimed_raw = next(iter(row._mapping.values()))
+        else:
+            claimed_raw = row
+        claimed_id = int(claimed_raw)
+        return session.get(UnifiedMessage, claimed_id)
+
+    # Non-Postgres fallback for local/test environments.
+    message = session.get(UnifiedMessage, message_id)
+    if (
+        not message
+        or message.direction != "inbound"
+        or message.delivery_status != "received"
+        or message.thread_id is None
+    ):
+        return None
+    message.delivery_status = "inbound_processing"
+    message.updated_at = datetime.utcnow()
+    session.add(message)
+    session.commit()
+    session.refresh(message)
+    return message
+
+
+def _mark_inbound_error(session: Session, message_id: int):
+    db_inbound = session.get(UnifiedMessage, message_id)
+    if db_inbound:
+        db_inbound.delivery_status = "inbound_error"
+        db_inbound.updated_at = datetime.utcnow()
+        session.add(db_inbound)
+        session.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -264,42 +379,87 @@ async def background_inbound_worker_loop():
         INBOUND_POLL_SECONDS,
         INBOUND_BATCH_SIZE,
     )
+    listen_conn = None
+    if engine.dialect.name == "postgresql":
+        try:
+            listen_conn = _open_inbound_listen_connection()
+        except Exception as exc:
+            logger.warning("Inbound LISTEN disabled (connect failed): %s", exc)
+            listen_conn = None
+
     while True:
         processed = 0
         try:
             with Session(engine) as session:
-                inbound_batch = session.exec(
-                    select(UnifiedMessage)
-                    .where(
-                        UnifiedMessage.direction == "inbound",
-                        UnifiedMessage.delivery_status == "received",
-                        UnifiedMessage.thread_id != None,
+                notified_ids: List[int] = []
+                if listen_conn is not None:
+                    notified_ids = await asyncio.to_thread(
+                        _wait_for_inbound_notify,
+                        listen_conn,
+                        INBOUND_POLL_SECONDS,
                     )
-                    .order_by(UnifiedMessage.created_at.asc(), UnifiedMessage.id.asc())
-                    .limit(INBOUND_BATCH_SIZE)
-                ).all()
 
-                for inbound in inbound_batch:
+                for message_id in list(dict.fromkeys(notified_ids)):
+                    if processed >= INBOUND_BATCH_SIZE:
+                        break
+                    claimed = _claim_inbound_message(session, message_id)
+                    if not claimed:
+                        continue
                     try:
-                        await _process_one_inbound(session, inbound)
+                        await _process_one_inbound(session, claimed)
                         processed += 1
                     except Exception as exc:
                         logger.exception(
                             "Inbound processing error for message_id=%s: %s",
-                            inbound.id, exc,
+                            message_id, exc,
                         )
                         session.rollback()
-                        db_inbound = session.get(UnifiedMessage, inbound.id)
-                        if db_inbound:
-                            db_inbound.delivery_status = "inbound_error"
-                            db_inbound.updated_at = datetime.utcnow()
-                            session.add(db_inbound)
-                            session.commit()
+                        _mark_inbound_error(session, message_id)
+
+                remaining = max(INBOUND_BATCH_SIZE - processed, 0)
+                if remaining > 0:
+                    inbound_batch = session.exec(
+                        select(UnifiedMessage)
+                        .where(
+                            UnifiedMessage.direction == "inbound",
+                            UnifiedMessage.delivery_status == "received",
+                            UnifiedMessage.thread_id != None,
+                        )
+                        .order_by(UnifiedMessage.created_at.asc(), UnifiedMessage.id.asc())
+                        .limit(remaining)
+                    ).all()
+
+                    for inbound in inbound_batch:
+                        claimed = _claim_inbound_message(session, inbound.id)
+                        if not claimed:
+                            continue
+                        try:
+                            await _process_one_inbound(session, claimed)
+                            processed += 1
+                        except Exception as exc:
+                            logger.exception(
+                                "Inbound processing error for message_id=%s: %s",
+                                inbound.id, exc,
+                            )
+                            session.rollback()
+                            _mark_inbound_error(session, inbound.id)
 
         except Exception as exc:
             logger.exception("Inbound worker loop error: %s", exc)
+            if listen_conn is not None:
+                try:
+                    listen_conn.close()
+                except Exception:
+                    pass
+                listen_conn = None
+            if engine.dialect.name == "postgresql":
+                try:
+                    listen_conn = _open_inbound_listen_connection()
+                except Exception as reconnect_exc:
+                    logger.warning("Inbound LISTEN reconnect failed: %s", reconnect_exc)
 
-        if processed == 0:
+        # If LISTEN is enabled, timeout wait already happened in _wait_for_inbound_notify.
+        if processed == 0 and listen_conn is None:
             await asyncio.sleep(INBOUND_POLL_SECONDS)
         else:
             await asyncio.sleep(0)

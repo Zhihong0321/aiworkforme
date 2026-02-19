@@ -104,6 +104,14 @@ class MVPOperationalCheckResponse(SQLModel):
     blockers: List[str]
 
 
+class InboundHealthResponse(SQLModel):
+    ready: bool
+    worker_mode: str
+    notify_channel: str
+    checks: Dict[str, Any]
+    blockers: List[str]
+
+
 class SimulateInboundRequest(SQLModel):
     lead_id: int
     text_content: str
@@ -924,6 +932,73 @@ def mvp_operational_check(
 
     return MVPOperationalCheckResponse(
         ready=len(blockers) == 0,
+        checks=checks,
+        blockers=blockers,
+    )
+
+
+@router.get("/mvp/inbound-health", response_model=InboundHealthResponse)
+def mvp_inbound_health(
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    tenant_id = auth.tenant.id
+    checks: Dict[str, Any] = {}
+    blockers: List[str] = []
+
+    from src.app.background_tasks_inbound import INBOUND_NOTIFY_CHANNEL, INBOUND_POLL_SECONDS
+
+    checks["db_engine"] = session.bind.dialect.name if session.bind else "unknown"
+    checks["notify_channel"] = INBOUND_NOTIFY_CHANNEL
+    checks["poll_seconds"] = INBOUND_POLL_SECONDS
+    checks["supports_listen_notify"] = checks["db_engine"] == "postgresql"
+    if not checks["supports_listen_notify"]:
+        blockers.append("Database is not PostgreSQL; LISTEN/NOTIFY is disabled.")
+
+    now = datetime.utcnow()
+    stale_cutoff = now - timedelta(minutes=5)
+
+    received_unprocessed = session.exec(
+        select(UnifiedMessage).where(
+            UnifiedMessage.tenant_id == tenant_id,
+            UnifiedMessage.direction == "inbound",
+            UnifiedMessage.delivery_status == "received",
+        )
+    ).all()
+    checks["inbound_received_unprocessed"] = len(received_unprocessed)
+
+    checks["inbound_received_stuck_over_5m"] = len(
+        [m for m in received_unprocessed if m.created_at and m.created_at < stale_cutoff]
+    )
+    if checks["inbound_received_stuck_over_5m"] > 0:
+        blockers.append("There are inbound messages stuck in 'received' for over 5 minutes.")
+
+    last_processed = session.exec(
+        select(UnifiedMessage)
+        .where(
+            UnifiedMessage.tenant_id == tenant_id,
+            UnifiedMessage.direction == "inbound",
+            UnifiedMessage.delivery_status.in_(
+                ["inbound_ai_replied", "inbound_human_takeover", "inbound_error"]
+            ),
+        )
+        .order_by(UnifiedMessage.updated_at.desc(), UnifiedMessage.id.desc())
+    ).first()
+    checks["last_processed_inbound_message_id"] = last_processed.id if last_processed else None
+    checks["last_processed_inbound_at"] = (
+        last_processed.updated_at.isoformat() if last_processed and last_processed.updated_at else None
+    )
+
+    worker_mode = (
+        "listen_notify_with_poll_fallback"
+        if checks["supports_listen_notify"]
+        else "poll_only"
+    )
+
+    return InboundHealthResponse(
+        ready=len(blockers) == 0,
+        worker_mode=worker_mode,
+        notify_channel=INBOUND_NOTIFY_CHANNEL,
         checks=checks,
         blockers=blockers,
     )

@@ -152,6 +152,34 @@ BEFORE INSERT ON et_messages
 FOR EACH ROW
 EXECUTE FUNCTION et_assign_inbound_thread();
 
+CREATE OR REPLACE FUNCTION et_notify_inbound_message()
+RETURNS TRIGGER AS $$
+DECLARE
+    payload JSON;
+BEGIN
+    IF NEW.direction <> 'inbound' THEN
+        RETURN NEW;
+    END IF;
+
+    payload := json_build_object(
+        'message_id', NEW.id,
+        'tenant_id', NEW.tenant_id,
+        'thread_id', NEW.thread_id,
+        'channel', NEW.channel
+    );
+
+    PERFORM pg_notify('inbound_new_message', payload::text);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS tr_notify_inbound_message ON et_messages;
+
+CREATE TRIGGER tr_notify_inbound_message
+AFTER INSERT ON et_messages
+FOR EACH ROW
+EXECUTE FUNCTION et_notify_inbound_message();
+
 COMMIT;
 
 -- Additive lead identity support for Baileys LID mapping.

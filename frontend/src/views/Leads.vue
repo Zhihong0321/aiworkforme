@@ -22,6 +22,7 @@ const chatLead = ref(null)
 const chatMessages = ref([])
 const checkLoading = ref(false)
 const mvpCheck = ref(null)
+const inboundHealth = ref(null)
 const simLeadId = ref('')
 const simText = ref('Hi, I want to know more about your service.')
 const simLoading = ref(false)
@@ -71,7 +72,7 @@ const createLead = async () => {
     newLeadName.value = ''
     newLeadExternalId.value = ''
     await fetchLeads()
-    await runMvpCheck()
+    await refreshOperationalChecks()
   } catch (e) {
     createError.value = e.message || 'Failed to create lead'
   } finally {
@@ -115,7 +116,7 @@ const setLeadMode = async (lead, mode) => {
       actionMessage.value = `Lead ${lead.name || lead.id} moved to ON HOLD.`
     }
     await fetchLeads()
-    await runMvpCheck()
+    await refreshOperationalChecks()
   } catch (e) {
     actionError.value = e.message || 'Failed to update mode'
   } finally {
@@ -136,7 +137,7 @@ const deleteLead = async (lead) => {
     })
     actionMessage.value = `Lead ${lead.name || lead.id} deleted. Conversation cleared.`
     await fetchLeads()
-    await runMvpCheck()
+    await refreshOperationalChecks()
     if (chatOpen.value && chatLead.value?.id === lead.id) {
       chatOpen.value = false
       chatLead.value = null
@@ -166,11 +167,28 @@ const reviewLeadChat = async (lead) => {
 }
 
 const runMvpCheck = async () => {
-  checkLoading.value = true
   try {
     mvpCheck.value = await request('/messaging/mvp/operational-check')
   } catch (e) {
     actionError.value = e.message || 'Failed to run operational check'
+  }
+}
+
+const runInboundHealthCheck = async () => {
+  try {
+    inboundHealth.value = await request('/messaging/mvp/inbound-health')
+  } catch (e) {
+    actionError.value = e.message || 'Failed to fetch inbound health'
+  }
+}
+
+const refreshOperationalChecks = async () => {
+  checkLoading.value = true
+  try {
+    await Promise.all([
+      runMvpCheck(),
+      runInboundHealthCheck()
+    ])
   } finally {
     checkLoading.value = false
   }
@@ -199,7 +217,7 @@ const simulateInbound = async () => {
     })
     simResult.value = result.detail || `Inbound status: ${result.inbound_status}`
     await fetchLeads()
-    await runMvpCheck()
+    await refreshOperationalChecks()
   } catch (e) {
     actionError.value = e.message || 'Failed to simulate inbound'
   } finally {
@@ -220,11 +238,11 @@ const startAllLeads = async () => {
 
 onMounted(async () => {
   await fetchLeads()
-  await runMvpCheck()
+  await refreshOperationalChecks()
 })
 watch(() => store.activeWorkspaceId, async () => {
   await fetchLeads()
-  await runMvpCheck()
+  await refreshOperationalChecks()
 })
 </script>
 
@@ -267,7 +285,7 @@ watch(() => store.activeWorkspaceId, async () => {
           <h2 class="text-lg font-black text-slate-900 tracking-tight">MVP Operational Check</h2>
           <p class="text-xs text-slate-500">Validate minimum in/out prerequisites before real WhatsApp test.</p>
         </div>
-        <TuiButton variant="outline" size="sm" :loading="checkLoading" @click="runMvpCheck">Refresh Check</TuiButton>
+        <TuiButton variant="outline" size="sm" :loading="checkLoading" @click="refreshOperationalChecks">Refresh Check</TuiButton>
       </div>
       <div v-if="mvpCheck" class="space-y-2">
         <p class="text-xs font-black uppercase tracking-wider" :class="mvpCheck.ready ? 'text-emerald-700' : 'text-red-700'">
@@ -278,6 +296,27 @@ watch(() => store.activeWorkspaceId, async () => {
         </p>
         <div v-if="Array.isArray(mvpCheck.blockers) && mvpCheck.blockers.length" class="space-y-1">
           <p v-for="b in mvpCheck.blockers" :key="b" class="text-xs font-semibold text-red-700">- {{ b }}</p>
+        </div>
+      </div>
+      <div v-if="inboundHealth" class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <p class="text-[10px] uppercase tracking-[0.2em] font-black text-slate-500">Inbound Health</p>
+            <p class="text-xs text-slate-600">
+              Mode: {{ inboundHealth.worker_mode }} | Channel: {{ inboundHealth.notify_channel }}
+            </p>
+          </div>
+          <p class="text-xs font-black uppercase tracking-wider" :class="inboundHealth.ready ? 'text-emerald-700' : 'text-red-700'">
+            {{ inboundHealth.ready ? 'HEALTHY' : 'ATTENTION' }}
+          </p>
+        </div>
+        <p class="mt-2 text-xs text-slate-700">
+          Received(unprocessed): {{ inboundHealth.checks?.inbound_received_unprocessed ?? 0 }}
+          | Stuck >5m: {{ inboundHealth.checks?.inbound_received_stuck_over_5m ?? 0 }}
+          | Last processed ID: {{ inboundHealth.checks?.last_processed_inbound_message_id ?? '-' }}
+        </p>
+        <div v-if="Array.isArray(inboundHealth.blockers) && inboundHealth.blockers.length" class="mt-2 space-y-1">
+          <p v-for="b in inboundHealth.blockers" :key="b" class="text-xs font-semibold text-red-700">- {{ b }}</p>
         </div>
       </div>
       <div class="mt-5 grid grid-cols-1 md:grid-cols-4 gap-3">

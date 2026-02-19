@@ -15,6 +15,7 @@ Goal: Deliver a simple, reliable, unified messaging architecture for multi-chann
 - No complex orchestration engine.
 - One queue, one outbound worker, one inbound worker.
 - Add fields/states only when proven necessary.
+- No inbound HTTP webhook dependency for message ingestion (Baileys writes inbound directly to Postgres).
 
 ## Phase 0 - Alignment
 - [x] Freeze canonical flow and table contract from `docs/CHANNEL_API_ARCHITECTURE.md`.
@@ -64,17 +65,22 @@ Exit Criteria:
 - No duplicate sends for one queue item.
 
 ## Phase 3 - Inbound MVP End-to-End
-- [ ] Channel API server writes inbound directly into `et_messages`.
-- [ ] Trigger assigns `thread_id`.
+- [x] Channel API server writes inbound directly into `et_messages`.
+- [x] Trigger assigns `thread_id`.
+- [ ] Trigger emits `pg_notify` for new inbound message.
+- [ ] Inbound worker listens for DB notifications (`LISTEN`) and processes immediately.
+- [ ] Keep fallback polling loop (30-60s) to recover missed notifications.
 - [x] Build inbound worker:
 - [x] Read new inbound messages.
 - [x] Label + decide action (`auto_reply`, `follow_up`, `human_takeover`).
 - [x] If `auto_reply`, enqueue outbound message.
+- [ ] Enforce atomic claim step (`received` -> `inbound_processing`) before runtime call.
 
 Exit Criteria:
 - Inbound appears in unified thread timeline.
 - Worker decisions are persisted.
-- Duplicate webhook delivery does not duplicate stored message.
+- Duplicate inbound delivery does not duplicate stored message.
+- Inbound processing still works after worker restart (fallback polling catches missed notify events).
 
 ## Phase 4 - CRM Lightweight Intelligence
 - [ ] Build thread analyzer job:
