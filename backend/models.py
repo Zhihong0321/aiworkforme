@@ -317,7 +317,7 @@ class Lead(SQLModel, table=True):
     threads: List["ConversationThread"] = Relationship(back_populates="lead")
 
 class ConversationThread(SQLModel, table=True):
-    __tablename__ = "et_conversation_threads"
+    __tablename__ = "legacy_conversation_threads"
     id: Optional[int] = Field(default=None, primary_key=True)
     tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     workspace_id: int = Field(foreign_key="et_workspaces.id")
@@ -330,10 +330,10 @@ class ConversationThread(SQLModel, table=True):
     messages: List["ChatMessageNew"] = Relationship(back_populates="thread")
 
 class ChatMessageNew(SQLModel, table=True):
-    __tablename__ = "et_chat_messages"
+    __tablename__ = "legacy_chat_messages"
     id: Optional[int] = Field(default=None, primary_key=True)
     tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
-    thread_id: int = Field(foreign_key="et_conversation_threads.id")
+    thread_id: int = Field(foreign_key="legacy_conversation_threads.id")
     role: str # user, model, system
     content: str
     tool_calls: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))

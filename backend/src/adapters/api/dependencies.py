@@ -41,6 +41,7 @@ llm_router = LLMRouter(
         LLMTask.EXTRACTION: "uniapi",
         LLMTask.REASONING: "uniapi",
         LLMTask.TOOL_USE: "uniapi",
+        LLMTask.AI_CRM: "uniapi",
     },
     task_model_config={},
     default_provider="uniapi",

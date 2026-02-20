@@ -1,39 +1,38 @@
-# Architecture: Monolith SoC
+# Architecture: Strict SoC Monolith
 
-## System Architecture: Strict SoC Monolith
+## Layering and Folder Structure
 
-This project follows a strict **Separation of Concerns (SoC) Monolith** architecture. By centralizing logic into distinct layers, we ensure maximum maintainability and AI-readiness.
+```text
+backend/
+  main.py                      # Thin framework entrypoint
+  src/
+    app/                       # Use-cases + orchestration
+    domain/                    # Pure business rules
+    ports/                     # Interface contracts
+    adapters/                  # IO implementations (api/db/external)
+    infra/                     # Wiring, config, migrations, lifecycle
+    shared/                    # Tiny cross-cutting primitives
+  routers/                     # Legacy API route modules (transitional)
+```
 
-## Layering Strategy
+## Boundary Rules (Import Direction)
 
-1.  **Domain (`/src/domain`)**:
-    *   Pure business logic, entities, and enums.
-    *   Zero dependencies on external frameworks or adapters.
-    *   *Examples: `enums.py`*
+- `domain` imports only `domain` + `shared`.
+- `app` imports `domain` + `ports` + `shared`.
+- `ports` imports `ports` + `shared`.
+- `adapters` imports `ports` + `shared` (legacy exceptions tracked by tests).
+- `infra` can import all layers; it performs composition/wiring.
+- HTTP handlers stay thin and delegate to `app` logic.
 
-2.  **App (`/src/app`)**:
-    *   Orchestration, Use Cases, and Background Tasks.
-    *   Depends on Domain and Ports.
-    *   *Examples: `background_tasks.py`, `runtime/`, `policy/`*
+## Responsibility Placement
 
-3.  **Ports (`/src/ports`)**:
-    *   Abstract interfaces for IO. (To be expanded in Phase 2)
+- Domain logic: `backend/src/domain`.
+- Orchestration/use-cases: `backend/src/app`.
+- IO and persistence concerns: `backend/src/adapters`.
+- Framework/boot/wiring: `backend/src/infra` + thin `backend/main.py`.
 
-4.  **Adapters (`/src/adapters`)**:
-    *   Concrete IO implementations.
-    *   `db/`: Model definitions and database-specific helpers.
-    *   `api/`: FastAPI dependencies and singleton providers.
-    *   `mcp/`, `zai/`: External client implementations.
+## Enforcement
 
-5.  **Infrastructure (`/src/infra`)**:
-    *   Low-level wiring: Database config, Migrations, Seeding, Security.
-
-6.  **Shared (`/src/shared`)**:
-    *   Cross-cutting utilities like base exceptions.
-
-## Hard Rules
-
-- **Inward Dependency Rule**: Inner layers (Domain/App) MUST NOT import from outer layers (Adapters/Infra).
-- **Single Responsibility**: Every module has one job.
-- **Small Files**: Keep files under 200 lines where possible.
-- **AI-First Documentation**: Every file has a module header.
+- `backend/tests/test_architecture_boundaries.py` blocks new cross-layer violations.
+- Transitional violations are allowlisted and must only decrease over time.
+- New modules require file headers and folder README orientation docs.

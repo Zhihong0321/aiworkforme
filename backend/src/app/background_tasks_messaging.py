@@ -5,13 +5,14 @@ PURPOSE: Outbound queue polling/dispatch loop for canonical messaging tables.
 import asyncio
 import logging
 import os
-from typing import List
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from src.infra.database import engine
-from src.adapters.db.messaging_models import OutboundQueue
-from routers.messaging import dispatch_next_outbound_for_tenant
+from routers.messaging import (
+    dispatch_next_outbound_for_tenant,
+    list_tenant_ids_with_queued_outbound,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +34,7 @@ async def background_outbound_dispatch_loop():
         processed_count = 0
         try:
             with Session(engine) as session:
-                tenant_ids: List[int] = session.exec(
-                    select(OutboundQueue.tenant_id)
-                    .where(OutboundQueue.status == "queued")
-                    .distinct()
-                ).all()
+                tenant_ids = list_tenant_ids_with_queued_outbound(session)
 
                 for tenant_id in tenant_ids:
                     for _ in range(OUTBOUND_BATCH_PER_TENANT):

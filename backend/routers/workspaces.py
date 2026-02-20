@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+import csv
+import io
+import re
+from fastapi import APIRouter, Depends, HTTPException, File, Form, UploadFile
 from sqlmodel import Session, select
 from typing import List, Optional
 from datetime import datetime
@@ -18,8 +21,55 @@ class LeadModeRequest(SQLModel):
     mode: str  # on_hold | working
 
 
+class LeadCsvImportResponse(SQLModel):
+    workspace_id: int
+    rows_received: int
+    leads_created: int
+    skipped_duplicates: int
+    skipped_invalid: int
+    errors: List[str] = []
+
+
 def _stage_value(stage) -> str:
     return stage.value if hasattr(stage, "value") else str(stage)
+
+
+def _canonical_lead_key(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    digits = re.sub(r"\D+", "", raw)
+    if len(digits) >= 8:
+        # Keep local/international variants aligned to one key.
+        if digits.startswith("0") and len(digits) >= 9:
+            return f"phone:6{digits}"
+        if digits.startswith("60") and len(digits) >= 10:
+            return f"phone:{digits}"
+        return f"phone:{digits}"
+    return f"raw:{raw.lower()}"
+
+
+def _extract_row_fields(row: dict) -> tuple[Optional[str], Optional[str]]:
+    external_candidates = [
+        "external_id", "phone", "phone_number", "mobile", "whatsapp", "contact", "number"
+    ]
+    name_candidates = ["name", "full_name", "contact_name"]
+
+    external_id = None
+    name = None
+    for key in external_candidates:
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            external_id = value.strip()
+            break
+    for key in name_candidates:
+        value = row.get(key)
+        if isinstance(value, str) and value.strip():
+            name = value.strip()
+            break
+    return external_id, name
 
 @router.get("/", response_model=List[Workspace])
 def list_workspaces(
@@ -136,6 +186,108 @@ def create_lead(
     session.commit()
     session.refresh(lead)
     return lead
+
+
+@router.post("/{workspace_id}/leads/import-csv", response_model=LeadCsvImportResponse)
+async def import_workspace_leads_csv(
+    workspace_id: int,
+    file: UploadFile = File(...),
+    has_header: bool = Form(True),
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    ws = session.get(Workspace, workspace_id)
+    if not ws or ws.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="CSV file is required")
+    if not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only .csv files are supported")
+
+    content = await file.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="CSV file is empty")
+
+    try:
+        text = content.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="CSV must be UTF-8 encoded") from exc
+
+    existing = session.exec(
+        select(Lead).where(
+            Lead.tenant_id == auth.tenant.id,
+            Lead.workspace_id == workspace_id,
+        )
+    ).all()
+    existing_keys: set[str] = set()
+    for lead in existing:
+        key = _canonical_lead_key(lead.external_id)
+        if key:
+            existing_keys.add(key)
+
+    rows_received = 0
+    leads_created = 0
+    skipped_duplicates = 0
+    skipped_invalid = 0
+    errors: List[str] = []
+
+    reader_stream = io.StringIO(text)
+    rows: List[dict] = []
+    if has_header:
+        reader = csv.DictReader(reader_stream)
+        if not reader.fieldnames:
+            raise HTTPException(status_code=400, detail="CSV header is missing")
+        rows = [dict(row or {}) for row in reader]
+    else:
+        reader = csv.reader(reader_stream)
+        for cells in reader:
+            value = (cells[0] if len(cells) > 0 else "").strip()
+            name = (cells[1] if len(cells) > 1 else "").strip()
+            rows.append({"external_id": value, "name": name})
+
+    for idx, row in enumerate(rows, start=1):
+        rows_received += 1
+        external_id, name = _extract_row_fields(row)
+        if not external_id:
+            skipped_invalid += 1
+            if len(errors) < 20:
+                errors.append(f"Row {idx}: missing contact number/external_id.")
+            continue
+
+        canonical_key = _canonical_lead_key(external_id)
+        if not canonical_key:
+            skipped_invalid += 1
+            if len(errors) < 20:
+                errors.append(f"Row {idx}: invalid contact value '{external_id}'.")
+            continue
+
+        if canonical_key in existing_keys:
+            skipped_duplicates += 1
+            continue
+
+        lead = Lead(
+            tenant_id=auth.tenant.id,
+            workspace_id=workspace_id,
+            external_id=external_id.strip(),
+            name=name or None,
+            stage="NEW",
+            tags=[],
+            created_at=datetime.utcnow(),
+        )
+        session.add(lead)
+        existing_keys.add(canonical_key)
+        leads_created += 1
+
+    session.commit()
+    return LeadCsvImportResponse(
+        workspace_id=workspace_id,
+        rows_received=rows_received,
+        leads_created=leads_created,
+        skipped_duplicates=skipped_duplicates,
+        skipped_invalid=skipped_invalid,
+        errors=errors,
+    )
 
 
 @router.delete("/{workspace_id}/leads/{lead_id}")

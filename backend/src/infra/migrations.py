@@ -11,6 +11,50 @@ from sqlalchemy import inspect
 
 logger = logging.getLogger(__name__)
 
+
+def apply_legacy_table_rename_migration(engine: Engine):
+    """
+    Renames legacy CRM tables to `legacy_*` names so they are easy to remove later.
+    Safe to run repeatedly.
+    """
+    rename_pairs = [
+        ("et_conversation_threads", "legacy_conversation_threads"),
+        ("et_chat_messages", "legacy_chat_messages"),
+    ]
+
+    with engine.begin() as conn:
+        if engine.dialect.name == "postgresql":
+            for old_name, new_name in rename_pairs:
+                old_exists = conn.execute(
+                    text("SELECT to_regclass(:name) IS NOT NULL"),
+                    {"name": f"public.{old_name}"},
+                ).scalar()
+                new_exists = conn.execute(
+                    text("SELECT to_regclass(:name) IS NOT NULL"),
+                    {"name": f"public.{new_name}"},
+                ).scalar()
+                if old_exists and not new_exists:
+                    conn.execute(text(f"ALTER TABLE {old_name} RENAME TO {new_name}"))
+                    logger.info("Renamed table %s -> %s", old_name, new_name)
+                elif old_exists and new_exists:
+                    logger.warning(
+                        "Both legacy tables exist (%s and %s). Skipping automatic rename.",
+                        old_name,
+                        new_name,
+                    )
+            return
+
+        if engine.dialect.name == "sqlite":
+            inspector = inspect(engine)
+            tables = set(inspector.get_table_names())
+            for old_name, new_name in rename_pairs:
+                if old_name in tables and new_name not in tables:
+                    conn.execute(text(f"ALTER TABLE {old_name} RENAME TO {new_name}"))
+                    logger.info("Renamed table %s -> %s (sqlite)", old_name, new_name)
+            return
+
+        logger.warning("Skipping legacy table rename migration for unsupported dialect: %s", engine.dialect.name)
+
 def apply_multitenant_additive_migration(engine: Engine, default_tenant_id: int):
     """
     Add tenant_id columns/indexes to legacy tables and backfill existing rows.
@@ -22,8 +66,8 @@ def apply_multitenant_additive_migration(engine: Engine, default_tenant_id: int)
     tenant_owned_tables = [
         "zairag_agents", "zairag_mcp_servers", "zairag_agent_knowledge_files",
         "zairag_chat_sessions", "zairag_chat_messages", "et_workspaces",
-        "et_strategy_versions", "et_leads", "et_conversation_threads",
-        "et_chat_messages", "et_policy_decisions", "et_outreach_attestations",
+        "et_strategy_versions", "et_leads", "legacy_conversation_threads",
+        "legacy_chat_messages", "et_policy_decisions", "et_outreach_attestations",
         "et_lead_memories",
     ]
 
@@ -171,3 +215,55 @@ def apply_message_usage_columns_migration(engine: Engine):
         return
 
     logger.warning("Skipping message usage columns migration for unsupported dialect: %s", dialect)
+
+
+def apply_ai_crm_additive_migration(engine: Engine):
+    """
+    Ensures additive AI CRM columns/indexes exist for already-created tables.
+    Safe to run repeatedly.
+    """
+    dialect = engine.dialect.name
+
+    if dialect == "postgresql":
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE et_ai_crm_thread_states ADD COLUMN IF NOT EXISTS reason_trace JSON"))
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_ai_crm_thread_states_tenant_workspace_next "
+                    "ON et_ai_crm_thread_states(tenant_id, workspace_id, next_followup_at)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_ai_crm_workspace_controls_tenant_workspace "
+                    "ON et_ai_crm_workspace_controls(tenant_id, workspace_id)"
+                )
+            )
+        logger.info("AI CRM additive migration applied for PostgreSQL.")
+        return
+
+    if dialect == "sqlite":
+        insp = inspect(engine)
+        tables = set(insp.get_table_names())
+        with engine.begin() as conn:
+            if "et_ai_crm_thread_states" in tables:
+                existing_cols = {col["name"] for col in insp.get_columns("et_ai_crm_thread_states")}
+                if "reason_trace" not in existing_cols:
+                    conn.execute(text("ALTER TABLE et_ai_crm_thread_states ADD COLUMN reason_trace JSON"))
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_ai_crm_thread_states_tenant_workspace_next "
+                        "ON et_ai_crm_thread_states(tenant_id, workspace_id, next_followup_at)"
+                    )
+                )
+            if "et_ai_crm_workspace_controls" in tables:
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_ai_crm_workspace_controls_tenant_workspace "
+                        "ON et_ai_crm_workspace_controls(tenant_id, workspace_id)"
+                    )
+                )
+        logger.info("AI CRM additive migration applied for SQLite.")
+        return
+
+    logger.warning("Skipping AI CRM additive migration for unsupported dialect: %s", dialect)

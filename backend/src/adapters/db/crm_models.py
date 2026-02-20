@@ -38,6 +38,28 @@ class FollowUpPreset(str, Enum):
     BALANCED = "BALANCED"
     AGGRESSIVE = "AGGRESSIVE"
 
+
+class AICRMAggressiveness(str, Enum):
+    PASSIVE = "PASSIVE"
+    BALANCED = "BALANCED"
+    AGGRESSIVE = "AGGRESSIVE"
+
+
+class AICRMLeadStatus(str, Enum):
+    NO_RESPONSE = "NO_RESPONSE"
+    CONSIDERING = "CONSIDERING"
+    POSITIVE = "POSITIVE"
+    NOT_INTERESTED = "NOT_INTERESTED"
+    REJECTED = "REJECTED"
+    DOUBLE_REJECT = "DOUBLE_REJECT"
+
+
+class AICRMFollowupStrategy(str, Enum):
+    STOP = "STOP"
+    PROMO = "PROMO"
+    DISCOUNT = "DISCOUNT"
+    OTHER = "OTHER"
+
 class StrategyStatus(str, Enum):
     DRAFT = "DRAFT"
     ACTIVE = "ACTIVE"
@@ -106,7 +128,7 @@ class Lead(SQLModel, table=True):
     threads: List["ConversationThread"] = Relationship(back_populates="lead")
 
 class ConversationThread(SQLModel, table=True):
-    __tablename__ = "et_conversation_threads"
+    __tablename__ = "legacy_conversation_threads"
     id: Optional[int] = Field(default=None, primary_key=True)
     tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     workspace_id: int = Field(foreign_key="et_workspaces.id")
@@ -121,10 +143,10 @@ class ConversationThread(SQLModel, table=True):
     channel_session: Optional["ChannelSession"] = Relationship(back_populates="threads")
 
 class ChatMessageNew(SQLModel, table=True):
-    __tablename__ = "et_chat_messages"
+    __tablename__ = "legacy_chat_messages"
     id: Optional[int] = Field(default=None, primary_key=True)
     tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
-    thread_id: int = Field(foreign_key="et_conversation_threads.id", index=True)
+    thread_id: int = Field(foreign_key="legacy_conversation_threads.id", index=True)
     
     # Multi-channel fields
     channel_message_id: str = Field(max_length=255, index=True)  # Original message ID from channel (for idempotency)
@@ -184,3 +206,48 @@ class LeadMemory(SQLModel, table=True):
     facts: List[str] = Field(default=[], sa_column=Column(JSON))
     
     last_updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AICRMWorkspaceControl(SQLModel, table=True):
+    __tablename__ = "et_ai_crm_workspace_controls"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: int = Field(foreign_key="et_tenants.id", index=True)
+    workspace_id: int = Field(foreign_key="et_workspaces.id", index=True, unique=True)
+
+    enabled: bool = Field(default=True)
+    scan_frequency_messages: int = Field(default=4)
+    aggressiveness: AICRMAggressiveness = Field(default=AICRMAggressiveness.BALANCED)
+
+    not_interested_strategy: AICRMFollowupStrategy = Field(default=AICRMFollowupStrategy.PROMO)
+    rejected_strategy: AICRMFollowupStrategy = Field(default=AICRMFollowupStrategy.DISCOUNT)
+    double_reject_strategy: AICRMFollowupStrategy = Field(default=AICRMFollowupStrategy.STOP)
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class AICRMThreadState(SQLModel, table=True):
+    __tablename__ = "et_ai_crm_thread_states"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: int = Field(foreign_key="et_tenants.id", index=True)
+    workspace_id: int = Field(foreign_key="et_workspaces.id", index=True)
+    thread_id: int = Field(foreign_key="et_threads.id", index=True, unique=True)
+    lead_id: int = Field(foreign_key="et_leads.id", index=True)
+
+    status: AICRMLeadStatus = Field(default=AICRMLeadStatus.NO_RESPONSE)
+    summary: Optional[str] = None
+    customer_reaction: Optional[str] = Field(default=None, max_length=128)
+    followup_strategy: AICRMFollowupStrategy = Field(default=AICRMFollowupStrategy.PROMO)
+    aggressiveness: AICRMAggressiveness = Field(default=AICRMAggressiveness.BALANCED)
+    reject_count: int = Field(default=0)
+    reason_trace: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+
+    last_scanned_message_count: int = Field(default=0)
+    last_scanned_at: Optional[datetime] = None
+    next_followup_at: Optional[datetime] = Field(default=None, index=True)
+    followup_last_generated_at: Optional[datetime] = None
+
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(default_factory=datetime.utcnow)

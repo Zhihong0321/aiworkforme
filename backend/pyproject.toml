@@ -7,3 +7,15 @@ requires-python = ">=3.9"
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+extend-exclude = [".venv", "mcp-runtime-scripts-test"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
