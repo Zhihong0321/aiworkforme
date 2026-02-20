@@ -266,213 +266,228 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="relative min-h-screen">
-    <main class="relative z-10 mx-auto w-full max-w-none px-5 lg:px-10 py-10 space-y-8">
-      <header class="tui-surface rounded-3xl border border-slate-200 p-8 shadow-sm">
-        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div class="space-y-2">
-            <p class="text-[10px] uppercase font-black tracking-[0.32em] text-indigo-600">Pillar 1</p>
-            <h1 class="text-3xl font-black text-slate-900 tracking-tight">My AI Agent</h1>
-            <p class="text-sm text-slate-500 max-w-xl">
-              Create your AI agent, define their personality, and give them the "Keys" to your business skills like products and appointments.
-            </p>
+  <div class="min-h-[calc(100vh-64px)] w-full bg-onyx font-inter text-slate-200 flex flex-col pb-20 relative overflow-hidden">
+    <!-- Aurora Background Effect -->
+    <div class="absolute inset-0 bg-mobile-aurora z-0 pointer-events-none opacity-50"></div>
+
+    <!-- Header -->
+    <div class="p-5 border-b border-slate-800/50 glass-panel-light rounded-b-[2rem] sticky top-0 z-30 mb-4 relative">
+      <div class="flex justify-between items-end">
+        <div>
+          <h1 class="text-3xl font-semibold text-white tracking-tight mb-1">AI Agents</h1>
+          <p class="text-[10px] text-aurora font-bold uppercase tracking-widest mt-1">Hire & Train AI</p>
+        </div>
+        <button @click="resetForm()" class="h-10 w-10 rounded-full bg-slate-800 flex items-center justify-center text-white border border-slate-700 shadow-lg active:scale-95 transition-all">
+          <svg class="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+        </button>
+      </div>
+
+      <!-- Quick Actions / Loading State -->
+      <div class="mt-4 flex items-center justify-between">
+        <span v-if="isLoading" class="text-xs font-semibold text-purple-400 animate-pulse">Syncing agents...</span>
+        <span v-else class="text-xs font-semibold text-slate-400">{{ agents.length }} Active Agents</span>
+        
+        <button @click="loadAgents" class="text-[10px] font-bold uppercase tracking-wider text-slate-400 hover:text-white flex items-center gap-1 active:scale-95">
+          <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+          Refresh
+        </button>
+      </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="px-4 space-y-6 relative z-10 w-full lg:flex lg:gap-6 lg:space-y-0 box-border">
+      
+      <!-- ==================== AGENTS LIST (Mobile: Stacked, Desktop: Left Col) ==================== -->
+      <div v-if="!form.id || (agents.length && form.id === agents[0]?.id)" class="w-full lg:w-1/3 flex flex-col gap-4">
+        <h2 class="text-sm font-bold text-white uppercase tracking-wider pl-2 lg:hidden">Active Agents</h2>
+        
+        <div v-if="!agents.length && !isLoading" class="glass-panel rounded-3xl p-8 text-center border border-slate-700/50">
+          <div class="w-16 h-16 rounded-full bg-slate-800/50 flex items-center justify-center mx-auto mb-4 border border-slate-700">
+             <svg class="w-8 h-8 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+          </div>
+          <p class="text-slate-400 text-sm">No agents hired yet. Click the + button above to create your first AI agent.</p>
+        </div>
+
+        <div 
+          v-for="agent in agents" 
+          :key="agent.id"
+          class="glass-panel p-5 rounded-3xl border transition-all cursor-pointer relative overflow-hidden group"
+          :class="form.id === agent.id ? 'border-purple-500 shadow-lg shadow-purple-500/20' : 'border-slate-700/50 hover:border-slate-600'"
+          @click="selectAgent(agent)"
+        >
+          <!-- Active dot indicator -->
+          <div v-if="form.id === agent.id" class="absolute top-0 right-0 w-24 h-24 bg-aurora-gradient rounded-bl-full opacity-20 blur-2xl"></div>
+
+          <div class="flex items-start gap-4">
+            <!-- Avatar -->
+            <div class="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center text-lg font-bold text-white shadow-inner border border-slate-700 shrink-0 relative overflow-hidden">
+               <span class="relative z-10">{{ agent.name.slice(0, 2).toUpperCase() }}</span>
+               <div v-if="agent.status === 'ready'" class="absolute inset-0 bg-aurora-gradient opacity-20"></div>
+            </div>
+            
+            <div class="flex-grow min-w-0">
+               <div class="flex justify-between items-center mb-1">
+                 <h3 class="font-bold text-white text-lg truncate">{{ agent.name }}</h3>
+                 <span class="w-2.5 h-2.5 rounded-full" :class="agent.status === 'ready' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]' : 'bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.5)]'"></span>
+               </div>
+               
+               <div class="flex items-center gap-3 text-xs text-slate-400 font-medium">
+                  <span class="flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                    {{ formatTokens(agent.tokenCountToday) }}
+                  </span>
+                  <span class="flex items-center gap-1">
+                    <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+                    {{ agent.linkedMcpCount || 0 }} skills
+                  </span>
+               </div>
+            </div>
           </div>
         </div>
-      </header>
+      </div>
 
-      <section class="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
-        <TuiCard title="Agents" subtitle="list">
-          <div class="mb-4 flex items-center justify-between gap-3 text-xs text-slate-600">
-            <span v-if="message">{{ message }}</span>
-            <TuiButton size="sm" variant="outline" @click="loadAgents">refresh</TuiButton>
+      <!-- ==================== AGENT CONFIGURATION FORM ==================== -->
+      <div v-if="form.id || Object.keys(form).length > 0" class="w-full lg:w-2/3 space-y-5">
+        
+        <div class="flex items-center justify-between pl-2 pb-1 border-b border-slate-700/50">
+           <h2 class="text-sm font-bold text-white uppercase tracking-wider">{{ form.id ? 'Edit Profile' : 'New Agent' }}</h2>
+           <router-link v-if="form.id" :to="`/chat/${form.id}`" class="text-[11px] font-bold text-aurora uppercase tracking-wider flex items-center gap-1 bg-purple-500/10 px-3 py-1 rounded-full border border-purple-500/20 active:scale-95 transition-all">
+             <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+             Run Test
+           </router-link>
+        </div>
+
+        <div class="glass-panel p-5 rounded-3xl border border-slate-700/50 flex flex-col gap-5">
+          
+          <!-- Name Input -->
+          <div class="space-y-1.5">
+            <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 ml-1">Agent Name</label>
+            <input 
+              v-model="form.name" 
+              type="text" 
+              placeholder="e.g. Atlas, Sarah" 
+              class="w-full bg-slate-900/60 border border-slate-700/50 rounded-2xl px-4 py-3 text-white placeholder-slate-600 focus:outline-none focus:border-purple-500 focus:ring-1 focus:ring-purple-500/50 transition-all text-[15px] font-medium" 
+            />
           </div>
-          <div class="divide-y divide-slate-200">
-            <div
-              v-for="agent in agents"
-              :key="agent.id"
-              class="flex flex-col gap-3 py-4"
+
+          <!-- System Prompt / Persona -->
+          <div class="space-y-1.5 focus-within">
+            <div class="flex justify-between items-center ml-1">
+              <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Persona & Guidelines</label>
+              <span class="text-[9px] text-slate-500 uppercase font-mono">system_prompt</span>
+            </div>
+            <div class="relative group">
+              <!-- Glowing border effect on focus -->
+              <div class="absolute -inset-[1px] bg-aurora-gradient rounded-2xl opacity-0 group-focus-within:opacity-50 blur-sm transition-opacity duration-300"></div>
+              <textarea
+                v-model="form.system_prompt"
+                rows="5"
+                placeholder="Give your agent a personality and set of rules. E.g. 'You are a helpful sales rep. Be concise and polite.'"
+                class="relative z-10 w-full bg-slate-900/80 border border-slate-700/50 rounded-2xl p-4 text-white placeholder-slate-600 focus:outline-none focus:border-purple-500 transition-all text-sm leading-relaxed resize-none scrollbar-none"
+              ></textarea>
+            </div>
+          </div>
+
+          <!-- Skills Selection -->
+          <div class="space-y-1.5">
+             <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400 ml-1">Active Skills (MCP)</label>
+             <div class="flex items-center gap-2">
+               <select 
+                 v-model="form.linkedMcpId" 
+                 class="flex-grow bg-slate-900/60 border border-slate-700/50 rounded-2xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-all text-sm appearance-none"
+               >
+                 <option value="" disabled>{{ mcpLoading ? 'Loading skills...' : 'Select a skill to teach...' }}</option>
+                 <option v-for="server in mcpServers" :key="server.id" :value="server.id">
+                   Access: {{ server.name }}
+                 </option>
+               </select>
+               <button 
+                 @click="linkMcp" 
+                 :disabled="!form.id || !form.linkedMcpId"
+                 class="h-11 w-11 rounded-2xl bg-slate-800 text-white flex items-center justify-center shrink-0 border border-slate-700 disabled:opacity-50 disabled:cursor-not-allowed active:bg-slate-700 transition-all hover:border-purple-500/50 hover:text-purple-400"
+               >
+                 <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+               </button>
+             </div>
+          </div>
+
+           <!-- Knowledge Upload -->
+          <div class="space-y-2 mt-2 border-t border-slate-700/50 pt-5">
+             <div class="flex items-center justify-between ml-1 mb-1">
+               <label class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Knowledge Base</label>
+               <router-link v-if="form.id" :to="`/agents/${form.id}/knowledge`" class="text-[10px] text-purple-400 hover:text-white transition-colors">Manage All &rarr;</router-link>
+             </div>
+             
+             <!-- Unified Upload Button via hidden input -->
+             <div class="relative">
+               <input
+                 type="file"
+                 class="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                 :disabled="!form.id || isUploading"
+                 @change="handleFileUpload"
+               />
+               <div 
+                 class="w-full bg-slate-900/40 border border-dashed border-slate-600 rounded-2xl py-4 flex flex-col items-center justify-center transition-all"
+                 :class="!form.id ? 'opacity-50' : 'hover:border-purple-500 hover:bg-slate-900/60'"
+               >
+                 <svg class="w-6 h-6 text-slate-500 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                 <span class="text-sm font-medium" :class="!form.id ? 'text-slate-600' : 'text-purple-400'">
+                   {{ isUploading ? 'Uploading...' : form.id ? 'Tap to upload document' : 'Save agent to enable uploads' }}
+                 </span>
+               </div>
+             </div>
+
+             <!-- File List (Mini View) -->
+             <div v-if="form.id && knowledgeFiles.length" class="mt-3 space-y-2">
+                <div v-for="file in knowledgeFiles.slice(0,3)" :key="file.id" class="flex items-center justify-between p-3 bg-slate-800/50 rounded-xl border border-slate-700/30">
+                  <div class="flex items-center gap-3 overflow-hidden">
+                    <svg class="h-5 w-5 text-purple-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                    <span class="text-[13px] text-slate-300 truncate font-medium">{{ file.filename }}</span>
+                  </div>
+                  <button @click.stop="deleteKnowledgeFile(file.id)" class="text-red-400 p-1.5 active:scale-95 transition-transform" title="Delete">
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                  </button>
+                </div>
+                <p v-if="knowledgeFiles.length > 3" class="text-center text-xs text-slate-500 pt-1">
+                  +{{ knowledgeFiles.length - 3 }} more files attached
+                </p>
+             </div>
+          </div>
+
+          <!-- Form Actions -->
+          <div class="flex gap-3 pt-4 border-t border-slate-700/50 mt-2">
+            <button 
+              @click="saveAgent" 
+              :disabled="isSaving"
+              class="flex-grow bg-aurora-gradient text-white font-bold text-sm py-3.5 rounded-xl shadow-lg shadow-purple-500/20 active:scale-[0.98] transition-transform flex justify-center items-center h-12"
             >
-              <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-                <div class="flex items-start gap-3 flex-1 min-w-0">
-                  <div class="h-10 w-10 shrink-0 rounded-md border border-slate-300 bg-white text-center text-sm font-semibold leading-10 uppercase text-slate-800">
-                    {{ agent.name.slice(0, 2) }}
-                  </div>
-                  <div class="min-w-0 flex-1">
-                    <p class="text-base font-semibold text-slate-900 break-words leading-tight">{{ agent.name }}</p>
-                  </div>
-                </div>
-
-                <div class="flex shrink-0 gap-6 sm:text-right">
-                   <div class="flex flex-col gap-1 text-sm text-slate-700">
-                    <p class="text-[11px] uppercase tracking-[0.18em] text-slate-500">tokens today</p>
-                    <p class="font-semibold tabular-nums">{{ formatTokens(agent.tokenCountToday) }}</p>
-                  </div>
-                  <div class="flex flex-col gap-1 text-sm text-slate-700">
-                    <p class="text-[11px] uppercase tracking-[0.18em] text-slate-500">last active</p>
-                    <p class="font-semibold tabular-nums">{{ agent.lastActive || '—' }}</p>
-                  </div>
-                </div>
-              </div>
-              
-              <div class="flex items-center justify-between sm:justify-end gap-4 border-t border-slate-50 pt-2 sm:border-t-0 sm:pt-0">
-                 <div class="flex items-center gap-2">
-                     <span class="text-[11px] uppercase tracking-[0.18em] text-slate-500 sm:hidden">Status</span>
-                     <TuiBadge :variant="statusVariant(agent.status)" class="w-24 justify-center">
-                      {{ agent.status || 'ready' }}
-                    </TuiBadge>
-                 </div>
-
-                 <div class="flex flex-wrap items-center gap-2 text-xs text-slate-700">
-                    <TuiButton size="sm" variant="outline" @click="selectAgent(agent)">edit</TuiButton>
-                    <router-link :to="`/chat/${agent.id}`" class="inline-flex items-center">
-                      <TuiButton size="sm" variant="ghost">tester</TuiButton>
-                    </router-link>
-                    <router-link :to="`/agents/${agent.id}/knowledge`" class="inline-flex items-center">
-                      <TuiButton size="sm" variant="ghost">knowledge</TuiButton>
-                    </router-link>
-                    <TuiButton
-                      size="sm"
-                      variant="ghost"
-                      class="text-red-600"
-                      :loading="deletingAgentId === agent.id"
-                      @click="deleteAgent(agent.id)"
-                    >
-                      delete
-                    </TuiButton>
-                    <TuiBadge variant="muted">
-                      mcp: {{ agent.linkedMcpCount || 0 }} linked
-                    </TuiBadge>
-                 </div>
-              </div>
-            </div>
-            <div v-if="!agents.length" class="py-6 text-sm text-slate-600">
-              No agents yet. Create one using the form.
-            </div>
+              <div v-if="isSaving" class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+              <span v-else>{{ form.id ? 'Save Updates' : 'Train Agent' }}</span>
+            </button>
+            <button 
+              v-if="form.id"
+              @click="deleteAgent(form.id)"
+              :disabled="deletingAgentId === form.id"
+              class="h-12 w-12 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center justify-center text-red-500 shrink-0 active:scale-95 transition-transform disabled:opacity-50"
+            >
+              <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+            </button>
           </div>
-        </TuiCard>
+          
+          <p v-if="message" class="text-center text-xs font-semibold" :class="message.includes('failed') ? 'text-red-400' : 'text-emerald-400'">
+            {{ message }}
+          </p>
+          
+        </div>
+      </div>
 
-        <TuiCard title="Agent Form" subtitle="create / edit">
-          <div class="space-y-4">
-            <TuiInput label="Agent Name" placeholder="Atlas" v-model="form.name" />
-            <label class="flex flex-col gap-2 text-sm text-slate-800">
-              <div class="flex items-center justify-between">
-                <span class="text-[11px] uppercase tracking-[0.2em] text-slate-600">Instruction</span>
-                <span class="text-[11px] text-slate-500">system_prompt</span>
-              </div>
-              <div class="relative breathing-ring">
-                <textarea
-                  v-model="form.system_prompt"
-                  rows="4"
-                  placeholder="Set concise operating instructions for the agent."
-                  class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-[inset_0_1px_1px_rgba(15,23,42,0.06)] focus:border-slate-900 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                ></textarea>
-              </div>
-            </label>
-
-            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <TuiSelect
-                label="Agent Skills"
-                :options="mcpServers.map((server) => ({ label: `Access: ${server.name}`, value: server.id }))"
-                v-model="form.linkedMcpId"
-                placeholder="Select a Skill"
-                :hint="mcpLoading ? 'loading...' : 'Product Catalog, Calendar, etc.'"
-              />
-              <div class="flex items-end">
-                <TuiButton class="w-full" variant="outline" :loading="false" @click="linkMcp">Give Skill Access</TuiButton>
-              </div>
-            </div>
-            <div class="space-y-2">
-              <p class="text-[11px] uppercase tracking-[0.2em] text-slate-600">Attach File</p>
-              <input
-                type="file"
-                class="w-full rounded-md border border-dashed border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                :disabled="!form.id || isUploading"
-                @change="handleFileUpload"
-              />
-              <p class="text-xs text-slate-600">
-                {{ form.id ? 'Uploads will POST to /agents/{id}/knowledge' : 'Save the agent before uploading.' }}
-              </p>
-              
-              <!-- Knowledge Files List -->
-              <div v-if="form.id" class="mt-2 rounded-md border border-slate-100 bg-slate-50 p-2 text-sm">
-                <p class="mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Attached Knowledge</p>
-                <ul v-if="knowledgeFiles.length" class="space-y-1">
-                  <li v-for="file in knowledgeFiles" :key="file.id" class="flex items-center gap-2 text-slate-700">
-                    <svg class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <span class="truncate flex-1">{{ file.filename }}</span>
-                    <button @click="deleteKnowledgeFile(file.id)" class="ml-auto text-red-400 hover:text-red-600 cursor-pointer p-1" title="Delete file">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-                  </li>
-                </ul>
-                <p v-else class="text-xs text-slate-400 italic">No files attached.</p>
-              </div>
-            </div>
-            <div class="flex flex-wrap gap-3">
-              <TuiButton :loading="isSaving" @click="saveAgent">
-                {{ form.id ? 'Save changes' : 'Create agent' }}
-              </TuiButton>
-              <TuiButton variant="outline" @click="resetForm()">Reset</TuiButton>
-              <TuiButton
-                v-if="form.id"
-                variant="ghost"
-                class="text-red-600 ml-auto"
-                :loading="deletingAgentId === form.id"
-                @click="deleteAgent(form.id)"
-              >
-                Delete Agent
-              </TuiButton>
-            </div>
-          </div>
-        </TuiCard>
-      </section>
-    </main>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.breathing-ring {
-  position: relative;
-  border-radius: 0.5rem;
-}
-
-.breathing-ring::after {
-  content: '';
-  position: absolute;
-  inset: -4px;
-  border-radius: inherit;
-  background: linear-gradient(120deg, #16f2b3, #7c3aed, #06b6d4, #16f2b3);
-  background-size: 220% 220%;
-  opacity: 0;
-  z-index: 0;
-  filter: blur(0.5px);
-  transition: opacity 0.3s ease;
-  animation: breatheGradient 3s ease-in-out infinite;
-  pointer-events: none;
-}
-
-.breathing-ring:focus-within::after {
-  opacity: 0.65;
-}
-
-.breathing-ring > textarea {
-  position: relative;
-  z-index: 1;
-}
-
-@keyframes breatheGradient {
-  0% {
-    background-position: 0% 50%;
-  }
-  50% {
-    background-position: 100% 50%;
-  }
-  100% {
-    background-position: 0% 50%;
-  }
+/* Only keep custom scrollbar styling if needed, removed complex glowing borders in favor of tailwind utilities */
+::-webkit-scrollbar {
+  display: none;
 }
 </style>

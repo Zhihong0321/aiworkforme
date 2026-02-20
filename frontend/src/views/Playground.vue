@@ -147,160 +147,134 @@ const resetThread = async () => {
 </script>
 
 <template>
-    <div class="flex h-[calc(100vh-64px)] overflow-hidden bg-[#0a0a0c] text-slate-300">
-        <!-- Main: Chat -->
-        <main class="flex-1 flex flex-col min-w-0 border-r border-white/5">
-            <header class="h-16 border-b border-white/5 px-8 flex items-center justify-between bg-white/[0.02]">
-                <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-green-500 to-emerald-400 flex items-center justify-center shadow-lg shadow-green-500/20">
-                        <svg class="w-5 h-5 text-[#0a0a0c]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                        </svg>
-                    </div>
-                    <div>
-                       <h1 class="text-sm font-bold text-white uppercase tracking-widest">{{ currentAgent?.name || 'Select Agent' }}</h1>
-                       <div class="flex items-center gap-1.5">
-                           <span class="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                           <p class="text-[10px] text-white/40 font-medium">Ready to test</p>
-                       </div>
-                    </div>
-                </div>
-                <div class="hidden md:flex gap-4 items-center">
-                    <TuiBadge variant="success" size="sm" class="!rounded-full px-4 border-green-500/20 bg-green-500/5 text-green-400">ONLINE</TuiBadge>
-                </div>
-            </header>
-
-            <div class="flex-1 overflow-y-auto p-8 flex flex-col gap-6 max-w-4xl mx-auto w-full">
-                <div v-if="messages.length === 0" class="flex-1 flex flex-col items-center justify-center text-center">
-                    <div class="w-20 h-20 rounded-3xl bg-white/5 border border-white/10 flex items-center justify-center mb-6">
-                        <svg class="w-10 h-10 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                        </svg>
-                    </div>
-                    <h2 class="text-white font-bold mb-2">Start a conversation</h2>
-                    <p class="text-white/40 text-sm max-w-xs">Simulate a message from a lead to see how your agent responds.</p>
-                </div>
-                
-                <div v-for="msg in messages" :key="msg.id" 
-                    :class="['max-w-[85%] rounded-[2rem] px-6 py-4 text-sm flex flex-col gap-1 shadow-sm', 
-                    msg.role === 'user' ? 'bg-white/5 ml-auto border border-white/10 rounded-tr-sm text-slate-200' : 'bg-green-500/10 border border-green-500/10 text-green-50 text-slate-200 rounded-tl-sm']">
-                    <p class="whitespace-pre-wrap leading-relaxed">{{ msg.content }}</p>
-                    <span class="text-[8px] opacity-20 self-end mt-1">{{ new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }}</span>
-                </div>
-                
-                <div v-if="isSending" class="bg-green-500/10 border border-green-500/10 text-green-100/50 rounded-[2rem] rounded-tl-sm px-6 py-4 text-sm mr-auto animate-pulse flex items-center gap-2 shadow-sm">
-                    <div class="flex gap-1">
-                        <span class="w-1 h-1 rounded-full bg-green-500/40 animate-bounce"></span>
-                        <span class="w-1 h-1 rounded-full bg-green-500/40 animate-bounce [animation-delay:0.2s]"></span>
-                        <span class="w-1 h-1 rounded-full bg-green-500/40 animate-bounce [animation-delay:0.4s]"></span>
-                    </div>
-                    <span>Agent is thinking...</span>
-                </div>
+  <div class="flex flex-col h-[calc(100vh-64px)] w-full overflow-hidden bg-onyx font-inter text-slate-200">
+    
+    <!-- Header -->
+    <div class="p-4 border-b border-indigo-500/30 glass-panel-light z-30 shadow-[0_4px_30px_rgba(99,102,241,0.1)] relative">
+      <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+      
+      <div class="flex justify-between items-center mb-4 mt-2">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center shadow-inner border border-slate-700 relative overflow-hidden text-indigo-400">
+             <span class="absolute inset-0 bg-indigo-500/20 blur-xl"></span>
+             <svg class="w-6 h-6 relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+          </div>
+          <div>
+            <h1 class="text-xl font-bold text-white tracking-tight leading-tight">Test Lab</h1>
+            <div class="flex items-center gap-1.5 mt-0.5">
+               <span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>
+               <p class="text-[10px] text-indigo-300 font-bold uppercase tracking-widest">Safe Zone</p>
             </div>
+          </div>
+        </div>
 
-            <footer class="p-8 pt-4">
-                <div class="max-w-4xl mx-auto relative">
-                    <textarea 
-                        v-model="newMessage"
-                        placeholder="Type a message as if you were the customer..."
-                        class="w-full bg-white/5 border border-white/10 rounded-[2rem] px-8 py-5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-green-500/30 focus:bg-white/[0.07] transition-all resize-none shadow-2xl"
-                        rows="2"
-                        @keydown.enter.prevent="sendMessage"
-                    ></textarea>
-                    <div class="absolute right-6 bottom-5 flex items-center gap-4">
-                        <span class="text-[9px] text-white/10 uppercase tracking-[0.2em] font-black hidden sm:block">Press Enter</span>
-                        <button @click="sendMessage" :disabled="isSending" 
-                            class="bg-green-500 hover:bg-green-400 disabled:opacity-50 text-[#0a0a0c] font-black uppercase text-[10px] tracking-widest px-6 py-2.5 rounded-full transition-all shadow-lg shadow-green-500/20 active:scale-95">
-                            Send
-                        </button>
-                    </div>
-                </div>
-            </footer>
-        </main>
+        <button @click="resetThread" v-if="messages.length > 0" class="h-9 px-3 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 text-xs font-bold uppercase tracking-wider active:scale-95 transition-all">
+          Reset
+        </button>
+      </div>
 
-        <aside class="w-96 bg-white/[0.01] p-8 hidden xl:flex flex-col gap-8 overflow-y-auto border-l border-white/5">
-             <div class="space-y-6">
-                <div class="flex items-center justify-between mb-4">
-                    <h2 class="text-[10px] font-black uppercase tracking-[0.2em] text-white/20">Chat Configuration</h2>
-                    <TuiButton 
-                        v-if="messages.length > 0"
-                        variant="ghost" 
-                        size="sm" 
-                        class="!text-[9px] !px-2 !py-1 text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                        @click="resetThread"
-                    >
-                        RESET
-                    </TuiButton>
-                </div>
-                <TuiSelect 
-                    label="Test Agent" 
-                    v-model="selectedAgentId" 
-                    :options="agentOptions"
-                    dark
-                />
-             </div>
-
-             <div class="pt-8 border-t border-white/5">
-                <h2 class="text-[10px] font-black uppercase tracking-[0.2em] text-white/20 mb-6">Agent Reflection</h2>
-                
-                <div v-if="latestDecisions.length > 0" class="space-y-8">
-                   <div v-for="decision in [latestDecisions[0]]" :key="decision.id" class="space-y-6">
-                       <div class="p-6 rounded-3xl bg-white/5 border border-white/10 shadow-sm relative overflow-hidden group">
-                           <div class="absolute top-0 left-0 w-1 h-full bg-green-500/30 group-hover:bg-green-500/60 transition-colors"></div>
-                           <p class="text-[9px] font-bold text-white/40 mb-3 uppercase tracking-widest">Decision Outcome</p>
-                           <div class="flex items-center gap-3">
-                               <div :class="['w-2 h-2 rounded-full', decision.allow_send ? 'bg-green-500 shadow-lg shadow-green-500/50' : 'bg-red-500 shadow-lg shadow-red-500/50']"></div>
-                               <span :class="['text-xs font-black uppercase tracking-widest', decision.allow_send ? 'text-green-500' : 'text-red-500']">
-                                   {{ decision.allow_send ? 'Ready to Respond' : 'Paused for Review' }}
-                               </span>
-                           </div>
-                           <p class="mt-4 text-[11px] leading-relaxed text-white/60 italic">
-                               "{{ decision.reason_code }}"
-                           </p>
-                       </div>
-
-                       <div class="space-y-4">
-                           <p class="text-[9px] font-bold text-white/20 mb-2 uppercase tracking-widest">Internal Context</p>
-                           <div class="p-5 rounded-2xl bg-white/[0.02] border border-white/5 text-[10px] space-y-3">
-                               <div class="flex justify-between items-center">
-                                   <span class="text-white/30 uppercase tracking-tighter font-medium">Confidence Score</span>
-                                   <span class="text-white/80 font-mono">HIGH</span>
-                               </div>
-                               <div class="flex justify-between items-center">
-                                   <span class="text-white/30 uppercase tracking-tighter font-medium">Policy Check</span>
-                                   <span class="text-green-500/80 font-mono">PASSED</span>
-                               </div>
-                           </div>
-                       </div>
-                   </div>
-                </div>
-                
-                <div v-else class="flex-1 flex flex-col items-center justify-center text-center py-20 opacity-40">
-                    <div class="w-12 h-12 rounded-full border border-white/10 flex items-center justify-center mb-4">
-                        <svg class="w-6 h-6 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.364-6.364l-.707-.707M6.343 17.657l-.707.707m12.728 0l-.707-.707M12 7a5 5 0 015 5 5 5 0 01-5 5 5 5 0 01-5-5 5 5 0 015-5z" />
-                        </svg>
-                    </div>
-                    <p class="text-[10px] text-white/40 uppercase tracking-widest font-black">Waiting for insight</p>
-                </div>
-             </div>
-        </aside>
+      <!-- Agent Selection Dropdown -->
+      <div class="bg-slate-900/60 border border-slate-700/50 rounded-xl p-1 relative">
+        <select 
+          v-model="selectedAgentId" 
+          class="w-full bg-transparent text-white px-3 py-2 text-sm font-medium outline-none appearance-none cursor-pointer"
+        >
+          <option value="" disabled>Select an agent to test...</option>
+          <option v-for="agent in agents" :key="agent.id" :value="agent.id">Agent: {{ agent.name }}</option>
+        </select>
+        <div class="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+        </div>
+      </div>
     </div>
+
+    <!-- Main Chat Area -->
+    <div class="flex-grow p-4 overflow-y-auto space-y-5 flex flex-col bg-mobile-aurora scrollbar-none pb-6 relative">
+      
+      <!-- Empty State -->
+      <div v-if="messages.length === 0" class="flex-grow flex flex-col items-center justify-center text-center opacity-60">
+          <div class="w-20 h-20 rounded-full border-2 border-dashed border-slate-600 flex items-center justify-center mb-6 text-slate-500">
+              <svg class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+          </div>
+          <h2 class="text-white font-bold mb-2">Simulate a Conversation</h2>
+          <p class="text-slate-400 text-sm max-w-xs leading-relaxed">Type a message below to see how your agent responds to customers without affecting real data.</p>
+      </div>
+
+      <!-- Messages -->
+      <div v-for="msg in messages" :key="msg.id" class="w-full flex-col flex">
+        <div 
+          :class="[
+            'max-w-[85%] p-4 rounded-3xl shadow-sm text-[15px] leading-relaxed relative',
+            msg.role === 'user' ? 'bg-slate-800 text-slate-200 self-end rounded-tr-sm border border-slate-700/50' : 'glass-panel text-white self-start rounded-tl-sm border-indigo-500/30 shadow-indigo-500/5'
+          ]"
+        >
+          <!-- Agent Label Indicator -->
+          <div v-if="msg.role !== 'user'" class="absolute -top-3 -left-2 bg-indigo-500 text-white text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full shadow-md">
+            Agent
+          </div>
+
+          <p class="whitespace-pre-wrap">{{ msg.content }}</p>
+          <div class="mt-1 flex justify-end">
+            <span class="text-[10px] opacity-50 font-medium">{{ new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
+          </div>
+
+        </div>
+
+        <!-- Inline reflection/decision for the LAST agent message -->
+        <div v-if="msg.role !== 'user' && latestDecisions.length > 0 && msg === messages[messages.length - 1]" class="mx-2 mt-2 self-start max-w-[85%]">
+           <details class="group bg-slate-900/60 border border-slate-700/50 rounded-xl overflow-hidden [&_summary::-webkit-details-marker]:hidden">
+             <summary class="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-3 py-2 cursor-pointer flex items-center justify-between hover:bg-slate-800/50 transition-colors">
+               <span class="flex items-center gap-1.5 text-indigo-400">
+                 <svg class="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                 Agent Reflection (Why?)
+               </span>
+               <svg class="w-4 h-4 transition-transform group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+             </summary>
+             <div class="p-3 border-t border-slate-700/50 text-xs text-slate-400 bg-slate-900/80 space-y-2">
+                <div v-for="decision in [latestDecisions[0]]" :key="decision.id">
+                  <p class="mb-1"><span class="font-semibold text-slate-300">Action:</span> <span :class="decision.allow_send ? 'text-emerald-400' : 'text-amber-400'">{{ decision.allow_send ? 'Respond' : 'Hold' }}</span></p>
+                  <p class="italic leading-relaxed text-[11px] opacity-80">"{{ decision.reason_code }}"</p>
+                </div>
+             </div>
+           </details>
+        </div>
+      </div>
+
+      <!-- Thinking Indicator -->
+      <div v-if="isSending" class="max-w-[85%] glass-panel rounded-3xl rounded-tl-sm px-6 py-4 text-sm self-start flex items-center gap-3 border-indigo-500/30">
+        <div class="w-6 h-6 rounded-full bg-indigo-500/20 flex items-center justify-center shrink-0">
+          <svg class="w-4 h-4 text-indigo-400 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+        </div>
+        <span class="text-indigo-300 font-medium text-xs uppercase tracking-widest animate-pulse">Analyzing...</span>
+      </div>
+
+      <!-- Spacer -->
+      <div class="h-4 shrink-0"></div>
+    </div>
+
+    <!-- Composer -->
+    <div class="p-3 glass-panel border-t border-slate-700/50 rounded-t-[32px] z-20 pb-safe">
+      <div class="flex items-end gap-2 bg-slate-900/50 rounded-3xl border border-slate-700/50 p-2 focus-within:ring-1 focus-within:ring-indigo-500/50 transition-all">
+        <textarea 
+          v-model="newMessage"
+          class="flex-grow bg-transparent p-2 text-sm text-white placeholder-slate-500 outline-none resize-none max-h-32 min-h-[40px] scrollbar-none"
+          placeholder="Act as a customer..."
+          rows="1"
+          @keyup.enter.exact.prevent="sendMessage"
+        ></textarea>
+        <button 
+          @click="sendMessage"
+          :disabled="isSending || !newMessage.trim() || !selectedAgentId"
+          class="h-10 w-10 shrink-0 rounded-full bg-indigo-600 flex items-center justify-center text-white shadow-lg shadow-indigo-500/20 disabled:opacity-50 disabled:grayscale transition-all active:scale-95"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 ml-1"><path d="M3.478 2.404a.75.75 0 00-.926.941l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.404z" /></svg>
+        </button>
+      </div>
+      <p class="text-center text-[9px] text-slate-500 mt-2 font-medium uppercase tracking-widest hidden sm:block">Press Enter to simulate</p>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-/* Custom scrollbar for dark theme */
-::-webkit-scrollbar {
-  width: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
-}
+/* Scoped overrides if needed */
 </style>

@@ -71,107 +71,123 @@ onMounted(fetchConversations)
 </script>
 
 <template>
-  <div class="flex h-[calc(100vh-64px)] overflow-hidden bg-slate-50">
-    <!-- Lead List -->
-    <div class="w-80 border-r border-slate-200 bg-white flex flex-col">
-      <div class="p-4 border-b border-slate-200 bg-slate-50">
-        <h2 class="font-bold text-slate-800 tracking-tight">Active Chats</h2>
-        <p class="text-[10px] text-slate-500 uppercase font-bold mt-1">Real-time Outreach</p>
+  <div class="flex flex-col h-[calc(100vh-64px)] w-full overflow-hidden bg-onyx font-inter text-slate-200">
+    
+    <!-- ==================== LEAD LIST VIEW ==================== -->
+    <div v-if="!selectedId" class="flex flex-col h-full w-full">
+      <!-- Header & Filters -->
+      <div class="p-5 border-b border-slate-800/50 z-10 glass-panel-light rounded-b-3xl mb-2">
+        <h2 class="text-3xl font-semibold text-white tracking-tight mb-5 mt-2">Inbox</h2>
+        <div class="flex gap-3 overflow-x-auto pb-2 -mx-2 px-2 scrollbar-none [scrollbar-width:none]">
+          <button class="px-5 py-2 rounded-full text-sm font-medium bg-aurora-gradient text-white shadow-lg shadow-purple-500/25 shrink-0">All Chats</button>
+          <button class="px-5 py-2 rounded-full text-sm font-medium glass-panel-light text-slate-300 hover:text-white shrink-0">Unread</button>
+          <button class="px-5 py-2 rounded-full text-sm font-medium glass-panel-light text-slate-300 hover:text-white shrink-0">Needs Attention</button>
+        </div>
       </div>
       
-      <div v-if="isLoading && conversations.length === 0" class="p-8 text-center text-slate-400 animate-pulse">
-        Loading sessions...
+      <!-- Loading State -->
+      <div v-if="isLoading && conversations.length === 0" class="flex-grow flex items-center justify-center text-slate-500 animate-pulse">
+        <div class="flex flex-col items-center gap-3">
+          <div class="w-8 h-8 rounded-full border-t-2 border-r-2 border-purple-500 animate-spin"></div>
+          <p class="text-sm">Syncing latest messages...</p>
+        </div>
       </div>
       
-      <div v-else-if="conversations.length === 0" class="p-8 text-center text-slate-400 italic text-sm">
-        No active conversations.
+      <!-- Empty State -->
+      <div v-else-if="conversations.length === 0" class="flex-grow flex items-center justify-center p-8 text-center text-slate-500 italic text-sm">
+        No active conversations right now.
       </div>
 
-      <div class="flex-grow overflow-y-auto divide-y divide-slate-100">
+      <!-- List -->
+      <div class="flex-grow overflow-y-auto px-4 pb-20 space-y-3 scrollbar-none [scrollbar-width:none]">
         <div 
           v-for="c in conversations" 
           :key="c.id"
           @click="fetchMessages(c.id)"
-          class="p-4 cursor-pointer hover:bg-slate-50 transition-colors"
-          :class="{ 'bg-indigo-50 border-l-4 border-indigo-600': selectedId === c.id }"
+          class="p-4 rounded-2xl cursor-pointer glass-panel hover:bg-slate-800/50 transition-all active:scale-[0.98] border border-slate-700/30"
         >
-          <div class="flex justify-between items-start mb-1">
-            <span class="font-bold text-sm text-slate-900">Session #{{ c.id }}</span>
-            <span class="text-[9px] text-slate-400 font-mono">{{ new Date(c.updated_at).toLocaleTimeString() }}</span>
+          <div class="flex justify-between items-start mb-2">
+            <span class="font-semibold text-base text-white">Session #{{ c.id }}</span>
+            <span class="text-[11px] text-slate-400 font-medium">{{ new Date(c.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
           </div>
-          <div class="text-[11px] text-slate-500 truncate leading-relaxed">{{ c.last_message }}</div>
-          <div class="mt-2 flex gap-2">
-            <TuiBadge variant="info">Agent #{{ c.agent_id }}</TuiBadge>
+          <div class="text-sm text-slate-400 line-clamp-2 leading-relaxed">{{ c.last_message || 'No messages yet' }}</div>
+          <div class="mt-3 flex gap-2">
+            <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/20">Agent #{{ c.agent_id }}</span>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Chat Area -->
-    <div class="flex-grow flex flex-col">
-      <div v-if="selectedId" class="flex flex-col h-full bg-white shadow-inner">
-        <!-- Header -->
-        <div class="p-4 border-b border-slate-200 bg-white flex justify-between items-center">
-          <div>
-            <h3 class="font-bold text-slate-900">Conversation History</h3>
-            <p class="text-[10px] text-slate-500 uppercase">Interactive Session Control</p>
-          </div>
-          <div class="flex gap-2">
-            <TuiButton variant="outline" size="sm" @click="fetchMessages(selectedId)">Refresh</TuiButton>
-            <TuiButton variant="ghost" size="sm" class="text-red-600">Takeover</TuiButton>
-          </div>
-        </div>
-
-        <!-- Messages -->
-        <div class="flex-grow p-6 overflow-y-auto space-y-6 bg-slate-50">
-          <div 
-            v-for="msg in messages" 
-            :key="msg.id" 
-            :class="[
-              'max-w-[85%] p-4 rounded-2xl shadow-sm text-sm leading-relaxed',
-              msg.role === 'user' ? 'bg-white border border-slate-200 self-start' : 'bg-indigo-600 text-white self-end ml-auto'
-            ]"
-          >
-            <div class="flex justify-between items-center mb-1">
-               <span class="text-[9px] font-bold uppercase tracking-tighter" :class="msg.role === 'user' ? 'text-slate-400' : 'text-indigo-200'">
-                 {{ msg.role }}
-               </span>
-               <span class="text-[9px]" :class="msg.role === 'user' ? 'text-slate-300' : 'text-indigo-300'">
-                 {{ new Date(msg.created_at).toLocaleTimeString() }}
-               </span>
-            </div>
-            <p>{{ msg.content }}</p>
-            
-            <!-- Tool Calls -->
-            <div v-if="msg.tool_calls" class="mt-2 pt-2 border-t border-indigo-500">
-               <TuiBadge variant="warning" class="bg-indigo-700 text-white border-none">TOOL EXECUTION</TuiBadge>
-            </div>
+    <!-- ==================== CHAT VIEW ==================== -->
+    <div v-else class="flex flex-col h-full w-full bg-mobile-aurora">
+      <!-- Chat Header -->
+      <div class="p-4 border-b border-slate-800/50 glass-panel z-20 flex justify-between items-center rounded-b-[32px] shadow-lg">
+        <div class="flex items-center gap-3">
+          <button @click="selectedId = null" class="p-2 -ml-2 text-slate-400 hover:text-white rounded-full bg-slate-800/50 active:scale-95 transition-all">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" /></svg>
+          </button>
+          <div class="flex flex-col">
+            <h3 class="font-semibold text-white text-lg leading-tight">Session #{{ selectedId }}</h3>
+            <p class="text-[10px] text-aurora font-bold uppercase tracking-wider">AI Handling</p>
           </div>
         </div>
-
-        <!-- Composer -->
-        <div class="p-4 bg-white border-t border-slate-200">
-          <div class="max-w-4xl mx-auto flex flex-col gap-3">
-            <textarea 
-              v-model="composer"
-              class="w-full p-4 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-100 outline-none transition-all resize-none"
-              placeholder="Type a message as the agent..."
-              rows="2"
-              @keyup.enter.ctrl="sendMessage"
-            ></textarea>
-            <div class="flex justify-between items-center">
-              <span class="text-[10px] text-slate-400 italic">Press Ctrl+Enter to send</span>
-              <TuiButton :loading="isSending" @click="sendMessage">Send Message</TuiButton>
-            </div>
-          </div>
+        
+        <!-- AI vs Human Toggle -->
+        <div class="flex items-center gap-2">
+          <span class="text-[10px] text-slate-400 font-bold uppercase">Human</span>
+          <button class="relative inline-flex items-center h-7 rounded-full w-12 transition-colors focus:outline-none bg-aurora-gradient shadow-lg shadow-purple-500/30 ring-2 ring-purple-500/20">
+            <span class="inline-block w-5 h-5 transform translate-x-6 bg-white rounded-full transition-transform shadow-sm"></span>
+          </button>
+          <span class="text-[10px] text-purple-300 font-bold uppercase">AI</span>
         </div>
       </div>
-      
-      <div v-else class="flex-grow flex flex-col items-center justify-center text-slate-400 bg-slate-50">
-        <div class="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mb-4">
-           <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+
+      <!-- Messages Area -->
+      <div class="flex-grow p-4 overflow-y-auto space-y-5 flex flex-col scrollbar-none [scrollbar-width:none] pb-6">
+        <div 
+          v-for="msg in messages" 
+          :key="msg.id" 
+          :class="[
+            'max-w-[85%] p-4 rounded-3xl shadow-sm text-[15px] leading-relaxed relative',
+            msg.role === 'user' ? 'glass-panel text-slate-200 self-start rounded-tl-sm' : 'bg-aurora-gradient text-white self-end rounded-tr-sm shadow-lg shadow-purple-500/20'
+          ]"
+        >
+          <p class="whitespace-pre-wrap">{{ msg.content }}</p>
+          <div class="mt-1 flex justify-end">
+            <span class="text-[10px] opacity-70 font-medium" :class="msg.role === 'user' ? 'text-slate-400' : 'text-white/80'">{{ new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
+          </div>
+          
+          <!-- Tool Calls Indicator -->
+          <div v-if="msg.tool_calls && msg.role !== 'user'" class="mt-3 pt-3 border-t border-white/20 flex items-center gap-2">
+             <div class="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center animate-pulse">
+               <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
+             </div>
+             <span class="text-[10px] font-bold uppercase tracking-wider text-white">Action Executed</span>
+          </div>
         </div>
-        <p class="text-sm font-medium">Select a conversation to start management</p>
+        <!-- Spacer for composer -->
+        <div class="h-4 shrink-0"></div>
+      </div>
+
+      <!-- Composer Area -->
+      <div class="p-3 glass-panel border-t border-slate-700/50 rounded-t-[32px] z-20 pb-safe">
+        <div class="flex items-end gap-2 bg-slate-900/50 rounded-3xl border border-slate-700/50 p-2 focus-within:ring-1 focus-within:ring-purple-500/50 transition-all">
+          <textarea 
+            v-model="composer"
+            class="flex-grow bg-transparent p-2 text-sm text-white placeholder-slate-500 outline-none resize-none max-h-32 min-h-[40px] scrollbar-none [scrollbar-width:none]"
+            placeholder="Message..."
+            rows="1"
+            @keyup.enter.ctrl="sendMessage"
+          ></textarea>
+          <button 
+            @click="sendMessage"
+            :disabled="isSending || !composer.trim()"
+            class="h-10 w-10 shrink-0 rounded-full bg-aurora-gradient flex items-center justify-center text-white shadow-lg shadow-purple-500/20 disabled:opacity-50 disabled:grayscale transition-all active:scale-95"
+          >
+            <svg v-if="!isSending" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 ml-1"><path d="M3.478 2.404a.75.75 0 00-.926.941l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.404z" /></svg>
+            <div v-else class="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+          </button>
+        </div>
       </div>
     </div>
   </div>

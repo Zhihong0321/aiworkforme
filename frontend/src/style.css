@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300&family=Roboto+Mono:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lexend:wght@300&family=Roboto+Mono:wght@400;500;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -148,10 +148,65 @@ h6 {
   0% {
     background-position: 0% 0%, 100% 0%, 50% 100%, 0 0;
   }
+
   50% {
     background-position: 20% 10%, 80% 10%, 55% 85%, 0 0;
   }
+
   100% {
     background-position: 0% 0%, 100% 0%, 50% 100%, 0 0;
   }
+}
+
+/* 
+ * ----------------------------------------
+ * MOBILE THEME: ONYX & AURORA (PHASE 3)
+ * ----------------------------------------
+ */
+.font-inter {
+  font-family: 'Inter', sans-serif;
+}
+
+.bg-onyx {
+  background-color: #0F172A;
+  /* Slate 900 */
+}
+
+/* Glassmorphism Panel */
+.glass-panel {
+  background: rgba(30, 41, 59, 0.6);
+  /* Slate 800 with opacity */
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+}
+
+.glass-panel-light {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Gradients */
+.text-aurora {
+  background: linear-gradient(135deg, #A855F7, #3B82F6, #06B6D4);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  color: transparent;
+}
+
+.bg-aurora-gradient {
+  background: linear-gradient(135deg, #A855F7, #3B82F6, #06B6D4);
+  color: white;
+}
+
+.bg-mobile-aurora {
+  background: radial-gradient(circle at 0% 0%, rgba(168, 85, 247, 0.15), transparent 40%),
+    radial-gradient(circle at 100% 0%, rgba(6, 182, 212, 0.15), transparent 40%),
+    radial-gradient(circle at 50% 100%, rgba(59, 130, 246, 0.1), transparent 40%),
+    #0F172A;
+  background-attachment: fixed;
 }

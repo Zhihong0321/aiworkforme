@@ -201,287 +201,333 @@ const handleDeleteEvent = async (id) => {
 </script>
 
 <template>
-  <div class="px-6 py-8 max-w-7xl mx-auto">
-    <!-- Header -->
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-      <div>
-        <h1 class="text-3xl font-black tracking-tighter uppercase mb-1">User Calendar</h1>
-        <p class="text-sm font-medium opacity-50 uppercase tracking-widest">Manage your availability and AI-scheduled appointments</p>
-      </div>
+  <div class="min-h-[calc(100vh-64px)] w-full bg-onyx font-inter text-slate-200 pb-20 flex flex-col relative overflow-hidden">
+    <!-- Aurora Background Effect -->
+    <div class="absolute inset-0 bg-mobile-aurora z-0 pointer-events-none opacity-40"></div>
 
-      <div class="flex items-center p-1 rounded-xl bg-black/5 dark:bg-white/5 backdrop-blur-md border border-black/10 dark:border-white/10">
-        <button 
-          @click="activeTab = 'calendar'"
-          :class="[
-            'px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300',
-            activeTab === 'calendar' 
-              ? 'bg-black text-white dark:bg-white dark:text-black shadow-lg' 
-              : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'
-          ]"
-        >
-          Calendar
-        </button>
-        <button 
-          @click="activeTab = 'config'"
-          :class="[
-            'px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300',
-            activeTab === 'config' 
-              ? 'bg-black text-white dark:bg-white dark:text-black shadow-lg' 
-              : 'text-black/60 dark:text-white/60 hover:text-black dark:hover:text-white'
-          ]"
-        >
-          Settings
-        </button>
-      </div>
+    <!-- Header Section -->
+    <div class="p-5 border-b border-slate-800/50 glass-panel-light rounded-b-[2rem] sticky top-0 z-30 mb-2 relative">
+       <div class="flex flex-col gap-1 mb-4">
+         <h1 class="text-3xl font-semibold text-white tracking-tight">Calendar</h1>
+         <p class="text-[10px] text-aurora font-bold uppercase tracking-widest mt-1">Availability & AI Scheduling</p>
+       </div>
+       
+       <!-- Tab Navigation (Mobile friendly Segmented Control) -->
+       <div class="flex p-1 bg-slate-900/60 rounded-xl border border-slate-700/50 backdrop-blur-md relative z-10 w-full max-w-sm mx-auto">
+         <button 
+            @click="activeTab = 'calendar'"
+            class="flex-1 py-2 text-xs font-bold rounded-lg transition-all duration-300 relative"
+            :class="activeTab === 'calendar' ? 'text-white bg-slate-800 shadow-md border border-slate-700/50' : 'text-slate-500 hover:text-slate-300'"
+         >
+            Calendar View
+         </button>
+         <button 
+            @click="activeTab = 'config'"
+            class="flex-1 py-2 text-xs font-bold rounded-lg transition-all duration-300 relative"
+            :class="activeTab === 'config' ? 'text-white bg-slate-800 shadow-md border border-slate-700/50' : 'text-slate-500 hover:text-slate-300'"
+         >
+            Preferences
+         </button>
+       </div>
     </div>
 
-    <!-- Calendar Tab -->
-    <div v-if="activeTab === 'calendar'" class="animate-in fade-in slide-in-from-bottom-4 duration-700">
-      <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        
-        <!-- Sidebar: Stats & Next Meetings -->
-        <div class="space-y-6">
-          <div class="p-6 rounded-3xl bg-blue-600 text-white shadow-xl shadow-blue-500/20">
-            <h3 class="text-[10px] font-black uppercase tracking-widest opacity-80 mb-4">Total Appointments</h3>
-            <div class="text-4xl font-black mb-1">{{ events.length }}</div>
-            <p class="text-[10px] font-bold uppercase tracking-widest opacity-60">This Month</p>
-          </div>
+    <!-- Main Content Area -->
+    <div class="flex-grow px-4 pb-10 relative z-10 w-full max-w-5xl mx-auto">
+       
+      <!-- Loading State -->
+      <div v-if="isLoading" class="flex justify-center items-center py-20">
+         <div class="w-8 h-8 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin"></div>
+      </div>
 
-          <div class="p-6 rounded-3xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/20 backdrop-blur-xl">
-            <h3 class="text-[10px] font-black uppercase tracking-widest opacity-50 mb-4">Upcoming</h3>
-            <div v-if="events.length === 0" class="text-xs opacity-40 py-4">No meetings scheduled</div>
-            <div v-else class="space-y-4">
-              <div v-for="event in events.slice(0, 5)" :key="event.id" class="flex items-start gap-3">
-                <div class="w-1 h-10 rounded-full bg-blue-500"></div>
-                <div>
-                  <div class="text-xs font-black uppercase">{{ event.title }}</div>
-                  <div class="text-[10px] opacity-50 uppercase font-bold">{{ new Date(event.start_time).toLocaleString() }}</div>
-                </div>
-              </div>
+      <!-- ==================== CALENDAR TAB ==================== -->
+      <div v-else-if="activeTab === 'calendar'" class="space-y-5 animate-fade-in mt-2">
+         
+         <!-- Top Stats & Action (Mobile Stacked) -->
+         <div class="grid grid-cols-2 gap-4">
+            <div class="glass-panel p-4 rounded-3xl border border-slate-700/50 relative overflow-hidden">
+               <div class="absolute -right-4 -top-4 w-16 h-16 bg-blue-500/20 blur-xl rounded-full"></div>
+               <h3 class="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-2 relative z-10">Total Appointments</h3>
+               <div class="text-3xl font-black text-white tracking-tight relative z-10">{{ events.length }}</div>
+               <p class="text-[9px] font-bold text-blue-400 uppercase tracking-widest relative z-10 mt-1">This Month</p>
             </div>
-          </div>
+            <button 
+               @click="openAddModal()"
+               class="glass-panel p-4 rounded-3xl border border-dashed border-slate-500/50 hover:border-purple-500/50 active:scale-95 transition-all outline-none flex flex-col items-center justify-center text-center group bg-slate-800/20"
+            >
+               <div class="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center mb-2 group-hover:bg-purple-500/20 transition-colors">
+                  <Plus class="w-4 h-4 text-slate-300 group-hover:text-purple-400 transition-colors" />
+               </div>
+               <span class="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-white transition-colors">Add Block</span>
+            </button>
+         </div>
 
-          <button 
-            @click="openAddModal()"
-            class="w-full flex items-center justify-center gap-2 py-4 rounded-3xl border-2 border-dashed border-black/10 dark:border-white/10 hover:border-black dark:hover:border-white transition-all group"
-          >
-            <Plus class="w-4 h-4 group-hover:scale-125 transition-transform" />
-            <span class="text-[10px] font-black uppercase tracking-widest">Add Manual Block</span>
-          </button>
-        </div>
-
-        <!-- Main Calendar -->
-        <div class="lg:col-span-3">
-          <div class="p-6 rounded-3xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/20 backdrop-blur-xl shadow-2xl">
-            <!-- Calendar Header -->
-            <div class="flex items-center justify-between mb-8">
-              <h2 class="text-xl font-black uppercase tracking-tight">
-                {{ currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' }) }}
-              </h2>
-              <div class="flex items-center gap-2">
-                <button @click="prevMonth" class="p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                  <ChevronLeft class="w-5 h-5" />
-                </button>
-                <button @click="nextMonth" class="p-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                  <ChevronRight class="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            <!-- Days Grid -->
-            <div class="grid grid-cols-7 border border-black/5 dark:border-white/5 rounded-2xl overflow-hidden">
-              <div v-for="day in ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']" :key="day" 
-                   class="py-3 text-[10px] font-black uppercase tracking-widest text-center border-b border-black/5 dark:border-white/5 opacity-50">
-                {{ day }}
-              </div>
-              <div 
-                v-for="(day, idx) in calendarDays" 
-                :key="idx"
-                class="min-h-[120px] p-2 border-r border-b border-black/5 dark:border-white/5 last:border-r-0 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors relative group"
-                :class="[!day.currentMonth ? 'opacity-20' : '']"
-              >
-                <div class="flex justify-between items-start mb-2">
-                  <span class="text-[10px] font-black">{{ day.date.getDate() }}</span>
-                  <button 
-                    v-if="day.currentMonth"
-                    @click="openAddModal(day.date)"
-                    class="p-1 rounded bg-black/5 dark:bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <Plus class="w-3 h-3" />
-                  </button>
-                </div>
-                
-                <!-- Events in Day -->
-                <div class="space-y-1 overflow-y-auto max-h-[80px] scrollbar-hide">
-                  <div 
-                    v-for="event in getEventsForDay(day.date)" 
-                    :key="event.id"
-                    :class="[
-                      'px-2 py-1 rounded text-[8px] font-black uppercase truncate cursor-pointer transition-transform hover:scale-105',
-                      event.event_type === 'appointment' ? 'bg-blue-500 text-white' : 'bg-red-500 text-white'
-                    ]"
-                  >
-                    {{ event.title }}
+         <!-- Upcoming Mobile List (If any exist) -->
+         <div v-if="events.length > 0" class="glass-panel p-4 rounded-3xl border border-slate-700/50 mb-2">
+            <h3 class="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-3 px-1">Upcoming Events (Top 3)</h3>
+            <div class="space-y-2">
+               <div v-for="event in events.slice(0, 3)" :key="event.id" class="bg-slate-800/40 border border-slate-700/30 rounded-2xl p-3 flex gap-3 relative overflow-hidden group">
+                  <div class="w-1 rounded-full absolute left-0 top-3 bottom-3" :class="event.event_type === 'appointment' ? 'bg-blue-500' : 'bg-red-500'"></div>
+                  <div class="pl-2 flex-grow min-w-0">
+                     <div class="text-[13px] font-bold text-white uppercase tracking-tight truncate">{{ event.title }}</div>
+                     <div class="text-[10px] text-slate-400 font-semibold uppercase mt-0.5">{{ new Date(event.start_time).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) }}</div>
                   </div>
+                  <button @click="handleDeleteEvent(event.id)" class="shrink-0 w-8 h-8 rounded-full bg-red-500/10 text-red-400 flex items-center justify-center active:bg-red-500/20 transition-colors">
+                     <Trash2 class="w-3.5 h-3.5" />
+                  </button>
+               </div>
+            </div>
+         </div>
+
+         <!-- Main Calendar Grid -->
+         <div class="glass-panel p-4 rounded-[2rem] border border-slate-700/50 bg-slate-900/40">
+            <!-- Header Controls -->
+            <div class="flex items-center justify-between mb-4 px-2">
+               <h2 class="text-base font-bold text-white tracking-tight">
+                 {{ currentMonth.toLocaleString('default', { month: 'long', year: 'numeric' }) }}
+               </h2>
+               <div class="flex items-center gap-1">
+                 <button @click="prevMonth" class="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white border border-slate-700/50 active:scale-90 transition-all">
+                   <ChevronLeft class="w-5 h-5" />
+                 </button>
+                 <button @click="nextMonth" class="p-1.5 rounded-full bg-slate-800 text-slate-400 hover:text-white border border-slate-700/50 active:scale-90 transition-all">
+                   <ChevronRight class="w-5 h-5" />
+                 </button>
+               </div>
+            </div>
+
+            <!-- CSS Grid Calendar (Optimized for Mobile) -->
+            <div class="grid grid-cols-7 gap-1">
+               <div v-for="day in ['S', 'M', 'T', 'W', 'T', 'F', 'S']" :key="day" class="text-center text-[10px] font-black uppercase text-slate-500 pb-2">
+                 {{ day }}
+               </div>
+               
+               <div 
+                 v-for="(day, idx) in calendarDays" 
+                 :key="idx"
+                 class="aspect-square flex flex-col p-1 rounded-xl border border-transparent relative group"
+                 :class="[
+                    !day.currentMonth ? 'opacity-20 pointer-events-none' : 'hover:bg-slate-800/50 hover:border-slate-700/50 cursor-pointer active:scale-95 transition-all',
+                    idx % 2 === 0 ? 'bg-slate-800/10' : ''
+                 ]"
+                 @click="day.currentMonth ? openAddModal(day.date) : null"
+               >
+                 <span class="text-[10px] font-bold text-slate-300 ml-1">{{ day.date.getDate() }}</span>
+                 
+                 <!-- Event Indicators (Dots on mobile to save space) -->
+                 <div class="flex-grow flex flex-wrap gap-[2px] items-end justify-start pl-1 pb-1 overflow-hidden">
+                    <span 
+                       v-for="(event, eIdx) in getEventsForDay(day.date).slice(0, 3)" 
+                       :key="eIdx" 
+                       class="w-1.5 h-1.5 rounded-full"
+                       :class="event.event_type === 'appointment' ? 'bg-blue-500' : 'bg-red-500'"
+                    ></span>
+                    <span v-if="getEventsForDay(day.date).length > 3" class="text-[8px] text-slate-500 font-bold leading-none">+</span>
+                 </div>
+               </div>
+            </div>
+         </div>
+      </div>
+
+      <!-- ==================== SETTINGS TAB ==================== -->
+      <div v-else-if="activeTab === 'config'" class="space-y-6 animate-fade-in mt-2">
+         
+         <!-- Meeting Types Card -->
+         <div class="glass-panel p-5 rounded-[2rem] border border-slate-700/50">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                <Clock class="w-3.5 h-3.5" /> Meeting Types
+              </h3>
+              <button @click="addMeetingType" class="w-7 h-7 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 transition-colors">
+                <Plus class="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div class="space-y-3">
+              <div v-if="config.meeting_types.length === 0" class="text-xs text-slate-500 italic py-2">No meeting types defined.</div>
+              <div v-for="(type, index) in config.meeting_types" :key="index" class="flex gap-2 items-center bg-slate-900/50 p-1.5 rounded-2xl border border-slate-700/50">
+                <input 
+                   v-model="type.name" 
+                   placeholder="e.g. Discovery Call" 
+                   class="flex-1 bg-slate-800/80 border border-slate-700/50 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-colors min-w-0"
+                />
+                <div class="relative w-20 shrink-0">
+                   <span class="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-500">min</span>
+                   <input 
+                      v-model.number="type.duration_minutes" 
+                      type="number" 
+                      class="w-full bg-slate-800/80 border border-slate-700/50 rounded-xl px-3 py-2.5 text-xs text-white focus:outline-none focus:border-purple-500 transition-colors"
+                   />
                 </div>
+                <button @click="removeMeetingType(index)" class="shrink-0 p-2.5 rounded-xl text-red-400 hover:bg-red-500/10 transition-colors">
+                  <Trash2 class="w-4 h-4" />
+                </button>
               </div>
             </div>
-          </div>
-        </div>
+         </div>
+
+         <!-- Available Regions Card -->
+         <div class="glass-panel p-5 rounded-[2rem] border border-slate-700/50">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2">
+                <MapPin class="w-3.5 h-3.5" /> Available Regions
+              </h3>
+              <button @click="addRegion" class="w-7 h-7 rounded-full bg-slate-800 border border-slate-600 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 transition-colors">
+                <Plus class="w-4 h-4" />
+              </button>
+            </div>
+            
+            <div class="space-y-3">
+              <div v-if="config.available_regions.length === 0" class="text-xs text-slate-500 italic py-2">No regions defined.</div>
+              <div v-for="(region, index) in config.available_regions" :key="index" class="flex gap-2 items-center bg-slate-900/50 p-1.5 rounded-2xl border border-slate-700/50">
+                <input 
+                   v-model="config.available_regions[index]" 
+                   placeholder="e.g. US-East" 
+                   class="flex-1 bg-slate-800/80 border border-slate-700/50 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-colors"
+                />
+                <button @click="removeRegion(index)" class="shrink-0 p-2.5 rounded-xl text-red-400 hover:bg-red-500/10 transition-colors">
+                  <Trash2 class="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+         </div>
+
+         <!-- System Timezone Card -->
+         <div class="glass-panel p-5 rounded-[2rem] border border-slate-700/50">
+             <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400 flex items-center gap-2 mb-3">
+                <Settings class="w-3.5 h-3.5" /> System Timezone
+             </h3>
+             <div class="relative">
+                <select v-model="config.timezone" class="w-full bg-slate-900 border border-slate-700/80 rounded-2xl px-4 py-3.5 text-sm font-semibold text-white focus:outline-none focus:border-purple-500 transition-colors appearance-none">
+                  <option value="UTC">UTC (Universal Time)</option>
+                  <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
+                  <option value="Asia/Kuala_Lumpur">Asia/Kuala_Lumpur (MYT)</option>
+                  <option value="America/New_York">America/New_York (EST)</option>
+                  <option value="Europe/London">Europe/London (GMT)</option>
+                </select>
+                <div class="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                   <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                </div>
+             </div>
+         </div>
+
+         <!-- Save Button (Sticky bottom on mobile) -->
+         <div class="pt-4 pb-safe bg-onyx/80 backdrop-blur-md sticky bottom-16 z-20 mx--4 px-4 sm:mx-0 sm:px-0 sm:static sm:bg-transparent -mx-4">
+            <button 
+               @click="saveConfig"
+               :disabled="isLoading"
+               class="w-full py-4 bg-aurora-gradient text-white rounded-2xl font-bold uppercase tracking-widest text-sm shadow-lg shadow-purple-500/20 active:scale-[0.98] disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+            >
+               <span v-if="!isLoading">Save Configuration</span>
+               <div v-else class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+            </button>
+         </div>
       </div>
     </div>
 
-    <!-- Config Tab -->
-    <div v-if="activeTab === 'config'" class="animate-in fade-in slide-in-from-bottom-4 duration-700 max-w-2xl mx-auto">
-      <div class="p-8 rounded-3xl border border-black/10 dark:border-white/10 bg-white/50 dark:bg-black/20 backdrop-blur-xl space-y-8 shadow-2xl">
+    <!-- Modals Overlay (Mobile Bottom Sheet Style) -->
+    <transition name="fade">
+      <div v-if="showEventModal" class="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm">
         
-        <!-- Meeting Types -->
-        <div>
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-sm font-black uppercase tracking-widest flex items-center gap-2">
-              <Clock class="w-4 h-4" /> Meeting Types
-            </h3>
-            <button @click="addMeetingType" class="text-[10px] font-black uppercase tracking-widest opacity-50 hover:opacity-100 flex items-center gap-1">
-              <Plus class="w-3 h-3" /> Add Type
-            </button>
-          </div>
-          <div class="space-y-3">
-            <div v-for="(type, index) in config.meeting_types" :key="index" class="flex gap-3 items-center group">
-              <input 
-                v-model="type.name" 
-                placeholder="Label" 
-                class="flex-1 bg-black/5 dark:bg-white/5 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 ring-blue-500"
-              />
-              <input 
-                v-model.number="type.duration_minutes" 
-                type="number" 
-                placeholder="Min" 
-                class="w-24 bg-black/5 dark:bg-white/5 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 ring-blue-500"
-              />
-              <button @click="removeMeetingType(index)" class="p-3 rounded-xl hover:bg-red-500/10 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Trash2 class="w-4 h-4" />
+        <div class="w-full max-w-md bg-onyx sm:rounded-3xl rounded-t-[2rem] border border-slate-800 shadow-2xl overflow-hidden flex flex-col slide-up max-h-[90vh]">
+           
+           <div class="p-5 border-b border-slate-800 flex justify-between items-center sticky top-0 bg-onyx/90 backdrop-blur-md z-10">
+              <h2 class="text-lg font-bold text-white tracking-tight">Manual Block</h2>
+              <button @click="showEventModal = false" class="w-8 h-8 rounded-full bg-slate-800 text-slate-400 flex items-center justify-center hover:bg-slate-700 hover:text-white">
+                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
-            </div>
-          </div>
-        </div>
+           </div>
 
-        <!-- Regions -->
-        <div>
-          <div class="flex items-center justify-between mb-4">
-            <h3 class="text-sm font-black uppercase tracking-widest flex items-center gap-2">
-              <MapPin class="w-4 h-4" /> Available Regions
-            </h3>
-            <button @click="addRegion" class="text-[10px] font-black uppercase tracking-widest opacity-50 hover:opacity-100 flex items-center gap-1">
-              <Plus class="w-3 h-3" /> Add Region
-            </button>
-          </div>
-          <div class="grid grid-cols-2 gap-3">
-            <div v-for="(region, index) in config.available_regions" :key="index" class="flex gap-2 items-center group">
-              <input 
-                v-model="config.available_regions[index]" 
-                placeholder="Region Name" 
-                class="flex-1 bg-black/5 dark:bg-white/5 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 ring-blue-500"
-              />
-              <button @click="removeRegion(index)" class="p-2 rounded-xl hover:bg-red-500/10 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                <Trash2 class="w-3 h-3" />
+           <div class="p-5 overflow-y-auto scrollbar-none space-y-5">
+              
+              <!-- Block Title -->
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 pl-1">Block Title</label>
+                <input v-model="newEvent.title" type="text" placeholder="e.g. Out of Office" class="w-full bg-slate-900 border border-slate-700/80 rounded-2xl px-4 py-3.5 text-sm font-semibold text-white focus:outline-none focus:border-purple-500 transition-colors" />
+              </div>
+
+              <!-- Date / Time Grid -->
+              <div class="grid grid-cols-2 gap-3">
+                 <div class="space-y-1.5">
+                   <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 pl-1">Start Time</label>
+                   <!-- Mobile browsers display native date/time pickers nicely here -->
+                   <input v-model="newEvent.start_time" type="datetime-local" class="w-full bg-slate-900 border border-slate-700/80 rounded-2xl px-3 py-3 text-[13px] font-semibold text-white focus:outline-none focus:border-purple-500 transition-colors appearance-none" />
+                 </div>
+                 <div class="space-y-1.5">
+                   <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 pl-1">End Time</label>
+                   <input v-model="newEvent.end_time" type="datetime-local" class="w-full bg-slate-900 border border-slate-700/80 rounded-2xl px-3 py-3 text-[13px] font-semibold text-white focus:outline-none focus:border-purple-500 transition-colors appearance-none" />
+                 </div>
+              </div>
+
+              <!-- Segmented Control for Type -->
+              <div class="space-y-1.5">
+                 <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 pl-1">Availability Type</label>
+                 <div class="flex p-1 bg-slate-900 border border-slate-700/80 rounded-2xl">
+                    <button 
+                       @click="newEvent.event_type = 'appointment'"
+                       class="flex-1 py-2.5 text-[11px] font-bold uppercase tracking-widest rounded-xl transition-all"
+                       :class="newEvent.event_type === 'appointment' ? 'bg-blue-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'"
+                    >
+                       Meeting
+                    </button>
+                    <button 
+                       @click="newEvent.event_type = 'unavailable'"
+                       class="flex-1 py-2.5 text-[11px] font-bold uppercase tracking-widest rounded-xl transition-all"
+                       :class="newEvent.event_type === 'unavailable' ? 'bg-red-500 text-white shadow-md' : 'text-slate-500 hover:text-slate-300'"
+                    >
+                       Blocked
+                    </button>
+                 </div>
+              </div>
+           </div>
+
+           <!-- Submit btn -->
+           <div class="p-5 border-t border-slate-800 bg-slate-900/50 pb-safe">
+              <button 
+                 @click="handleCreateEvent"
+                 :disabled="isLoading"
+                 class="w-full py-4 bg-white text-slate-900 rounded-2xl font-black uppercase tracking-widest text-xs shadow-lg active:scale-[0.98] disabled:opacity-50 transition-all flex justify-center items-center gap-2"
+              >
+                 <span v-if="!isLoading">Confirm Block</span>
+                 <div v-else class="w-4 h-4 border-2 border-slate-900/30 border-t-slate-900 rounded-full animate-spin"></div>
               </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Timezone -->
-        <div>
-           <h3 class="text-sm font-black uppercase tracking-widest flex items-center gap-2 mb-4">
-              <Settings class="w-4 h-4" /> System Timezone
-            </h3>
-            <select v-model="config.timezone" class="w-full bg-black/5 dark:bg-white/5 border-none rounded-xl px-4 py-3 text-xs font-bold focus:ring-2 ring-blue-500">
-              <option value="UTC">UTC (Universal Time)</option>
-              <option value="Asia/Singapore">Asia/Singapore (SGT)</option>
-              <option value="Asia/Kuala_Lumpur">Asia/Kuala_Lumpur (MYT)</option>
-              <option value="America/New_York">America/New_York (EST)</option>
-              <option value="Europe/London">Europe/London (GMT)</option>
-            </select>
-        </div>
-
-        <button 
-          @click="saveConfig"
-          :disabled="isLoading"
-          class="w-full py-4 bg-black dark:bg-white text-white dark:text-black rounded-3xl text-[10px] font-black uppercase tracking-widest shadow-xl transition-transform hover:scale-[1.02] active:scale-95 disabled:opacity-50"
-        >
-          <span v-if="!isLoading">Save Configuration</span>
-          <span v-else class="animate-pulse">Saving...</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Modal: New Event -->
-    <div v-if="showEventModal" class="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
-      <div class="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl shadow-2xl p-8 border border-white/10 space-y-6">
-        <div class="flex items-center justify-between">
-          <h3 class="text-lg font-black uppercase tracking-tight">Schedule Block</h3>
-          <button @click="showEventModal = false" class="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-xl">
-             <XCircle class="w-6 h-6 opacity-40" />
-          </button>
-        </div>
-
-        <div class="space-y-4">
-          <div>
-            <label class="text-[10px] font-black uppercase opacity-50 block mb-2">Block Title</label>
-            <input v-model="newEvent.title" placeholder="e.g. Do Not Disturb" class="w-full bg-black/5 dark:bg-white/5 border-none rounded-xl px-4 py-3 text-xs font-bold" />
-          </div>
-
-          <div class="grid grid-cols-2 gap-4">
-            <div>
-              <label class="text-[10px] font-black uppercase opacity-50 block mb-2">Start Time</label>
-              <input v-model="newEvent.start_time" type="datetime-local" class="w-full bg-black/5 dark:bg-white/5 border-none rounded-xl px-4 py-3 text-xs font-bold" />
-            </div>
-            <div>
-              <label class="text-[10px] font-black uppercase opacity-50 block mb-2">End Time</label>
-              <input v-model="newEvent.end_time" type="datetime-local" class="w-full bg-black/5 dark:bg-white/5 border-none rounded-xl px-4 py-3 text-xs font-bold" />
-            </div>
-          </div>
-
-          <div class="flex items-center gap-4">
-             <button 
-              @click="newEvent.event_type = 'appointment'"
-              :class="[
-                'flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all',
-                newEvent.event_type === 'appointment' ? 'bg-blue-500 border-blue-500 text-white' : 'border-black/10 dark:border-white/10 opacity-50'
-              ]"
-            >
-              Appointment
-            </button>
-             <button 
-              @click="newEvent.event_type = 'unavailable'"
-              :class="[
-                'flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all',
-                newEvent.event_type === 'unavailable' ? 'bg-red-500 border-red-500 text-white' : 'border-black/10 dark:border-white/10 opacity-50'
-              ]"
-            >
-              Unavailable
-            </button>
-          </div>
-
-          <button 
-            @click="handleCreateEvent"
-            :disabled="isLoading"
-            class="w-full py-4 bg-black dark:bg-white text-white dark:text-black rounded-3xl text-[10px] font-black uppercase tracking-widest shadow-xl disabled:opacity-50"
-          >
-            Confirm Block
-          </button>
+           </div>
         </div>
       </div>
-    </div>
-
+    </transition>
   </div>
 </template>
 
 <style scoped>
-.scrollbar-hide::-webkit-scrollbar {
+/* Hide scrollbar but keep scroll functionality */
+.scrollbar-none::-webkit-scrollbar {
   display: none;
 }
-.scrollbar-hide {
+.scrollbar-none {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Animations */
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.slide-up {
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
 }
 </style>

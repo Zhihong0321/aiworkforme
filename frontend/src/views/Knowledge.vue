@@ -16,6 +16,34 @@ const isEditing = ref(false)
 const editingDoc = ref({ id: null, filename: '', content: '' })
 const isSaving = ref(false)
 
+// Context & Goal State
+const contextDoc = ref(null)
+const contextContent = ref('')
+const isSavingContext = ref(false)
+
+const goalDoc = ref(null)
+const goalContent = ref('')
+const isSavingGoal = ref(false)
+
+// FAQ State
+const faqDoc = ref(null)
+const faqs = ref([])
+const isSavingFaq = ref(false)
+const isEditingFaq = ref(false)
+const editingFaqIndex = ref(-1)
+const editingFaqItem = ref({ q: '', a: '' })
+
+import { computed } from 'vue'
+
+const standardDocuments = computed(() => {
+  return documents.value.filter(d => {
+    try {
+      const tags = d.tags || '[]'
+      return !tags.includes('fundamental_context') && !tags.includes('agent_goal') && !tags.includes('faq')
+    } catch(e) { return true }
+  })
+})
+
 const fetchKnowledge = async () => {
   if (!store.activeWorkspace?.agent_id) {
     documents.value = []
@@ -25,6 +53,22 @@ const fetchKnowledge = async () => {
   try {
     const data = await request(`/agents/${store.activeWorkspace.agent_id}/knowledge`)
     documents.value = data
+    
+    // Parse special docs
+    contextDoc.value = data.find(d => d.tags && d.tags.includes('fundamental_context'))
+    contextContent.value = contextDoc.value ? contextDoc.value.content : ''
+    
+    goalDoc.value = data.find(d => d.tags && d.tags.includes('agent_goal'))
+    goalContent.value = goalDoc.value ? goalDoc.value.content : ''
+    
+    faqDoc.value = data.find(d => d.tags && d.tags.includes('faq'))
+    if (faqDoc.value) {
+        try {
+            faqs.value = JSON.parse(faqDoc.value.content)
+        } catch(e) { faqs.value = [] }
+    } else {
+        faqs.value = []
+    }
   } catch (e) {
     console.error('Failed to fetch knowledge', e)
   } finally {
@@ -109,6 +153,69 @@ const deleteDoc = async (id) => {
   }
 }
 
+const saveSpecialDoc = async (docRef, contentValue, filename, tag, isSavingRef) => {
+  isSavingRef.value = true
+  try {
+    const isNew = !docRef.value
+    const method = isNew ? 'POST' : 'PUT'
+    
+    const formData = new FormData()
+    formData.append('filename', filename)
+    formData.append('content', contentValue)
+    if (method === 'PUT') {
+        const rawTags = docRef.value.tags || '[]'
+        formData.append('tags', rawTags) // keep existing tags if any, backend just updates what we pass
+    } else {
+        formData.append('tags', `["${tag}"]`)
+    }
+    
+    const path = isNew 
+      ? `/agents/${store.activeWorkspace.agent_id}/knowledge/text`
+      : `/agents/knowledge/${docRef.value.id}`
+
+    await request(path, { method, body: formData })
+    await fetchKnowledge()
+  } catch(e) {
+    console.error(e)
+    alert('Failed to save')
+  } finally {
+    isSavingRef.value = false
+  }
+}
+
+const saveContext = () => saveSpecialDoc(contextDoc, contextContent.value, 'system_context.txt', 'fundamental_context', isSavingContext)
+const saveGoal = () => saveSpecialDoc(goalDoc, goalContent.value, 'system_goal.txt', 'agent_goal', isSavingGoal)
+
+const createNewFaq = () => {
+    editingFaqItem.value = { q: '', a: '' }
+    editingFaqIndex.value = -1
+    isEditingFaq.value = true
+}
+
+const editFaq = (index) => {
+    editingFaqItem.value = { ...faqs.value[index] }
+    editingFaqIndex.value = index
+    isEditingFaq.value = true
+}
+
+const deleteFaq = async (index) => {
+    if(!confirm('Delete this FAQ?')) return
+    const newFaqs = [...faqs.value]
+    newFaqs.splice(index, 1)
+    await saveSpecialDoc(faqDoc, JSON.stringify(newFaqs), 'faq.json', 'faq', isSavingFaq)
+}
+
+const saveFaqItem = async () => {
+    const newFaqs = [...faqs.value]
+    if (editingFaqIndex.value >= 0) {
+        newFaqs[editingFaqIndex.value] = editingFaqItem.value
+    } else {
+        newFaqs.push(editingFaqItem.value)
+    }
+    isEditingFaq.value = false
+    await saveSpecialDoc(faqDoc, JSON.stringify(newFaqs), 'faq.json', 'faq', isSavingFaq)
+}
+
 const getFileTypeIcon = (filename) => {
     const ext = filename.split('.').pop().toLowerCase()
     if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return '🖼️'
@@ -123,7 +230,7 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
 
 <template>
   <div class="p-8 max-w-7xl mx-auto">
-    <header class="mb-12 flex justify-between items-end">
+    <header class="mb-12 flex flex-col md:flex-row md:justify-between items-start md:items-end gap-6">
       <div>
         <h1 class="text-3xl font-black text-slate-900 tracking-tight mb-2">Knowledge Base</h1>
         <p class="text-slate-500 text-sm">Upload documentation or images for Agent to reference during conversations.</p>
@@ -150,12 +257,69 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
     </div>
 
     <div v-else class="grid grid-cols-1 xl:grid-cols-4 gap-8">
-      <!-- Source List -->
-      <div class="xl:col-span-3">
+      <!-- Main Content -->
+      <div class="xl:col-span-3 space-y-8">
+        
+        <!-- Context & Goal Section -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div class="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-xl shadow-slate-200/50 flex flex-col hover:border-indigo-200 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                   <div class="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 text-sm">🧠</div>
+                   <h3 class="font-black text-slate-900">Fundamental Context</h3>
+               </div>
+               <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-4">Appears in every prompt</p>
+               <textarea v-model="contextContent" rows="4" placeholder="e.g. You are an AI assistant for a gym." class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all mb-4 resize-none flex-1"></textarea>
+               <TuiButton @click="saveContext" :loading="isSavingContext" size="sm" class="mt-auto bg-slate-900 text-white hover:bg-slate-800">Save Context</TuiButton>
+            </div>
+            
+            <div class="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-xl shadow-slate-200/50 flex flex-col hover:border-emerald-200 transition-colors">
+               <div class="flex items-center gap-3 mb-2">
+                   <div class="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 text-sm">🎯</div>
+                   <h3 class="font-black text-slate-900">Agent Goal</h3>
+               </div>
+               <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-4">Appears in every prompt</p>
+               <textarea v-model="goalContent" rows="4" placeholder="e.g. Your goal is to schedule a visit." class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all mb-4 resize-none flex-1"></textarea>
+               <TuiButton @click="saveGoal" :loading="isSavingGoal" size="sm" class="mt-auto bg-slate-900 text-white hover:bg-slate-800">Save Goal</TuiButton>
+            </div>
+        </div>
+
+        <!-- FAQ Section -->
+        <div class="bg-white border border-slate-200 rounded-[2rem] overflow-hidden shadow-xl shadow-slate-200/50">
+             <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                 <div class="flex items-center gap-3">
+                     <span class="text-[10px] uppercase font-black tracking-widest text-slate-400">Frequently Asked Questions</span>
+                     <TuiBadge variant="success" size="sm">{{ faqs.length }} Pairs</TuiBadge>
+                 </div>
+                 <TuiButton variant="outline" size="sm" class="!rounded-xl border-slate-200" @click="createNewFaq">+ Add FAQ</TuiButton>
+             </div>
+             <div v-if="faqs.length === 0" class="p-10 text-center">
+                 <p class="text-slate-400 text-sm">No FAQs added yet. Provide Q&A pairs to help the AI answer precisely.</p>
+             </div>
+             <div v-else class="divide-y divide-slate-50">
+                <div v-for="(faq, index) in faqs" :key="index" class="p-6 hover:bg-slate-50/80 transition-colors group flex gap-4">
+                    <div class="flex-1 space-y-2">
+                        <div class="flex gap-3">
+                            <span class="font-black text-indigo-600">Q.</span>
+                            <span class="text-sm font-bold text-slate-900">{{ faq.q }}</span>
+                        </div>
+                        <div class="flex gap-3">
+                            <span class="font-black text-slate-400">A.</span>
+                            <span class="text-sm font-medium text-slate-600">{{ faq.a }}</span>
+                        </div>
+                    </div>
+                    <div class="flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <TuiButton variant="outline" size="sm" class="!rounded-xl border-slate-200" @click="editFaq(index)">Edit</TuiButton>
+                        <TuiButton variant="outline" size="sm" class="!rounded-xl border-slate-200 text-red-500 hover:bg-red-50" @click="deleteFaq(index)">Remove</TuiButton>
+                    </div>
+                </div>
+             </div>
+        </div>
+
+        <!-- Source List -->
         <div class="bg-white border border-slate-200 rounded-[2rem] overflow-hidden shadow-xl shadow-slate-200/50">
             <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                 <span class="text-[10px] uppercase font-black tracking-widest text-slate-400">Agent Memory Vault</span>
-               <TuiBadge variant="info" size="sm">{{ documents.length }} Sources</TuiBadge>
+               <TuiBadge variant="info" size="sm">{{ standardDocuments.length }} Sources</TuiBadge>
             </div>
             
             <div v-if="isLoading" class="p-20 text-center">
@@ -167,12 +331,12 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
                 <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest">Indexing knowledge...</p>
             </div>
             
-            <div v-else-if="documents.length === 0" class="p-20 text-center">
+            <div v-else-if="standardDocuments.length === 0" class="p-20 text-center">
                <p class="text-slate-400 text-sm">Your agent's brain is currently empty. Upload some sources to get started.</p>
             </div>
 
             <div v-else class="divide-y divide-slate-50">
-              <div v-for="doc in documents" :key="doc.id" 
+              <div v-for="doc in standardDocuments" :key="doc.id" 
                 class="p-6 flex justify-between items-center hover:bg-slate-50/80 transition-all group pointer-cursor"
                 @click="openEditor(doc)"
               >
@@ -246,6 +410,45 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
                 <TuiButton @click="isEditing = false" variant="outline" class="flex-1 !rounded-2xl">Cancel</TuiButton>
                 <TuiButton @click="saveEditor" :loading="isSaving" class="flex-1 !rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-600/20">
                     {{ editingDoc.id ? 'Update Memory' : 'Save as Source' }}
+                </TuiButton>
+            </footer>
+        </div>
+    </div>
+
+    <!-- FAQ Drawer (Overlay) -->
+    <div v-if="isEditingFaq" class="fixed inset-0 z-50 flex justify-end">
+        <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="isEditingFaq = false"></div>
+        <div class="relative w-full max-w-xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
+            <header class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <div>
+                   <h3 class="font-black text-slate-900 uppercase tracking-tight">{{ editingFaqIndex >= 0 ? 'Edit FAQ' : 'New FAQ' }}</h3>
+                   <div class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Knowledge Pair</div>
+                </div>
+                <button @click="isEditingFaq = false" class="text-slate-400 hover:text-slate-600 transition-colors">
+                    <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </header>
+            
+            <div class="p-8 flex-1 overflow-y-auto space-y-6">
+                <div>
+                    <label class="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Question</label>
+                    <TuiInput v-model="editingFaqItem.q" placeholder="e.g. What are your working hours?" class="!rounded-2xl" />
+                </div>
+                <div class="flex flex-col">
+                    <label class="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Answer</label>
+                    <textarea 
+                        v-model="editingFaqItem.a" 
+                        rows="6"
+                        class="w-full p-6 bg-slate-50 border border-slate-200 rounded-3xl text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all resize-none"
+                        placeholder="e.g. We are open from 9 AM to 5 PM, Monday through Friday."
+                    ></textarea>
+                </div>
+            </div>
+
+            <footer class="p-6 border-t border-slate-100 flex gap-4 bg-slate-50/50">
+                <TuiButton @click="isEditingFaq = false" variant="outline" class="flex-1 !rounded-2xl">Cancel</TuiButton>
+                <TuiButton @click="saveFaqItem" :loading="isSavingFaq" class="flex-1 !rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-600/20">
+                    {{ editingFaqIndex >= 0 ? 'Update FAQ' : 'Save FAQ' }}
                 </TuiButton>
             </footer>
         </div>

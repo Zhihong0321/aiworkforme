@@ -380,7 +380,7 @@ onMounted(() => {
         </div>
       </TuiCard>
 
-      <TuiCard title="Default Model Per Workflow" subtitle="Set the default model for conversation, extraction, reasoning, and tool use">
+      <TuiCard title="Default Model Per Workflow" subtitle="Set the default model for each workflow task, including AI CRM">
         <div v-if="llmRoutingLoading" class="text-sm text-slate-500 py-4">Loading task model defaults...</div>
         <div v-else class="space-y-6">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">

@@ -143,175 +143,202 @@ const subCategories = (parentId) => categories.value.filter(c => c.parent_id ===
 </script>
 
 <template>
-  <div class="p-6 max-w-7xl mx-auto min-h-screen">
-    <div class="flex justify-between items-center mb-8">
-      <div>
-        <TuiScrambleTitle text="PRODUCT CATALOG" class="text-3xl font-black tracking-tighter" />
-        <p class="text-slate-500 text-xs mt-1 uppercase tracking-widest font-bold">Manage your store inventory for AI Agents</p>
-      </div>
-      <div class="flex gap-3">
-        <TuiButton @click="showCategoryModal = true" variant="secondary">Add Category</TuiButton>
-        <TuiButton @click="openProductModal()">Add Product</TuiButton>
-      </div>
-    </div>
+  <div class="min-h-[calc(100vh-64px)] w-full bg-onyx font-inter text-slate-200 pb-20 relative overflow-hidden flex flex-col">
+    <!-- Aurora Background Effect -->
+    <div class="absolute inset-0 bg-mobile-aurora z-0 pointer-events-none opacity-40"></div>
 
-    <div class="grid grid-cols-12 gap-8">
-      <!-- Sidebar Categories -->
-      <div class="col-span-12 lg:col-span-3">
-        <div :class="['rounded-xl border p-4 sticky top-24', isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200']">
-          <h3 class="text-[10px] font-black uppercase tracking-widest mb-4 text-slate-400">Categories</h3>
-          
-          <div class="space-y-1">
-            <button 
-              @click="selectCategory(null)"
-              :class="['w-full text-left px-3 py-2 rounded-lg text-xs font-bold transition-all', 
-                selectedCategory === null ? 'bg-black text-white' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500']"
-            >
-              ALL PRODUCTS
+    <!-- Header Section -->
+    <div class="p-5 border-b border-slate-800/50 glass-panel-light rounded-b-[2rem] sticky top-0 z-30 mb-2 relative">
+       <div class="flex justify-between items-end">
+         <div>
+           <h1 class="text-3xl font-semibold text-white tracking-tight mb-1">Catalog</h1>
+           <p class="text-[10px] text-aurora font-bold uppercase tracking-widest mt-1">Manage Sales Inventory</p>
+         </div>
+         <div class="flex gap-2">
+            <button @click="showCategoryModal = true" class="h-10 w-10 shrink-0 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 border border-slate-700 shadow-lg active:scale-95 transition-all">
+               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
+               <span class="absolute top-0 right-0 w-3 h-3 bg-indigo-500 rounded-full border-2 border-slate-800 text-[8px] flex items-center justify-center text-white">+</span>
             </button>
+            <button @click="openProductModal()" class="h-10 w-10 shrink-0 rounded-full bg-aurora-gradient flex items-center justify-center text-white shadow-lg shadow-purple-500/20 active:scale-95 transition-all">
+               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+            </button>
+         </div>
+       </div>
 
-            <div v-for="root in rootCategories" :key="root.id">
-              <div class="flex items-center group">
-                <button 
-                  @click="selectCategory(root.id)"
-                  :class="['flex-1 text-left px-3 py-2 rounded-lg text-xs font-bold transition-all', 
-                    selectedCategory === root.id ? 'bg-black text-white' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500']"
-                >
-                  {{ root.name }}
-                </button>
-                <button @click="deleteCategory(root.id)" class="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:scale-110 transition-all">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                </button>
-              </div>
-              
-              <div v-for="sub in subCategories(root.id)" :key="sub.id" class="ml-4 mt-1 border-l pl-2 border-slate-200 dark:border-slate-800">
-                <div class="flex items-center group">
-                  <button 
-                    @click="selectCategory(sub.id)"
-                    :class="['flex-1 text-left px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all', 
-                      selectedCategory === sub.id ? 'bg-black text-white' : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400']"
-                  >
-                    {{ sub.name }}
-                  </button>
-                  <button @click="deleteCategory(sub.id)" class="opacity-0 group-hover:opacity-100 p-2 text-red-500 hover:scale-110 transition-all">
-                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+       <!-- Mobile-First Horizontal Category Scroller -->
+       <div class="mt-6 -mx-5 px-5 overflow-x-auto scrollbar-none pb-2 flex items-center gap-2 snap-x">
+          <button 
+            @click="selectCategory(null)"
+            class="snap-start shrink-0 px-4 py-2 rounded-full text-xs font-bold transition-all border"
+            :class="selectedCategory === null ? 'bg-white text-slate-900 border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' : 'bg-slate-900/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'"
+          >
+            All Products
+          </button>
+          
+          <template v-for="cat in categories" :key="cat.id">
+            <button 
+              @click="selectCategory(cat.id)"
+              class="snap-start shrink-0 px-4 py-2 rounded-full text-xs font-bold transition-all border flex items-center gap-2 group"
+              :class="selectedCategory === cat.id ? 'bg-white text-slate-900 border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' : 'bg-slate-900/50 text-slate-400 border-slate-700/50 hover:bg-slate-800'"
+            >
+              {{ cat.name }}
+              <span v-if="selectedCategory === cat.id" @click.stop="deleteCategory(cat.id)" class="text-red-500 hover:scale-110 ml-1">
+                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              </span>
+            </button>
+          </template>
+       </div>
+    </div>
+
+    <!-- Main Content Area -->
+    <div class="flex-grow px-4 pb-10 relative z-10 w-full max-w-5xl mx-auto">
+      
+      <!-- Loading State -->
+      <div v-if="isLoading" class="flex justify-center items-center py-20">
+         <div class="w-8 h-8 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin"></div>
       </div>
 
-      <!-- Main Content -->
-      <div class="col-span-12 lg:col-span-9">
-        <div v-if="isLoading" class="flex justify-center items-center py-20">
-          <TuiLoader />
-        </div>
+      <!-- Empty State -->
+      <div v-else-if="products.length === 0" class="mt-10 glass-panel border-dashed border-slate-600 rounded-[2rem] p-8 text-center flex flex-col items-center justify-center">
+         <div class="w-16 h-16 rounded-full bg-slate-800/50 flex items-center justify-center mb-4 border border-slate-700">
+             <svg class="w-8 h-8 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
+         </div>
+         <h4 class="text-white font-bold tracking-tight mb-2">No Products Configured</h4>
+         <p class="text-xs text-slate-400 max-w-xs leading-relaxed mb-6">Add products or services here so your AI Agents can reference them when talking to customers.</p>
+         <button @click="openProductModal()" class="bg-white text-slate-900 font-bold text-sm px-6 py-3 rounded-xl shadow-lg active:scale-95 transition-transform">
+            Add First Product
+         </button>
+      </div>
 
-        <div v-else-if="products.length === 0" class="text-center py-20 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-2xl">
-          <div class="text-slate-300 mb-4">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 mx-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" /></svg>
-          </div>
-          <h4 class="text-slate-500 font-bold uppercase tracking-widest">No products found</h4>
-          <TuiButton @click="openProductModal()" variant="secondary" class="mt-4">Create your first product</TuiButton>
-        </div>
-
-        <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-          <TuiCard v-for="product in products" :key="product.id" class="group overflow-hidden flex flex-col">
-            <div class="h-48 bg-slate-100 dark:bg-slate-800 relative overflow-hidden">
-               <img v-if="product.image_url" :src="product.image_url" class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
-               <div v-else class="w-full h-full flex items-center justify-center text-slate-300">
-                 <svg xmlns="http://www.w3.org/2000/svg" class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+      <!-- Product List (Mobile: Stacked, Desktop: Grid) -->
+      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mt-4">
+         <div v-for="product in products" :key="product.id" class="glass-panel rounded-3xl overflow-hidden border border-slate-700/50 flex flex-col group relative">
+            
+            <!-- Image Area -->
+            <div class="h-44 bg-slate-900 relative overflow-hidden shrink-0">
+               <img v-if="product.image_url" :src="product.image_url" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500" />
+               <div v-else class="w-full h-full flex items-center justify-center text-slate-700 bg-slate-800/50">
+                   <svg class="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                </div>
-               <div class="absolute top-2 right-2">
-                 <TuiBadge :text="`$${product.price}`" variant="success" />
+               
+               <!-- Price Tag -->
+               <div class="absolute top-3 right-3 bg-emerald-500/90 backdrop-blur-md text-white font-black text-sm px-3 py-1 rounded-full shadow-lg border border-emerald-400/50">
+                 ${{ product.price }}
+               </div>
+
+               <!-- Quick Actions (Edit/Delete) overlayed on image top left -->
+               <div class="absolute top-3 left-3 flex gap-2">
+                 <button @click="openProductModal(product)" class="w-8 h-8 rounded-full bg-slate-900/60 backdrop-blur-md border border-slate-600/50 flex items-center justify-center text-white active:scale-95 transition-transform">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                 </button>
+                 <button @click="deleteProduct(product.id)" class="w-8 h-8 rounded-full bg-red-500/20 backdrop-blur-md border border-red-500/30 flex items-center justify-center text-red-400 active:scale-95 transition-transform">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                 </button>
                </div>
             </div>
-
+            
+            <!-- Details Area -->
             <div class="p-5 flex-1 flex flex-col">
-              <div class="flex justify-between items-start mb-2">
-                <h4 class="font-black text-lg tracking-tight leading-none">{{ product.title }}</h4>
-                <div class="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button @click="openProductModal(product)" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                    </button>
-                    <button @click="deleteProduct(product.id)" class="p-1.5 hover:bg-red-50 text-red-500 rounded">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                    </button>
-                </div>
-              </div>
-              <p class="text-slate-500 text-xs mb-4 line-clamp-2">{{ product.description }}</p>
-              
-              <div class="mt-auto flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
-                <span class="text-[9px] font-bold uppercase tracking-widest text-slate-400">
-                  {{ getCategoryName(product.category_id) }}
-                </span>
-                <a v-if="product.attachment_url" :href="product.attachment_url" target="_blank" class="text-[9px] font-black uppercase text-blue-500 hover:underline">
-                  View Attachment
-                </a>
-              </div>
+               <div class="flex items-center gap-2 mb-2">
+                  <span class="text-[9px] font-bold uppercase tracking-widest text-indigo-400">
+                    {{ getCategoryName(product.category_id) }}
+                  </span>
+               </div>
+               <h3 class="font-bold text-white text-lg tracking-tight leading-snug mb-2">{{ product.title }}</h3>
+               <p class="text-sm text-slate-400 line-clamp-2 leading-relaxed flex-grow">{{ product.description || 'No description provided.' }}</p>
+               
+               <div v-if="product.attachment_url" class="mt-4 pt-4 border-t border-slate-700/50">
+                  <a :href="product.attachment_url" target="_blank" class="flex items-center justify-center gap-2 w-full bg-slate-800/80 rounded-xl py-2.5 text-xs font-bold text-blue-400 border border-slate-700/50 hover:bg-slate-700 transition-colors">
+                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                     Attached Document
+                  </a>
+               </div>
             </div>
-          </TuiCard>
-        </div>
+         </div>
       </div>
     </div>
 
-    <!-- Product Modal -->
-    <div v-if="showProductModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" @click="showProductModal = false"></div>
-      <div :class="['relative w-full max-w-lg rounded-2xl shadow-2xl p-8 border', isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200']">
-        <h2 class="text-2xl font-black mb-6 tracking-tight uppercase">{{ isEditing ? 'Update Product' : 'Create Product' }}</h2>
+    <!-- Modals Overlay (Mobile Bottom Sheet Style) -->
+    <transition name="fade">
+      <div v-if="showProductModal || showCategoryModal" class="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm px-0 sm:px-4 pb-0 sm:pb-4">
         
-        <div class="space-y-4">
-          <TuiInput v-model="currentProduct.title" label="Title" placeholder="High efficiency solar panel..." />
-          <div class="grid grid-cols-2 gap-4">
-            <TuiInput v-model="currentProduct.price" type="number" label="Price ($)" />
-            <TuiSelect 
-                v-model="currentProduct.category_id" 
-                label="Category" 
-                :options="categories.map(c => ({ label: c.name, value: c.id }))" 
-            />
-          </div>
-          <div>
-            <label class="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Description</label>
-            <textarea 
-                v-model="currentProduct.description" 
-                rows="3" 
-                :class="['w-full rounded-lg border px-3 py-2 text-sm focus:ring-1 focus:outline-none', 
-                  isDark ? 'bg-slate-800 border-slate-700 text-white focus:ring-slate-600' : 'bg-slate-50 border-slate-200 text-slate-900 focus:ring-black']"
-            ></textarea>
-          </div>
-          <TuiInput v-model="currentProduct.image_url" label="Image URL" placeholder="https://..." />
-          <TuiInput v-model="currentProduct.attachment_url" label="Attachment URL (PDF/DOC)" placeholder="https://..." />
+        <!-- PRODUCT MODAL -->
+        <div v-if="showProductModal" class="w-full max-w-lg bg-onyx sm:rounded-3xl rounded-t-3xl border border-slate-800 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col slide-up relative">
+           
+           <div class="p-5 border-b border-slate-800 flex justify-between items-center sticky top-0 bg-onyx/90 backdrop-blur-md z-10">
+              <h2 class="text-lg font-bold text-white tracking-tight">{{ isEditing ? 'Edit Product' : 'New Product' }}</h2>
+              <button @click="showProductModal = false" class="text-slate-500 hover:text-white p-1 rounded-full"><svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+           </div>
+           
+           <div class="p-5 overflow-y-auto space-y-5 scrollbar-none">
+              <div class="space-y-1.5 mt-2">
+                <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 pl-1">Product Title</label>
+                <input v-model="currentProduct.title" type="text" placeholder="e.g. Enterprise License" class="w-full bg-slate-900 border border-slate-700/80 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors" />
+              </div>
+
+              <div class="grid grid-cols-2 gap-4">
+                 <div class="space-y-1.5">
+                   <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 pl-1">Price ($)</label>
+                   <div class="relative">
+                      <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">$</span>
+                      <input v-model="currentProduct.price" type="number" class="w-full bg-slate-900 border border-slate-700/80 rounded-2xl pl-8 pr-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors" />
+                   </div>
+                 </div>
+                 <div class="space-y-1.5">
+                   <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 pl-1">Category</label>
+                   <select v-model="currentProduct.category_id" class="w-full bg-slate-900 border border-slate-700/80 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors appearance-none">
+                     <option :value="null">Uncategorized</option>
+                     <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+                   </select>
+                 </div>
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 pl-1">Description</label>
+                <textarea v-model="currentProduct.description" rows="3" placeholder="Tell the AI what this is useful for..." class="w-full bg-slate-900 border border-slate-700/80 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors resize-none"></textarea>
+              </div>
+
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 pl-1">Image URL (Optional)</label>
+                <input v-model="currentProduct.image_url" type="text" placeholder="https://" class="w-full bg-slate-900 border border-slate-700/80 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors" />
+              </div>
+              
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 pl-1">Document URL (Optional)</label>
+                <input v-model="currentProduct.attachment_url" type="text" placeholder="https:// Link to PDF/Doc" class="w-full bg-slate-900 border border-slate-700/80 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors" />
+              </div>
+           </div>
+
+           <div class="p-5 border-t border-slate-800 bg-slate-900/50 pb-safe">
+              <button @click="saveProduct" class="w-full bg-aurora-gradient text-white font-bold py-3.5 rounded-xl text-sm shadow-lg shadow-purple-500/20 active:scale-[0.98] transition-all">
+                {{ isEditing ? 'Save Changes' : 'Add to Catalog' }}
+              </button>
+           </div>
         </div>
 
-        <div class="flex gap-3 mt-8">
-          <TuiButton @click="showProductModal = false" variant="secondary" class="flex-1">Cancel</TuiButton>
-          <TuiButton @click="saveProduct" class="flex-1">{{ isEditing ? 'Update' : 'Create' }}</TuiButton>
-        </div>
-      </div>
-    </div>
+        <!-- CATEGORY MODAL -->
+        <div v-if="showCategoryModal" class="w-full max-w-sm bg-onyx sm:rounded-3xl rounded-t-3xl border border-slate-800 shadow-2xl overflow-hidden flex flex-col slide-up relative">
+           <div class="p-5 border-b border-slate-800 flex justify-between items-center">
+              <h2 class="text-lg font-bold text-white tracking-tight">New Category</h2>
+              <button @click="showCategoryModal = false" class="text-slate-500 hover:text-white p-1 rounded-full"><svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+           </div>
+           
+           <div class="p-5 space-y-5">
+              <div class="space-y-1.5">
+                <label class="text-[10px] uppercase tracking-widest font-bold text-slate-500 pl-1">Category Name</label>
+                <input v-model="currentCategory.name" type="text" placeholder="e.g. Services, Hardware" class="w-full bg-slate-900 border border-slate-700/80 rounded-2xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors" />
+              </div>
+           </div>
 
-    <!-- Category Modal -->
-    <div v-if="showCategoryModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" @click="showCategoryModal = false"></div>
-      <div :class="['relative w-full max-w-sm rounded-2xl shadow-2xl p-8 border', isDark ? 'bg-slate-900 border-slate-800' : 'bg-white border-slate-200']">
-        <h2 class="text-2xl font-black mb-6 tracking-tight uppercase">New Category</h2>
-        <div class="space-y-4">
-          <TuiInput v-model="currentCategory.name" label="Category Name" placeholder="Electronics..." />
-          <TuiSelect 
-              v-model="currentCategory.parent_id" 
-              label="Parent Category (Optional)" 
-              :options="[{label: 'None', value: null}, ...rootCategories.map(c => ({ label: c.name, value: c.id }))]" 
-          />
+           <div class="p-5 border-t border-slate-800 bg-slate-900/50 pb-safe">
+               <button @click="saveCategory" class="w-full bg-white text-slate-900 font-bold py-3.5 rounded-xl text-sm shadow-lg active:scale-[0.98] transition-all">
+                Create Category
+              </button>
+           </div>
         </div>
-        <div class="flex gap-3 mt-8">
-          <TuiButton @click="showCategoryModal = false" variant="secondary" class="flex-1">Cancel</TuiButton>
-          <TuiButton @click="saveCategory" class="flex-1">Create</TuiButton>
-        </div>
+
       </div>
-    </div>
+    </transition>
 
   </div>
 </template>
@@ -322,5 +349,30 @@ const subCategories = (parentId) => categories.value.filter(c => c.parent_id ===
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;  
   overflow: hidden;
+}
+
+/* Hide scrollbar for category pills but keep scroll functionality */
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Mobile Bottom sheet slide animation */
+.slide-up {
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.fade-enter-active, .fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from, .fade-leave-to {
+  opacity: 0;
 }
 </style>

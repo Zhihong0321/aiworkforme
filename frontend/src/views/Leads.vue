@@ -370,206 +370,181 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="p-8 max-w-7xl mx-auto">
-    <header class="mb-12 flex justify-between items-end">
-      <div>
-        <div class="flex items-center gap-2 mb-2">
-            <h1 class="text-3xl font-black text-slate-900 tracking-tight">People to Help</h1>
-            <TuiBadge variant="success" size="sm" class="animate-pulse">Agent Active</TuiBadge>
-        </div>
-        <p class="text-slate-500 text-sm">You have {{ leads.length }} potential conversations ready for your teammate to handle.</p>
-      </div>
-      <div class="flex gap-3">
-          <TuiButton
-            variant="outline"
-            size="lg"
-            class="!rounded-2xl border-amber-300 text-amber-700 hover:!bg-amber-50"
-            :loading="followupTestLoading || followupTriggering"
-            @click="processAllFollowupsNow"
-          >
-            Process All Follow-up Now
-          </TuiButton>
-          <TuiButton size="lg" class="!rounded-2xl bg-indigo-600 shadow-xl shadow-indigo-600/20 px-8" @click="startAllLeads">Send Agent to Work</TuiButton>
-      </div>
-    </header>
-    <p v-if="followupCountdown > 0" class="mb-4 text-xs font-black uppercase tracking-wider text-amber-700">
-      Follow-up test countdown: {{ followupCountdown }}s
-    </p>
-
-    <div class="mb-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div class="mb-4">
-        <h2 class="text-lg font-black text-slate-900 tracking-tight">Manual Insert Lead</h2>
-        <p class="text-xs text-slate-500">Create a lead directly for WhatsApp outbound/inbound testing.</p>
-      </div>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <TuiInput v-model="newLeadName" label="Name (Optional)" placeholder="John Doe" />
-        <TuiInput v-model="newLeadExternalId" label="Phone / External ID" placeholder="60123456789" />
-        <div class="flex items-end">
-          <TuiButton class="w-full" :loading="isCreating" @click="createLead">Add Lead</TuiButton>
-        </div>
-      </div>
-      <div class="mt-5 border-t border-slate-100 pt-5">
-        <h3 class="text-sm font-black text-slate-900 tracking-tight">Import Leads From CSV</h3>
-        <p class="text-xs text-slate-500 mb-3">Use header columns: <code>external_id</code> (or <code>phone</code>) and optional <code>name</code>.</p>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <input type="file" accept=".csv,text/csv" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm md:col-span-2" @change="onCsvFileSelected" />
-          <TuiButton class="w-full" :loading="csvImportLoading" @click="importLeadsFromCsv">Import CSV</TuiButton>
-        </div>
-      </div>
-      <p v-if="createError" class="mt-3 text-xs font-semibold text-red-600">{{ createError }}</p>
-      <p v-if="actionError" class="mt-1 text-xs font-semibold text-red-600">{{ actionError }}</p>
-      <p v-if="actionMessage" class="mt-1 text-xs font-semibold text-emerald-700">{{ actionMessage }}</p>
-    </div>
-
-    <div class="mb-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div class="flex items-center justify-between mb-4">
+  <div class="min-h-[calc(100vh-64px)] w-full bg-onyx font-inter text-slate-200 flex flex-col pb-20">
+    
+    <!-- Header -->
+    <div class="p-5 border-b border-slate-800/50 glass-panel-light rounded-b-[2rem] sticky top-0 z-30 mb-4">
+      <div class="flex justify-between items-end">
         <div>
-          <h2 class="text-lg font-black text-slate-900 tracking-tight">MVP Operational Check</h2>
-          <p class="text-xs text-slate-500">Validate minimum in/out prerequisites before real WhatsApp test.</p>
-        </div>
-        <TuiButton variant="outline" size="sm" :loading="checkLoading" @click="refreshOperationalChecks">Refresh Check</TuiButton>
-      </div>
-      <div v-if="mvpCheck" class="space-y-2">
-        <p class="text-xs font-black uppercase tracking-wider" :class="mvpCheck.ready ? 'text-emerald-700' : 'text-red-700'">
-          {{ mvpCheck.ready ? 'READY' : 'NOT READY' }}
-        </p>
-        <p class="text-xs text-slate-600">
-          Workspaces: {{ mvpCheck.checks.workspace_count }} | Agents: {{ mvpCheck.checks.agent_count }} | Active WA sessions: {{ mvpCheck.checks.whatsapp_active_session_count }} | Valid WA leads: {{ mvpCheck.checks.valid_whatsapp_lead_count }}
-        </p>
-        <div v-if="Array.isArray(mvpCheck.blockers) && mvpCheck.blockers.length" class="space-y-1">
-          <p v-for="b in mvpCheck.blockers" :key="b" class="text-xs font-semibold text-red-700">- {{ b }}</p>
-        </div>
-      </div>
-      <div v-if="inboundHealth" class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <div class="flex items-center justify-between gap-3">
-          <div>
-            <p class="text-[10px] uppercase tracking-[0.2em] font-black text-slate-500">Inbound Health</p>
-            <p class="text-xs text-slate-600">
-              Mode: {{ inboundHealth.worker_mode }} | Channel: {{ inboundHealth.notify_channel }}
-            </p>
-          </div>
-          <p class="text-xs font-black uppercase tracking-wider" :class="inboundHealth.ready ? 'text-emerald-700' : 'text-red-700'">
-            {{ inboundHealth.ready ? 'HEALTHY' : 'ATTENTION' }}
+          <h1 class="text-3xl font-semibold text-white tracking-tight mb-1">Contacts</h1>
+          <p class="text-sm text-purple-300 font-medium tracking-wide">
+            {{ leads.length }} Leads Ready
           </p>
         </div>
-        <p class="mt-2 text-xs text-slate-700">
-          Received(unprocessed): {{ inboundHealth.checks?.inbound_received_unprocessed ?? 0 }}
-          | Stuck >5m: {{ inboundHealth.checks?.inbound_received_stuck_over_5m ?? 0 }}
-          | Last processed ID: {{ inboundHealth.checks?.last_processed_inbound_message_id ?? '-' }}
-        </p>
-        <div v-if="Array.isArray(inboundHealth.blockers) && inboundHealth.blockers.length" class="mt-2 space-y-1">
-          <p v-for="b in inboundHealth.blockers" :key="b" class="text-xs font-semibold text-red-700">- {{ b }}</p>
-        </div>
+        <button class="h-12 w-12 rounded-full bg-aurora-gradient flex items-center justify-center text-white shadow-lg shadow-purple-500/30 active:scale-95 transition-all">
+          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+        </button>
       </div>
-      <div class="mt-5 grid grid-cols-1 md:grid-cols-4 gap-3">
-        <select v-model="simLeadId" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm md:col-span-1">
-          <option value="">Select lead</option>
-          <option v-for="lead in leads" :key="lead.id" :value="lead.id">{{ lead.name || `Lead ${lead.id}` }}</option>
-        </select>
-        <input v-model="simText" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm md:col-span-2" placeholder="Inbound text for simulation" />
-        <TuiButton :loading="simLoading" @click="simulateInbound">Simulate Inbound</TuiButton>
+
+      <!-- Quick Actions -->
+      <div class="flex gap-3 mt-5 overflow-x-auto pb-2 scrollbar-none [scrollbar-width:none]">
+        <button @click="startAllLeads" class="px-5 py-2.5 rounded-full text-sm font-semibold bg-aurora-gradient text-white shadow-lg shadow-purple-500/25 shrink-0 active:scale-95 transition-transform flex items-center gap-2">
+           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+           Send Agent to Work
+        </button>
+        <button @click="processAllFollowupsNow" :disabled="followupTestLoading || followupTriggering" class="px-5 py-2.5 rounded-full text-sm font-semibold glass-panel border border-amber-500/30 text-amber-300 hover:text-amber-200 shrink-0 active:scale-95 transition-transform">
+           Process Follow-ups
+        </button>
       </div>
-      <p v-if="simResult" class="mt-2 text-xs font-semibold text-emerald-700">{{ simResult }}</p>
+      <p v-if="followupCountdown > 0" class="mt-3 text-xs font-bold text-amber-400">
+        Test countdown: {{ followupCountdown }}s
+      </p>
     </div>
 
-    <div v-if="isLoading" class="p-20 text-center">
-        <div class="inline-flex gap-2 mb-4">
-            <span class="w-2 h-2 rounded-full bg-indigo-600 animate-bounce"></span>
-            <span class="w-2 h-2 rounded-full bg-indigo-600 animate-bounce [animation-delay:0.2s]"></span>
-            <span class="w-2 h-2 rounded-full bg-indigo-600 animate-bounce [animation-delay:0.4s]"></span>
-        </div>
-        <p class="text-slate-400 font-medium uppercase tracking-widest text-[10px]">Syncing with teammates...</p>
-    </div>
-
-    <div v-else-if="leads.length === 0" class="p-20 text-center border-2 border-dashed border-slate-200 rounded-[2rem] bg-slate-50/50">
-      <div class="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-6">
-          <svg class="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-          </svg>
+    <!-- Lead List -->
+    <div v-if="isLoading" class="flex-grow flex flex-col items-center justify-center space-y-4 p-10">
+      <div class="flex gap-2">
+        <div class="w-2.5 h-2.5 rounded-full bg-purple-500 animate-bounce"></div>
+        <div class="w-2.5 h-2.5 rounded-full bg-purple-500 animate-bounce [animation-delay:0.2s]"></div>
+        <div class="w-2.5 h-2.5 rounded-full bg-purple-500 animate-bounce [animation-delay:0.4s]"></div>
       </div>
-      <h3 class="text-slate-900 font-bold mb-2">Your contact list is empty</h3>
-      <p class="text-slate-500 text-sm mb-8 max-w-sm mx-auto">Add some contacts to give your AI teammate someone to talk to.</p>
+      <p class="text-xs text-slate-500 font-bold tracking-widest uppercase">Syncing Contacts</p>
     </div>
 
-    <div v-else class="bg-white border border-slate-200 rounded-[2rem] overflow-hidden shadow-xl shadow-slate-200/50">
-      <table class="w-full text-left text-sm">
-        <thead class="bg-slate-50/50 border-b border-slate-100 uppercase text-[10px] tracking-[0.2em] font-black text-slate-400">
-          <tr>
-            <th class="px-8 py-5">Contact</th>
-            <th class="px-8 py-5">Status</th>
-            <th class="px-8 py-5">Agent Activity</th>
-            <th class="px-8 py-5">Contact ID</th>
-            <th class="px-8 py-5 text-right">Conversation</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-50">
-          <tr v-for="lead in leads" :key="lead.id" class="hover:bg-slate-50/80 transition-all group">
-            <td class="px-8 py-6">
-              <div class="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{{ lead.name || 'Anonymous' }}</div>
-              <div class="text-[10px] text-slate-400 font-medium mt-0.5">{{ lead.external_id }}</div>
-            </td>
-            <td class="px-8 py-6">
-              <TuiBadge :variant="getStageVariant(lead.stage)" class="!rounded-lg px-3 py-1 text-[10px] font-black uppercase tracking-wider">{{ lead.stage }}</TuiBadge>
-            </td>
-            <td class="px-8 py-6">
-                <div class="flex items-center gap-3">
-                   <TuiBadge :variant="getModeLabel(lead) === 'WORKING' ? 'success' : 'warning'" class="!rounded-lg px-2 py-1 text-[10px] font-black uppercase tracking-wider">
-                     {{ getModeLabel(lead) }}
-                   </TuiBadge>
-                </div>
-                <div class="flex items-center gap-3 mt-2">
-                   <TuiButton variant="outline" size="sm" class="!rounded-xl" :loading="actionLoadingLeadId === lead.id" @click="setLeadMode(lead, 'on_hold')">On Hold</TuiButton>
-                   <TuiButton size="sm" class="!rounded-xl" :loading="actionLoadingLeadId === lead.id" @click="setLeadMode(lead, 'working')">Working</TuiButton>
-                   <TuiButton variant="outline" size="sm" class="!rounded-xl !border-red-200 !text-red-700 hover:!bg-red-50" :loading="actionLoadingLeadId === lead.id" @click="deleteLead(lead)">Delete</TuiButton>
-                </div>
-                <div class="flex items-center gap-3 mt-2">
-                   <div v-if="lead.next_followup_at" class="flex flex-col">
-                       <div class="flex items-center gap-1.5 mb-1">
-                           <span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
-                           <span class="text-[10px] font-black text-slate-400 uppercase tracking-tight">Scheduled</span>
-                       </div>
-                       <span class="text-xs text-slate-600 font-medium">Due {{ new Date(lead.next_followup_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }}</span>
-                   </div>
-                   <div v-else class="flex items-center gap-1.5 opacity-30">
-                       <span class="w-1.5 h-1.5 rounded-full bg-slate-300"></span>
-                       <span class="text-[10px] font-black uppercase tracking-tight">On Hold</span>
-                   </div>
-                </div>
-            </td>
-            <td class="px-8 py-6">
-                <div class="mt-2 text-[10px] text-slate-500 font-mono break-all">
-                  {{ lead.external_id || 'none' }}
-                </div>
-            </td>
-            <td class="px-8 py-6 text-right">
-              <TuiButton variant="outline" size="sm" class="!rounded-xl border-slate-200 hover:border-indigo-200 hover:bg-indigo-50 transition-all" @click="reviewLeadChat(lead)">Review Chat</TuiButton>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <div v-else-if="leads.length === 0" class="flex-grow flex flex-col items-center justify-center p-10 text-center">
+      <div class="w-20 h-20 rounded-full glass-panel flex items-center justify-center mb-6 ring-1 ring-white/10">
+        <svg class="w-10 h-10 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+      </div>
+      <h3 class="text-lg font-bold text-white mb-2">No Contacts Yet</h3>
+      <p class="text-sm text-slate-400">Add a contact to let your AI start chatting and capturing leads.</p>
     </div>
 
-    <div v-if="chatOpen" class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-      <div class="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
-        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+    <!-- Contact Cards (Mobile Replacement for Table) -->
+    <div v-else class="px-4 space-y-4 relative z-10 box-border">
+      <div 
+        v-for="lead in leads" 
+        :key="lead.id" 
+        class="glass-panel p-5 rounded-3xl relative overflow-hidden group border border-slate-700/50"
+      >
+        <!-- Top Row: Name & Status -->
+        <div class="flex justify-between items-start mb-3">
           <div>
-            <h3 class="text-lg font-black text-slate-900 tracking-tight">Conversation Review</h3>
-            <p class="text-xs text-slate-500">{{ chatLead?.name || 'Lead' }} · {{ chatLead?.external_id || '' }}</p>
+            <h3 class="text-lg font-bold text-white leading-tight break-words">{{ lead.name || 'Unknown' }}</h3>
+            <p class="text-xs text-slate-400 font-medium mt-1 uppercase tracking-wider">{{ lead.external_id || 'No Number' }}</p>
           </div>
-          <TuiButton variant="outline" size="sm" @click="chatOpen = false">Close</TuiButton>
+          <span 
+            class="px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg shrink-0 w-max"
+            :class="getStageVariant(lead.stage) === 'success' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : getStageVariant(lead.stage) === 'warning' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'"
+          >
+            {{ lead.stage }}
+          </span>
         </div>
-        <div class="max-h-[65vh] overflow-y-auto p-6 space-y-3 bg-slate-50">
-          <p v-if="chatLoading" class="text-sm text-slate-500">Loading messages...</p>
-          <p v-else-if="chatError" class="text-sm font-semibold text-red-600">{{ chatError }}</p>
-          <p v-else-if="chatMessages.length === 0" class="text-sm text-slate-500">No messages yet.</p>
-          <div v-else v-for="msg in chatMessages" :key="msg.id" class="rounded-2xl px-4 py-3 text-sm"
-               :class="msg.direction === 'outbound' ? 'bg-indigo-600 text-white ml-12' : 'bg-white border border-slate-200 mr-12'">
-            <div class="flex items-center justify-between text-[10px] font-black uppercase tracking-wider opacity-80 mb-1">
-              <span>{{ msg.direction }}</span>
-              <span>{{ new Date(msg.created_at).toLocaleString() }}</span>
+
+        <!-- AI Summary Context (Mock/Placeholder styled nicely) -->
+        <div class="mb-4 text-sm text-slate-300 leading-relaxed max-w-full">
+          <span class="text-purple-400 font-semibold mr-1">AI Context:</span>
+          Interaction active. Current mode: {{ getModeLabel(lead) }}.
+        </div>
+
+        <!-- Meta info -->
+        <div class="mb-4">
+           <div v-if="lead.next_followup_at" class="flex items-center gap-2">
+               <span class="w-2 h-2 rounded-full bg-purple-500 animate-pulse shrink-0"></span>
+               <span class="text-xs text-slate-400">
+                 Follow-up due <span class="text-white font-medium">{{ new Date(lead.next_followup_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }}</span>
+               </span>
+           </div>
+           <div v-else class="flex items-center gap-2">
+               <span class="w-2 h-2 rounded-full bg-slate-600 shrink-0"></span>
+               <span class="text-xs text-slate-500 font-medium uppercase tracking-tight">On Hold</span>
+           </div>
+        </div>
+
+        <!-- Action Row -->
+        <div class="flex items-center justify-between border-t border-slate-700/50 pt-4 w-full">
+           <!-- Mode Toggles -->
+           <div class="flex bg-slate-900/50 rounded-full p-1 border border-slate-700/50">
+             <button 
+               @click="setLeadMode(lead, 'on_hold')"
+               class="px-3 py-1.5 rounded-full text-[11px] font-bold uppercase transition-all whitespace-nowrap"
+               :class="getModeLabel(lead) !== 'WORKING' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500'"
+             >Hold</button>
+             <button 
+               @click="setLeadMode(lead, 'working')"
+               class="px-3 py-1.5 rounded-full text-[11px] font-bold uppercase transition-all whitespace-nowrap"
+               :class="getModeLabel(lead) === 'WORKING' ? 'bg-purple-600 text-white shadow-sm shadow-purple-500/30' : 'text-slate-500'"
+             >Work</button>
+           </div>
+           
+           <div class="flex gap-2">
+             <!-- Review Chat Button -->
+             <button @click="reviewLeadChat(lead)" class="h-9 w-9 rounded-full bg-slate-800 text-purple-300 flex items-center justify-center border border-slate-700 hover:bg-slate-700 shrink-0">
+               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+             </button>
+             <!-- Delete Button -->
+             <button @click="deleteLead(lead)" class="h-9 w-9 rounded-full bg-red-500/10 text-red-400 flex items-center justify-center border border-red-500/20 active:bg-red-500/20 shrink-0">
+               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+             </button>
+           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Utility Blocks (Add Lead, Import, Check) - Collapsed vertically at bottom -->
+    <div class="px-4 mt-8 space-y-4">
+      <!-- Create Lead Card -->
+      <div class="glass-panel p-5 rounded-[2rem] border border-slate-700/50">
+        <h3 class="text-white font-semibold mb-1">Add Contact</h3>
+        <p class="text-xs text-slate-400 mb-4">Manually create a contact for the AI.</p>
+        <div class="space-y-3">
+          <input v-model="newLeadName" type="text" placeholder="Contact Name" class="w-full bg-slate-900/60 border border-slate-700/50 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors placeholder:text-slate-600" />
+          <input v-model="newLeadExternalId" type="text" placeholder="Phone Number (e.g. 60123...)" class="w-full bg-slate-900/60 border border-slate-700/50 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors placeholder:text-slate-600" />
+          <button @click="createLead" :disabled="isCreating" class="w-full bg-aurora-gradient text-white font-bold text-sm py-3 rounded-xl shadow-lg shadow-purple-500/20 active:scale-[0.98] transition-all flex justify-center mt-2">
+            {{ isCreating ? 'Adding...' : 'Save Contact' }}
+          </button>
+          <p v-if="createError" class="text-xs text-red-400 text-center mt-2">{{ createError }}</p>
+        </div>
+      </div>
+      
+      <!-- Operations Feedback -->
+      <div v-if="actionError || actionMessage" class="glass-panel p-4 rounded-xl border border-slate-700 flex flex-col items-center text-center">
+         <p v-if="actionError" class="text-xs text-red-400 font-medium">{{ actionError }}</p>
+         <p v-if="actionMessage" class="text-xs text-emerald-400 font-medium">{{ actionMessage }}</p>
+      </div>
+    </div>
+
+    <!-- Review Chat Modal -->
+    <div v-if="chatOpen" class="fixed inset-0 z-50 bg-onyx/90 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div class="w-full max-w-2xl bg-onyx sm:rounded-3xl rounded-t-3xl border-t border-slate-700 sm:border shadow-2xl overflow-hidden h-[85vh] sm:h-[70vh] flex flex-col">
+        <div class="px-5 py-4 border-b border-slate-800 glass-panel-light flex items-center justify-between sticky top-0">
+          <div>
+            <h3 class="text-lg font-bold text-white tracking-tight">{{ chatLead?.name || 'Contact' }}</h3>
+            <p class="text-[10px] text-purple-400 font-bold uppercase tracking-widest">{{ chatLead?.external_id || 'Reviewing History' }}</p>
+          </div>
+          <button @click="chatOpen = false" class="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+        
+        <div class="flex-grow overflow-y-auto p-5 space-y-4 bg-mobile-aurora scrollbar-none pb-10">
+          <div v-if="chatLoading" class="flex flex-col items-center justify-center h-full text-slate-500 space-y-3">
+             <div class="w-6 h-6 rounded-full border-t-2 border-r-2 border-purple-500 animate-spin"></div>
+             <p class="text-xs font-medium uppercase tracking-widest">Loading Logs...</p>
+          </div>
+          <p v-else-if="chatError" class="text-sm font-semibold text-red-500 text-center mt-10">{{ chatError }}</p>
+          <p v-else-if="chatMessages.length === 0" class="text-sm text-slate-500 text-center mt-10 italic">No message history.</p>
+          
+          <div v-else v-for="msg in chatMessages" :key="msg.id" 
+               class="max-w-[85%] p-3.5 rounded-2xl text-[14px] leading-relaxed relative"
+               :class="msg.direction === 'outbound' ? 'bg-aurora-gradient text-white ml-auto rounded-tr-sm shadow-lg shadow-purple-500/20' : 'glass-panel text-slate-200 mr-auto rounded-tl-sm'">
+            
+            <p class="whitespace-pre-wrap">{{ msg.text_content || '(non-text message)' }}</p>
+            
+            <div class="flex items-center justify-between mt-2 pt-2 border-t border-white/10" :class="msg.direction === 'outbound' ? 'border-white/20' : 'border-slate-700/50'">
+              <span class="text-[9px] font-bold uppercase tracking-wider" :class="msg.direction === 'outbound' ? 'text-white/70' : 'text-slate-400'">{{ msg.direction }}</span>
+              <span class="text-[9px] opacity-70">{{ new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
             </div>
-            <p class="whitespace-pre-wrap break-words">{{ msg.text_content || '(non-text message)' }}</p>
-            <p class="text-[10px] mt-1 opacity-80">status: {{ msg.delivery_status }}</p>
+            
           </div>
         </div>
       </div>

@@ -1,0 +1,56 @@
+# Application Pages Summary
+
+This document provides a concise summary of each page in the application, categorized by their intended audience (Regular Tenant/User vs. Platform Admin), along with their core functions.
+
+## Regular User / Tenant Views
+
+**1. Login (`/login`)**
+*   **Core Function:** Allows regular users (tenants) to authenticate and access their specific workspace.
+
+**2. Playground (`/playground`)**
+*   **Core Function:** A testing environment where users can simulate chats with their trained AI agent to evaluate its responses, knowledge recall, and behavior before deploying it to actual customers.
+
+**3. Leads / Contact Book (`/leads`)**
+*   **Core Function:** Manages the CRM aspect of the application. Users can view, add, and manage customer contacts (leads), including their details and historical data.
+
+**4. Inbox / Inbound (`/inbox`)**
+*   **Core Function:** A centralized hub for viewing and responding to incoming messages from various connected channels (e.g., WhatsApp, web chat) assigned to the tenant.
+
+**5. Agents / Teammate Profile (`/agents`)**
+*   **Core Function:** The "Hire & Train" interface where users configure their AI agent(s). Users can set the system prompt, define the agent's persona/behavior, and toggle active skills (e.g., product catalog access).
+
+**6. Knowledge (`/knowledge`)**
+*   **Core Function:** Allows users to upload and manage the information the AI agent can use. Users can add text files, PDFs, and other resources that the agent can retrieve (RAG) to answer customer questions accurately.
+
+**7. Catalog (`/catalog`)**
+*   **Core Function:** An e-commerce-like product management system. Users can add products, categories, descriptions, and prices to allow the AI to search for and recommend products to customers.
+
+**8. Calendar (`/calendar`)**
+*   **Core Function:** Manages the user's availability and appointments. The AI agent uses this information to help schedule meetings or appointments with leads.
+
+**9. Channel Setup (`/channels`)**
+*   **Core Function:** Handles the integration of external communication channels (like Baileys for WhatsApp) so the AI can receive and send messages on those platforms.
+
+**10. Analytics (`/analytics`)**
+*   **Core Function:** Provides charts and metrics on agent performance, message volume, and lead engagement.
+
+**11. AI Control CRM (`/ai-crm`)**
+*   **Core Function:** Provides a CRM-specific interface for viewing AI-driven interactions, controlling specific AI actions, and overseeing CRM workflows.
+
+**12. Strategy (`/strategy`)**
+*   **Core Function:** Allows users to define high-level conversational strategies, goals, or prompt instructions that steer the AI's overarching behavior.
+
+
+## Platform Admin Views
+
+**13. Platform Login (`/platform/login`)**
+*   **Core Function:** A separate, secure authentication portal exclusively for platform administrators who manage the entire system.
+
+**14. Platform Settings (`/settings`)**
+*   **Core Function:** A global configuration dashboard for platform defaults, system-wide integrations, role management, or managing individual tenant accounts.
+
+**15. Message History (`/settings/history`)**
+*   **Core Function:** A comprehensive, platform-wide log of all messages flowing through the system, primarily used by admins for auditing, debugging, and overall system monitoring.
+
+**16. Model Benchmark (`/settings/benchmark`)**
+*   **Core Function:** A testing and evaluation page for administrators to test different LLMs (Large Language Models), compare performance metrics, and optimize model routing.
