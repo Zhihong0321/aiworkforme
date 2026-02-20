@@ -63,12 +63,13 @@ const handleLogin = async () => {
       <div class="bg-white p-10 rounded-[2.5rem] shadow-2xl shadow-slate-200 border border-slate-100">
         <h1 class="text-xl font-bold text-slate-900 mb-6">Platform Login</h1>
 
-        <form @submit.prevent="handleLogin" class="space-y-6">
+        <div class="space-y-6">
           <TuiInput
             label="Email Address"
             v-model="email"
             placeholder="admin@aiworkfor.me"
             type="email"
+            @keyup.enter="handleLogin"
             required
           />
 
@@ -77,6 +78,7 @@ const handleLogin = async () => {
             v-model="password"
             placeholder="••••••••"
             type="password"
+            @keyup.enter="handleLogin"
             required
           />
 
@@ -87,11 +89,12 @@ const handleLogin = async () => {
           <TuiButton
             class="w-full !py-4 shadow-lg shadow-indigo-200"
             :loading="isLoading"
-            type="submit"
+            type="button"
+            @click="handleLogin"
           >
             Sign In
           </TuiButton>
-        </form>
+        </div>
 
         <div class="mt-6 text-center">
           <router-link to="/login" class="text-xs font-bold text-slate-600 hover:underline uppercase tracking-widest">
