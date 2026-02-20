@@ -2,12 +2,12 @@
 MODULE: Application Runtime - CRM Agent
 PURPOSE: Background progression and scheduling engine for leads.
 """
+import importlib
 import logging
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Any, List, Optional
 from sqlmodel import Session, select, or_
 
-from src.adapters.db.crm_models import Lead, Workspace, StrategyVersion
 from src.domain.entities.enums import LeadStage, StrategyStatus, FollowUpPreset
 from src.app.runtime.agent_runtime import ConversationAgentRuntime
 
@@ -22,10 +22,16 @@ class CRMAgent:
         self.session = session
         self.runtime = runtime
 
+    @staticmethod
+    def _crm_models():
+        models = importlib.import_module("src.adapters.db.crm_models")
+        return models.Lead, models.Workspace, models.StrategyVersion
+
     async def run_review_loop(self):
         """
         Hourly Review Loop: identifies leads requiring follow-up planning.
         """
+        Lead, _, _ = self._crm_models()
         cutoff = datetime.utcnow() - timedelta(hours=24)
         statement = select(Lead).where(
             or_(
@@ -48,6 +54,7 @@ class CRMAgent:
         """
         Continuous Due Dispatcher: triggers outbound turns when next_followup_at is reached.
         """
+        Lead, _, _ = self._crm_models()
         now = datetime.utcnow()
         statement = select(Lead).where(
             Lead.next_followup_at <= now,
@@ -71,10 +78,11 @@ class CRMAgent:
         
         self.session.commit()
 
-    def plan_lead_followup(self, lead: Lead):
+    def plan_lead_followup(self, lead: Any):
         """
         Calculates next_followup_at based on Workspace strategy presets.
         """
+        _, _, StrategyVersion = self._crm_models()
         strategy = self.session.exec(
             select(StrategyVersion)
             .where(StrategyVersion.workspace_id == lead.workspace_id)
@@ -102,6 +110,7 @@ class CRMAgent:
         """
         Hard lifecycle transition engine with auditability.
         """
+        Lead, _, _ = self._crm_models()
         lead = self.session.get(Lead, lead_id)
         if not lead: return
 

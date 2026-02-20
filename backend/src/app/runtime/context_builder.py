@@ -2,10 +2,10 @@
 MODULE: Application Runtime - Context Builder
 PURPOSE: Assembler for lead context, strategy, and RAG data.
 """
-from typing import List, Dict, Any, Optional
+import importlib
+from typing import Dict, Any, Optional
 from sqlmodel import Session, select
 
-from src.adapters.db.crm_models import Lead, Workspace, StrategyVersion, LeadMemory
 from src.domain.entities.enums import StrategyStatus, BudgetTier
 from src.app.runtime.memory_service import MemoryService
 from src.app.runtime.rag_service import RAGService
@@ -20,10 +20,16 @@ class ContextBuilder:
         self.rag = RAGService(session)
         self.memory = MemoryService(session)
 
+    @staticmethod
+    def _crm_models():
+        models = importlib.import_module("src.adapters.db.crm_models")
+        return models.Lead, models.Workspace, models.StrategyVersion
+
     async def build_context(self, lead_id: int, workspace_id: int, query: Optional[str] = None, agent_id_override: Optional[int] = None) -> Dict[str, Any]:
         """
         Assembles the full prompt context for a turn.
         """
+        Lead, Workspace, StrategyVersion = self._crm_models()
         lead = self.session.get(Lead, lead_id)
         workspace = self.session.get(Workspace, workspace_id)
         
@@ -68,7 +74,7 @@ class ContextBuilder:
             "tools_enabled": tools_enabled
         }
 
-    def _compile_strategy_prompt(self, strategy: StrategyVersion) -> str:
+    def _compile_strategy_prompt(self, strategy: Any) -> str:
         return f"""
 TONE: {strategy.tone}
 OBJECTIVES: {strategy.objectives}

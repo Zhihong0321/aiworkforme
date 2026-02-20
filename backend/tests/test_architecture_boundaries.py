@@ -26,26 +26,7 @@ LAYER_ALLOW_IMPORTS: dict[str, set[str]] = {
 
 # Transitional allowlist of existing violations in the current codebase.
 # Policy: only shrink this set over time; new violations are not allowed.
-KNOWN_VIOLATIONS: set[tuple[str, str, str]] = {
-    ("adapters/api/status_routes.py", "adapters", "infra"),
-    ("adapters/api/dependencies.py", "adapters", "domain"),
-    ("adapters/api/dependencies.py", "adapters", "infra"),
-    ("adapters/db/tenant_models.py", "adapters", "domain"),
-    ("adapters/db/user_models.py", "adapters", "domain"),
-    ("app/background_tasks_ai_crm.py", "app", "infra"),
-    ("app/background_tasks_inbound.py", "app", "adapters"),
-    ("app/background_tasks_inbound.py", "app", "infra"),
-    ("app/background_tasks_messaging.py", "app", "infra"),
-    ("app/policy/evaluator.py", "app", "adapters"),
-    ("app/runtime/agent_runtime.py", "app", "adapters"),
-    ("app/runtime/agent_runtime.py", "app", "infra"),
-    ("app/runtime/context_builder.py", "app", "adapters"),
-    ("app/runtime/crm_agent.py", "app", "adapters"),
-    ("app/runtime/knowledge_processor.py", "app", "infra"),
-    ("app/runtime/memory_service.py", "app", "adapters"),
-    ("app/runtime/memory_service.py", "app", "infra"),
-    ("app/runtime/rag_service.py", "app", "adapters"),
-}
+KNOWN_VIOLATIONS: set[tuple[str, str, str]] = set()
 
 
 def _iter_src_files() -> Iterable[Path]:

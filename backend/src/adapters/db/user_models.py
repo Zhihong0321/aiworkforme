@@ -2,12 +2,13 @@
 MODULE: Database Models - User & Identity
 PURPOSE: SQLModel definitions for Users, Roles, and Memberships.
 """
+import importlib
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from sqlmodel import Field, Relationship, SQLModel, Column, JSON
 from sqlalchemy import UniqueConstraint
 
-from src.domain.entities.enums import Role
+Role = importlib.import_module("src.domain.entities.enums").Role
 
 class User(SQLModel, table=True):
     __tablename__ = "et_users"

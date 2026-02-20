@@ -3,10 +3,9 @@ MODULE: Application Runtime - RAG Service
 PURPOSE: Knowledge retrieval service for agents.
 """
 import logging
+import importlib
 from typing import List, Dict, Any, Optional
 from sqlmodel import Session, select
-
-from src.adapters.db.agent_models import AgentKnowledgeFile
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +16,10 @@ class RAGService:
     """
     def __init__(self, session: Session):
         self.session = session
+
+    @staticmethod
+    def _agent_knowledge_file_model():
+        return importlib.import_module("src.adapters.db.agent_models").AgentKnowledgeFile
 
     async def retrieve_context(self, query: str, agent_id: Optional[int] = None, tenant_id: Optional[int] = None) -> List[Dict[str, Any]]:
         """
@@ -32,9 +35,10 @@ class RAGService:
             return []
 
         # Find files for this agent AND this tenant
-        statement = select(AgentKnowledgeFile).where(
-            AgentKnowledgeFile.agent_id == agent_id,
-            AgentKnowledgeFile.tenant_id == tenant_id
+        agent_knowledge_file = self._agent_knowledge_file_model()
+        statement = select(agent_knowledge_file).where(
+            agent_knowledge_file.agent_id == agent_id,
+            agent_knowledge_file.tenant_id == tenant_id
         )
         files = self.session.exec(statement).all()
         

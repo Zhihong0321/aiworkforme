@@ -1,14 +1,15 @@
 import base64
+import importlib
 import logging
-from typing import Optional
+from typing import Any
 from sqlmodel import Session
-from src.infra.llm.router import LLMRouter
-from src.infra.llm.schemas import LLMTask, LLMMessage
+
+from src.ports.llm import LLMRouterPort
 
 logger = logging.getLogger(__name__)
 
 class KnowledgeProcessor:
-    def __init__(self, session: Session, llm_router: LLMRouter):
+    def __init__(self, session: Session, llm_router: LLMRouterPort):
         self.session = session
         self.llm = llm_router
 
@@ -35,16 +36,12 @@ class KnowledgeProcessor:
             # or use a simplified approach for now: passing a prompt and the base64 string.
             # Most LLMs can handle a base64 inline or as a data URL in the content string for extraction.
             
-            messages = [
-                LLMMessage(role="system", content="You are a helpful assistant that performs OCR and image analysis."),
-                LLMMessage(role="user", content=f"{prompt}\n\n[IMAGE_DATA(base64)]: {base64_image[:500]}...") # placeholder for actual impl
-            ]
-            
             # Real implementation would need the LLM provider to handle the image part correctly.
             # For now, let's assume the router can handle a special 'extraction' task with image data.
+            llm_task = importlib.import_module("src.infra.llm.schemas").LLMTask
             
             response = await self.llm.execute(
-                task=LLMTask.EXTRACTION,
+                task=llm_task.EXTRACTION,
                 messages=[
                     {"role": "system", "content": "You are an OCR expert."},
                     {"role": "user", "content": f"{prompt}\n\n[Please analyze the attached image]"} # We'll need to pass the actual image to the provider

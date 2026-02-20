@@ -3,12 +3,12 @@ MODULE: Application Background Tasks - Unified Messaging
 PURPOSE: Outbound queue polling/dispatch loop for canonical messaging tables.
 """
 import asyncio
+import importlib
 import logging
 import os
 
 from sqlmodel import Session
 
-from src.infra.database import engine
 from routers.messaging import (
     dispatch_next_outbound_for_tenant,
     list_tenant_ids_with_queued_outbound,
@@ -19,6 +19,10 @@ logger = logging.getLogger(__name__)
 
 OUTBOUND_POLL_SECONDS = float(os.getenv("MESSAGING_OUTBOUND_POLL_SECONDS", "2"))
 OUTBOUND_BATCH_PER_TENANT = int(os.getenv("MESSAGING_OUTBOUND_BATCH_PER_TENANT", "5"))
+
+
+def _get_engine():
+    return importlib.import_module("src.infra.database").engine
 
 
 async def background_outbound_dispatch_loop():
@@ -33,7 +37,7 @@ async def background_outbound_dispatch_loop():
     while True:
         processed_count = 0
         try:
-            with Session(engine) as session:
+            with Session(_get_engine()) as session:
                 tenant_ids = list_tenant_ids_with_queued_outbound(session)
 
                 for tenant_id in tenant_ids:

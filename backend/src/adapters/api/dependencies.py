@@ -2,6 +2,7 @@
 MODULE: API Dependencies
 PURPOSE: FastAPI dependency functions for authentication and injection.
 """
+import importlib
 import logging
 from dataclasses import dataclass
 from typing import Any, Optional, Dict
@@ -14,14 +15,17 @@ from sqlmodel import Session, select
 from src.adapters.db.audit_models import SecurityEventLog
 from src.adapters.db.user_models import User, TenantMembership
 from src.adapters.db.tenant_models import Tenant, SystemSetting
-from src.domain.entities.enums import Role, TenantStatus
 from src.adapters.mcp.manager import MCPManager
-from src.infra.llm.schemas import LLMTask
-from src.infra.llm.router import LLMRouter
-from src.infra.llm.providers.zai import ZaiProvider
-from src.infra.llm.providers.uniapi import UniAPIProvider
-from src.infra.database import get_session
-from src.infra.security import TokenError, decode_access_token
+
+Role = importlib.import_module("src.domain.entities.enums").Role
+TenantStatus = importlib.import_module("src.domain.entities.enums").TenantStatus
+LLMTask = importlib.import_module("src.infra.llm.schemas").LLMTask
+LLMRouter = importlib.import_module("src.infra.llm.router").LLMRouter
+ZaiProvider = importlib.import_module("src.infra.llm.providers.zai").ZaiProvider
+UniAPIProvider = importlib.import_module("src.infra.llm.providers.uniapi").UniAPIProvider
+get_session = importlib.import_module("src.infra.database").get_session
+TokenError = importlib.import_module("src.infra.security").TokenError
+decode_access_token = importlib.import_module("src.infra.security").decode_access_token
 
 # Singletons (Ideally managed by DI, but kept as is for safe refactor)
 mcp_manager = MCPManager()

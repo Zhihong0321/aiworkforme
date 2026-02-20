@@ -2,22 +2,18 @@
 MODULE: Application Runtime - Agent Runtime
 PURPOSE: Unified conversation runtime orchestration.
 """
+import importlib
 import logging
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from sqlmodel import Session
 
-from src.adapters.db.crm_models import Lead, Workspace, PolicyDecision, ChatMessageNew, ConversationThread
-from src.adapters.db.agent_models import Agent
-from src.adapters.db.system_settings import get_bool_system_setting
 from src.domain.entities.enums import LeadStage
 from src.app.policy.evaluator import PolicyEvaluator
 from src.app.runtime.context_builder import ContextBuilder
 from src.app.runtime.memory_service import MemoryService
-from src.infra.llm.router import LLMRouter
-from src.infra.llm.schemas import LLMTask
-from src.infra.llm.costs import estimate_llm_cost_usd
+from src.ports.llm import LLMRouterPort
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +38,38 @@ class ConversationAgentRuntime:
     Unified Conversation Runtime.
     Orchestrates the policy-aware, intent-first messaging loop.
     """
-    def __init__(self, session: Session, llm_router: LLMRouter):
+    def __init__(self, session: Session, llm_router: LLMRouterPort):
         self.session = session
         self.router = llm_router
         self.policy = PolicyEvaluator(session)
         self.builder = ContextBuilder(session)
+
+    @staticmethod
+    def _crm_models():
+        models = importlib.import_module("src.adapters.db.crm_models")
+        return (
+            models.Lead,
+            models.Workspace,
+            models.PolicyDecision,
+            models.ChatMessageNew,
+            models.ConversationThread,
+        )
+
+    @staticmethod
+    def _agent_model():
+        return importlib.import_module("src.adapters.db.agent_models").Agent
+
+    @staticmethod
+    def _llm_task():
+        return importlib.import_module("src.infra.llm.schemas").LLMTask
+
+    @staticmethod
+    def _estimate_llm_cost():
+        return importlib.import_module("src.infra.llm.costs").estimate_llm_cost_usd
+
+    @staticmethod
+    def _get_bool_system_setting():
+        return importlib.import_module("src.adapters.db.system_settings").get_bool_system_setting
 
     async def run_turn(
         self,
@@ -98,14 +121,17 @@ class ConversationAgentRuntime:
 
         # 4. EXECUTE LLM CALL — let exceptions propagate so callers see real errors
         model_override = None
+        _, Workspace, _, _, _ = self._crm_models()
         workspace = self.session.get(Workspace, workspace_id)
         candidate_agent_id = agent_id_override or (workspace.agent_id if workspace else None)
         if candidate_agent_id:
+            Agent = self._agent_model()
             agent = self.session.get(Agent, candidate_agent_id)
             model_override = getattr(agent, "model", None)
 
+        llm_task = self._llm_task()
         response = await self.router.execute(
-            task=LLMTask.CONVERSATION,
+            task=llm_task.CONVERSATION,
             messages=messages,
             model=model_override,
         )
@@ -135,23 +161,23 @@ class ConversationAgentRuntime:
         usage = _normalize_usage(response.usage or {})
         provider_name = provider_info.get("provider") or "unknown"
         model_name = provider_info.get("model") or "unknown"
-        estimated_cost_usd = estimate_llm_cost_usd(
+        estimated_cost_usd = self._estimate_llm_cost()(
             provider_name,
             model_name,
             usage["prompt_tokens"],
             usage["completion_tokens"],
         )
-        include_context_prompt = get_bool_system_setting(
+        include_context_prompt = self._get_bool_system_setting()(
             self.session, "record_context_prompt", default=False
         )
         ai_trace = {
             "schema_version": "1.0",
-            "task": LLMTask.CONVERSATION.value,
+            "task": llm_task.CONVERSATION.value,
             "provider": provider_name,
             "model": model_name,
             "usage": {**usage, "estimated_cost_usd": estimated_cost_usd},
             "context_prompt": context["system_instruction"] if include_context_prompt else None,
-            "recorded_at": datetime.utcnow().isoformat(),
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
         }
         result: Dict[str, Any] = {
             "status": "sent",
@@ -166,8 +192,9 @@ class ConversationAgentRuntime:
         }
         return result
 
-    def _get_or_create_thread(self, lead_id: int, workspace_id: int) -> ConversationThread:
+    def _get_or_create_thread(self, lead_id: int, workspace_id: int) -> Any:
         from sqlmodel import select
+        Lead, _, _, _, ConversationThread = self._crm_models()
         thread = self.session.exec(
             select(ConversationThread)
             .where(ConversationThread.lead_id == lead_id)
@@ -188,6 +215,7 @@ class ConversationAgentRuntime:
 
     def _get_recent_history(self, thread_id: int) -> List[Dict[str, str]]:
         from sqlmodel import select
+        _, _, _, ChatMessageNew, _ = self._crm_models()
         msgs = self.session.exec(
             select(ChatMessageNew)
             .where(ChatMessageNew.thread_id == thread_id)
@@ -200,6 +228,7 @@ class ConversationAgentRuntime:
     def _save_message(self, thread_id: int, role: str, content: str):
         # We need the tenant_id for the message as well. 
         # Better to fetch it from the thread which we already have.
+        _, _, _, ChatMessageNew, ConversationThread = self._crm_models()
         thread = self.session.get(ConversationThread, thread_id)
         msg = ChatMessageNew(
             thread_id=thread_id, 
@@ -212,9 +241,10 @@ class ConversationAgentRuntime:
 
     def _update_lead_after_send(self, lead_id: int):
         from datetime import datetime
+        Lead, _, _, _, _ = self._crm_models()
         lead = self.session.get(Lead, lead_id)
         if lead:
-            lead.last_followup_at = datetime.utcnow()
+            lead.last_followup_at = datetime.now(timezone.utc)
             lead.stage = LeadStage.CONTACTED if lead.stage == LeadStage.NEW else lead.stage
             self.session.add(lead)
             self.session.commit()

@@ -1,78 +1,67 @@
-"""
-MODULE: Application Background Tasks - Inbound Worker
-PURPOSE: Process inbound messages through the real AI agent pipeline.
-         Each inbound message is handled by ConversationAgentRuntime, which
-         uses the assigned agent's system_prompt, RAG knowledge, lead memory,
-         and MCP tools — exactly the same pipeline as the Playground.
-"""
+"""Inbound worker for processing inbound unified messages through agent runtime."""
 import asyncio
-import json
+import importlib
 import logging
 import os
-import select as pyselect
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from uuid import uuid4
 
 from sqlalchemy import text
 from sqlmodel import Session, select
 
-from src.infra.database import engine
-from src.adapters.api.dependencies import llm_router
-from src.adapters.db.messaging_models import UnifiedMessage, UnifiedThread, OutboundQueue
-from src.adapters.db import channel_models  # must be imported before crm_models — ConversationThread.channel_session relationship
-from src.adapters.db.crm_models import Lead, Workspace
-from src.adapters.db.agent_models import Agent
 from src.app.runtime.agent_runtime import ConversationAgentRuntime
-
+from src.app.inbound_worker_notify import (
+    open_inbound_listen_connection,
+    wait_for_inbound_notify,
+)
+from src.app.inbound_worker_state import (
+    INBOUND_WORKER_STATE,
+    get_worker_state_snapshot,
+    iso_now,
+    mark_worker_state,
+)
 logger = logging.getLogger(__name__)
-
-
 INBOUND_POLL_SECONDS = float(os.getenv("MESSAGING_INBOUND_POLL_SECONDS", "2"))
 INBOUND_BATCH_SIZE = int(os.getenv("MESSAGING_INBOUND_BATCH_SIZE", "5"))
 INBOUND_NOTIFY_CHANNEL = os.getenv("MESSAGING_INBOUND_NOTIFY_CHANNEL", "inbound_new_message")
-
-INBOUND_WORKER_STATE: Dict[str, Any] = {
-    "started_at": None,
-    "last_loop_at": None,
-    "last_listen_connected_at": None,
-    "last_notify_received_at": None,
-    "last_notified_message_id": None,
-    "last_claimed_at": None,
-    "last_claimed_message_id": None,
-    "last_processed_at": None,
-    "last_processed_message_id": None,
-    "last_error_at": None,
-    "last_error_message": None,
-    "notify_events_total": 0,
-    "claimed_total": 0,
-    "processed_total": 0,
-    "errors_total": 0,
-}
-
-
+_ENGINE = None
+_LLM_ROUTER = None
+_DB_MODELS = None
 def _iso_now() -> str:
-    return datetime.utcnow().isoformat()
-
-
+    return iso_now()
 def _mark_worker_state(**kwargs):
-    INBOUND_WORKER_STATE.update(kwargs)
-
-
+    mark_worker_state(INBOUND_WORKER_STATE, **kwargs)
 def get_inbound_worker_debug_snapshot() -> Dict[str, Any]:
-    return dict(INBOUND_WORKER_STATE)
-
-
-# ---------------------------------------------------------------------------
-# Thread / Agent resolution
-# ---------------------------------------------------------------------------
-
-def _resolve_thread_agent(session: Session, message: UnifiedMessage) -> Optional[Agent]:
-    """
-    Find the Agent assigned to this thread.
-    If none is assigned yet, pick one from the lead's workspace (or the first
-    agent in the tenant) and persist it on the thread for future messages.
-    """
+    return get_worker_state_snapshot(INBOUND_WORKER_STATE)
+def _get_engine():
+    global _ENGINE
+    if _ENGINE is None:
+        _ENGINE = importlib.import_module("src.infra.database").engine
+    return _ENGINE
+def _get_llm_router():
+    global _LLM_ROUTER
+    if _LLM_ROUTER is None:
+        _LLM_ROUTER = importlib.import_module("src.adapters.api.dependencies").llm_router
+    return _LLM_ROUTER
+def _get_db_models():
+    global _DB_MODELS
+    if _DB_MODELS is None:
+        importlib.import_module("src.adapters.db.channel_models")
+        messaging = importlib.import_module("src.adapters.db.messaging_models")
+        crm = importlib.import_module("src.adapters.db.crm_models")
+        agent_models = importlib.import_module("src.adapters.db.agent_models")
+        _DB_MODELS = (
+            messaging.UnifiedMessage,
+            messaging.UnifiedThread,
+            messaging.OutboundQueue,
+            crm.Lead,
+            crm.Workspace,
+            agent_models.Agent,
+        )
+    return _DB_MODELS
+def _resolve_thread_agent(session: Session, message: Any) -> Optional[Any]:
+    _, UnifiedThread, _, Lead, Workspace, Agent = _get_db_models()
     if not message.thread_id:
         return None
 
@@ -107,7 +96,7 @@ def _resolve_thread_agent(session: Session, message: UnifiedMessage) -> Optional
             return None
 
         thread.agent_id = candidate_agent_id
-        thread.updated_at = datetime.utcnow()
+        thread.updated_at = datetime.now(timezone.utc)
         session.add(thread)
         session.commit()
         session.refresh(thread)
@@ -116,17 +105,8 @@ def _resolve_thread_agent(session: Session, message: UnifiedMessage) -> Optional
     if not agent or agent.tenant_id != message.tenant_id:
         return None
     return agent
-
-
-# ---------------------------------------------------------------------------
-# History builder — reads from et_messages (UnifiedMessage), NOT ChatMessageNew
-# ---------------------------------------------------------------------------
-
-def _build_thread_history(session: Session, message: UnifiedMessage) -> List[Dict[str, str]]:
-    """
-    Return the last 12 messages in this thread as OpenAI-style role/content dicts.
-    Excludes the current inbound message (it will be passed as user_message separately).
-    """
+def _build_thread_history(session: Session, message: Any) -> List[Dict[str, str]]:
+    UnifiedMessage, _, _, _, _, _ = _get_db_models()
     if not message.thread_id:
         return []
 
@@ -149,15 +129,9 @@ def _build_thread_history(session: Session, message: UnifiedMessage) -> List[Dic
         role = "user" if item.direction == "inbound" else "assistant"
         history.append({"role": role, "content": item.text_content})
     return history
-
-
-# ---------------------------------------------------------------------------
-# Outbound enqueue — writes reply to et_messages + et_outbound_queue
-# ---------------------------------------------------------------------------
-
 def _enqueue_outbound_reply(
     session: Session,
-    inbound_message: UnifiedMessage,
+    inbound_message: Any,
     agent_id: int,
     text: str,
     ai_trace: Optional[Dict[str, Any]] = None,
@@ -167,8 +141,9 @@ def _enqueue_outbound_reply(
     llm_completion_tokens: Optional[int] = None,
     llm_total_tokens: Optional[int] = None,
     llm_estimated_cost_usd: Optional[float] = None,
-) -> UnifiedMessage:
-    now = datetime.utcnow()
+) -> Any:
+    UnifiedMessage, _, OutboundQueue, _, _, _ = _get_db_models()
+    now = datetime.now(timezone.utc)
     outbound = UnifiedMessage(
         tenant_id=inbound_message.tenant_id,
         lead_id=inbound_message.lead_id,
@@ -213,31 +188,23 @@ def _enqueue_outbound_reply(
     session.add(queue)
     session.commit()
     return outbound
-
-
-# ---------------------------------------------------------------------------
-# Core processor — one inbound message through the real AI agent pipeline
-# ---------------------------------------------------------------------------
-
-async def _process_one_inbound(session: Session, message: UnifiedMessage):
-    # Legacy fallback path: callers that do not pre-claim can still process safely.
+async def _process_one_inbound(session: Session, message: Any):
+    _, _, _, Lead, _, _ = _get_db_models()
     if message.delivery_status != "inbound_processing":
         message.delivery_status = "inbound_processing"
-        message.updated_at = datetime.utcnow()
+        message.updated_at = datetime.now(timezone.utc)
         session.add(message)
         session.commit()
         session.refresh(message)
 
-    # 1. Resolve which agent handles this thread
     agent = _resolve_thread_agent(session, message)
     if not agent:
         message.delivery_status = "inbound_human_takeover"
-        message.updated_at = datetime.utcnow()
+        message.updated_at = datetime.now(timezone.utc)
         session.add(message)
         session.commit()
         return
 
-    # 2. Resolve workspace_id from the lead (required by ConversationAgentRuntime)
     lead = session.get(Lead, message.lead_id)
     if not lead or not lead.workspace_id:
         logger.error(
@@ -245,20 +212,18 @@ async def _process_one_inbound(session: Session, message: UnifiedMessage):
             message.id, message.lead_id,
         )
         message.delivery_status = "inbound_error"
-        message.updated_at = datetime.utcnow()
+        message.updated_at = datetime.now(timezone.utc)
         session.add(message)
         session.commit()
         return
 
-    # 3. Build conversation history from et_messages (the real message store)
     history = _build_thread_history(session, message)
 
-    # 4. Run the REAL AI agent pipeline
     logger.info(
         "Running AI agent (id=%s, name=%s) for inbound message_id=%s (lead=%s)",
         agent.id, agent.name, message.id, message.lead_id,
     )
-    runtime = ConversationAgentRuntime(session, llm_router)
+    runtime = ConversationAgentRuntime(session, _get_llm_router())
     result = await runtime.run_turn(
         lead_id=message.lead_id,
         workspace_id=lead.workspace_id,
@@ -268,7 +233,6 @@ async def _process_one_inbound(session: Session, message: UnifiedMessage):
         history_override=history,
     )
 
-    # 5. Handle the result
     status = result.get("status")
 
     if status == "sent":
@@ -304,79 +268,29 @@ async def _process_one_inbound(session: Session, message: UnifiedMessage):
             f"for message_id={message.id}: {result}"
         )
 
-    message.updated_at = datetime.utcnow()
+    message.updated_at = datetime.now(timezone.utc)
     session.add(message)
     session.commit()
-
-
-# ---------------------------------------------------------------------------
-# LISTEN/NOTIFY + claim helpers
-# ---------------------------------------------------------------------------
-
 def _open_inbound_listen_connection():
-    if engine.dialect.name != "postgresql":
-        return None
-
-    raw_conn = engine.raw_connection()
-    raw_conn.autocommit = True
-    cursor = raw_conn.cursor()
-    try:
-        cursor.execute(f"LISTEN {INBOUND_NOTIFY_CHANNEL};")
-    finally:
-        cursor.close()
-    _mark_worker_state(last_listen_connected_at=_iso_now())
-    logger.info("Inbound worker listening on PostgreSQL channel: %s", INBOUND_NOTIFY_CHANNEL)
-    return raw_conn
-
-
+    return open_inbound_listen_connection(
+        engine=_get_engine(),
+        inbound_notify_channel=INBOUND_NOTIFY_CHANNEL,
+        mark_worker_state=_mark_worker_state,
+        iso_now=_iso_now,
+        logger=logger,
+    )
 def _wait_for_inbound_notify(listen_conn, timeout_seconds: float) -> List[int]:
-    """
-    Blocks up to timeout_seconds for Postgres NOTIFY and returns message ids.
-    Payload format: {"message_id": <int>, ...}
-    """
-    if not listen_conn:
-        return []
-
-    message_ids: List[int] = []
-    try:
-        ready, _, _ = pyselect.select([listen_conn], [], [], timeout_seconds)
-        if not ready:
-            return []
-
-        listen_conn.poll()
-        notifications = list(getattr(listen_conn, "notifies", []) or [])
-        if hasattr(listen_conn, "notifies"):
-            listen_conn.notifies.clear()
-
-        for notify in notifications:
-            payload = getattr(notify, "payload", "") or ""
-            if not payload:
-                continue
-            try:
-                data = json.loads(payload)
-                message_id = int(data.get("message_id"))
-            except Exception:
-                logger.warning("Inbound NOTIFY payload parse failed: %s", payload)
-                continue
-            if message_id > 0:
-                _mark_worker_state(
-                    last_notify_received_at=_iso_now(),
-                    last_notified_message_id=message_id,
-                    notify_events_total=INBOUND_WORKER_STATE.get("notify_events_total", 0) + 1,
-                )
-                message_ids.append(message_id)
-    except Exception as exc:
-        logger.warning("Inbound NOTIFY wait failed: %s", exc)
-    return message_ids
-
-
-def _claim_inbound_message(session: Session, message_id: int) -> Optional[UnifiedMessage]:
-    """
-    Atomically claim one inbound row for processing by transitioning:
-    received -> inbound_processing.
-    Returns the claimed UnifiedMessage or None if already claimed/invalid.
-    """
-    if engine.dialect.name == "postgresql":
+    return wait_for_inbound_notify(
+        listen_conn,
+        timeout_seconds,
+        mark_worker_state=_mark_worker_state,
+        worker_state=INBOUND_WORKER_STATE,
+        iso_now=_iso_now,
+        logger=logger,
+    )
+def _claim_inbound_message(session: Session, message_id: int) -> Optional[Any]:
+    UnifiedMessage, _, _, _, _, _ = _get_db_models()
+    if _get_engine().dialect.name == "postgresql":
         row = session.connection().execute(
             text(
                 """
@@ -410,7 +324,6 @@ def _claim_inbound_message(session: Session, message_id: int) -> Optional[Unifie
         )
         return session.get(UnifiedMessage, claimed_id)
 
-    # Non-Postgres fallback for local/test environments.
     message = session.get(UnifiedMessage, message_id)
     if (
         not message
@@ -420,7 +333,7 @@ def _claim_inbound_message(session: Session, message_id: int) -> Optional[Unifie
     ):
         return None
     message.delivery_status = "inbound_processing"
-    message.updated_at = datetime.utcnow()
+    message.updated_at = datetime.now(timezone.utc)
     session.add(message)
     session.commit()
     session.refresh(message)
@@ -430,13 +343,12 @@ def _claim_inbound_message(session: Session, message_id: int) -> Optional[Unifie
         claimed_total=INBOUND_WORKER_STATE.get("claimed_total", 0) + 1,
     )
     return message
-
-
 def _mark_inbound_error(session: Session, message_id: int, reason: Optional[str] = None):
+    UnifiedMessage, _, _, _, _, _ = _get_db_models()
     db_inbound = session.get(UnifiedMessage, message_id)
     if db_inbound:
         db_inbound.delivery_status = "inbound_error"
-        db_inbound.updated_at = datetime.utcnow()
+        db_inbound.updated_at = datetime.now(timezone.utc)
         payload = dict(db_inbound.raw_payload or {})
         if reason:
             payload["inbound_error_reason"] = str(reason)[:1000]
@@ -456,13 +368,8 @@ def _mark_inbound_error(session: Session, message_id: int, reason: Optional[str]
             last_error_message=f"inbound_error state set for message_id={message_id}",
             errors_total=INBOUND_WORKER_STATE.get("errors_total", 0) + 1,
         )
-
-
-# ---------------------------------------------------------------------------
-# Background worker loop
-# ---------------------------------------------------------------------------
-
 async def background_inbound_worker_loop():
+    UnifiedMessage, _, _, _, _, _ = _get_db_models()
     logger.info(
         "Starting inbound worker loop (poll=%ss, batch=%s)",
         INBOUND_POLL_SECONDS,
@@ -470,6 +377,7 @@ async def background_inbound_worker_loop():
     )
     _mark_worker_state(started_at=_iso_now())
     listen_conn = None
+    engine = _get_engine()
     if engine.dialect.name == "postgresql":
         try:
             listen_conn = _open_inbound_listen_connection()
@@ -524,7 +432,7 @@ async def background_inbound_worker_loop():
                         .where(
                             UnifiedMessage.direction == "inbound",
                             UnifiedMessage.delivery_status == "received",
-                            UnifiedMessage.thread_id != None,
+                            UnifiedMessage.thread_id.is_not(None),
                         )
                         .order_by(UnifiedMessage.created_at.asc(), UnifiedMessage.id.asc())
                         .limit(remaining)
@@ -568,13 +476,12 @@ async def background_inbound_worker_loop():
                 except Exception:
                     pass
                 listen_conn = None
-            if engine.dialect.name == "postgresql":
+            if _get_engine().dialect.name == "postgresql":
                 try:
                     listen_conn = _open_inbound_listen_connection()
                 except Exception as reconnect_exc:
                     logger.warning("Inbound LISTEN reconnect failed: %s", reconnect_exc)
 
-        # If LISTEN is enabled, timeout wait already happened in _wait_for_inbound_notify.
         if processed == 0 and listen_conn is None:
             await asyncio.sleep(INBOUND_POLL_SECONDS)
         else:

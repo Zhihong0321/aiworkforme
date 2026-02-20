@@ -2,11 +2,12 @@
 MODULE: Database Models - Tenant
 PURPOSE: SQLModel definitions for Tenants and System Settings.
 """
+import importlib
 from typing import List, Optional
 from datetime import datetime
 from sqlmodel import Field, Relationship, SQLModel
 
-from src.domain.entities.enums import TenantStatus
+TenantStatus = importlib.import_module("src.domain.entities.enums").TenantStatus
 
 class Tenant(SQLModel, table=True):
     __tablename__ = "et_tenants"

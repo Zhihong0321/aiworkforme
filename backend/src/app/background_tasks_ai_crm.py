@@ -3,13 +3,13 @@ MODULE: Application Background Tasks - AI CRM
 PURPOSE: Periodic conversation scan + due follow-up generation for AI CRM workflow.
 """
 import asyncio
+import importlib
 import logging
 import os
 
 from sqlmodel import Session
 
 from routers.ai_crm import get_default_ai_crm_llm_router, run_ai_crm_background_cycle
-from src.infra.database import engine
 
 logger = logging.getLogger(__name__)
 
@@ -17,12 +17,16 @@ logger = logging.getLogger(__name__)
 AI_CRM_POLL_SECONDS = float(os.getenv("AI_CRM_POLL_SECONDS", "30"))
 
 
+def _get_engine():
+    return importlib.import_module("src.infra.database").engine
+
+
 async def background_ai_crm_loop():
     logger.info("Starting AI CRM loop (poll=%ss)", AI_CRM_POLL_SECONDS)
     llm_router = get_default_ai_crm_llm_router()
     while True:
         try:
-            with Session(engine) as session:
+            with Session(_get_engine()) as session:
                 stats = await run_ai_crm_background_cycle(session, llm_router)
                 if stats.get("scanned") or stats.get("triggered"):
                     logger.info(

@@ -4,13 +4,12 @@ PURPOSE: Management of lead-specific memory (summaries/facts).
 """
 import logging
 import json
-from typing import Optional, List, Dict, Any
+import importlib
+from typing import Optional, Any
 from datetime import datetime
 from sqlmodel import Session, select
 
-from src.adapters.db.crm_models import LeadMemory, ChatMessageNew
-from src.infra.llm.router import LLMRouter
-from src.infra.llm.schemas import LLMTask
+from src.ports.llm import LLMRouterPort
 
 logger = logging.getLogger(__name__)
 
@@ -18,13 +17,19 @@ class MemoryService:
     """
     Manages lead-specific memory (Summaries and Facts).
     """
-    def __init__(self, session: Session, llm_router: Optional[LLMRouter] = None):
+    def __init__(self, session: Session, llm_router: Optional[LLMRouterPort] = None):
         self.session = session
         self.router = llm_router
 
-    def get_lead_memory(self, lead_id: int) -> Optional[LeadMemory]:
+    @staticmethod
+    def _crm_models():
+        models = importlib.import_module("src.adapters.db.crm_models")
+        return models.LeadMemory, models.ChatMessageNew
+
+    def get_lead_memory(self, lead_id: int) -> Optional[Any]:
+        lead_memory_model, _ = self._crm_models()
         return self.session.exec(
-            select(LeadMemory).where(LeadMemory.lead_id == lead_id)
+            select(lead_memory_model).where(lead_memory_model.lead_id == lead_id)
         ).first()
 
     async def refresh_memory(self, lead_id: int, thread_id: int):
@@ -36,10 +41,11 @@ class MemoryService:
             return
 
         # Fetch recent messages
+        _, chat_message_model = self._crm_models()
         messages = self.session.exec(
-            select(ChatMessageNew)
-            .where(ChatMessageNew.thread_id == thread_id)
-            .order_by(ChatMessageNew.created_at.desc())
+            select(chat_message_model)
+            .where(chat_message_model.thread_id == thread_id)
+            .order_by(chat_message_model.created_at.desc())
             .limit(20)
         ).all()
         messages.reverse()
@@ -61,8 +67,9 @@ JSON Format:
 }}
 """
         try:
+            llm_task = importlib.import_module("src.infra.llm.schemas").LLMTask
             response = await self.router.execute(
-                task=LLMTask.EXTRACTION,
+                task=llm_task.EXTRACTION,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"}
             )
@@ -74,7 +81,8 @@ JSON Format:
             
             memory = self.get_lead_memory(lead_id)
             if not memory:
-                memory = LeadMemory(lead_id=lead_id)
+                lead_memory_model, _ = self._crm_models()
+                memory = lead_memory_model(lead_id=lead_id)
             
             memory.summary = data.get("summary")
             memory.facts = data.get("facts", [])

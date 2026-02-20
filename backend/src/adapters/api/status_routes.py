@@ -8,16 +8,18 @@ SAFE CHANGE: Add new status checks behind existing response keys.
 """
 
 from datetime import datetime
+import importlib
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlmodel import Session
 
-from src.infra.database import engine, get_session
-from src.infra.lifecycle import STARTUP_HEALTH
-from src.infra.schema_checks import evaluate_message_schema_compat
-
 router = APIRouter(tags=["Health Check"])
+
+
+def _get_session():
+    get_session = importlib.import_module("src.infra.database").get_session
+    yield from get_session()
 
 
 @router.get("/api/v1/", tags=["Status"])
@@ -31,11 +33,16 @@ def health_check() -> dict:
 
 
 @router.get("/api/v1/ready")
-def readiness_check(db_session: Session = Depends(get_session)) -> dict:
+def readiness_check(db_session: Session = Depends(_get_session)) -> dict:
     try:
+        engine = importlib.import_module("src.infra.database").engine
+        startup_health = importlib.import_module("src.infra.lifecycle").STARTUP_HEALTH
+        evaluate_message_schema_compat = importlib.import_module(
+            "src.infra.schema_checks"
+        ).evaluate_message_schema_compat
         db_session.execute(text("SELECT 1"))
         live_schema = evaluate_message_schema_compat(engine)
-        startup_ready = bool(STARTUP_HEALTH.get("ready"))
+        startup_ready = bool(startup_health.get("ready"))
         schema_ready = bool(live_schema.get("ok"))
         if not startup_ready or not schema_ready:
             raise HTTPException(
@@ -43,7 +50,7 @@ def readiness_check(db_session: Session = Depends(get_session)) -> dict:
                 detail={
                     "status": "not_ready",
                     "reason": "schema_incompatible",
-                    "startup_health": STARTUP_HEALTH,
+                    "startup_health": startup_health,
                     "live_schema": live_schema,
                 },
             )

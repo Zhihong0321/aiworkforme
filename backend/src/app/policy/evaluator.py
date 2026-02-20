@@ -2,13 +2,13 @@
 MODULE: Application Policy - Evaluator
 PURPOSE: Safety floor policy engine for outbound messaging.
 """
+import importlib
 import logging
 from datetime import datetime, time, timedelta
 import pytz
 from typing import Optional, Tuple, Dict, Any
 from sqlmodel import Session, select, func
 
-from src.adapters.db.crm_models import Lead, Workspace, PolicyDecision, ChatMessageNew, ConversationThread
 from src.domain.entities.enums import LeadStage, LeadTag
 
 logger = logging.getLogger(__name__)
@@ -22,11 +22,23 @@ class PolicyEvaluator:
     def __init__(self, session: Session):
         self.session = session
 
-    def evaluate_outbound(self, lead_id: int, workspace_id: int, bypass_safety: bool = False) -> PolicyDecision:
+    @staticmethod
+    def _crm_models():
+        models = importlib.import_module("src.adapters.db.crm_models")
+        return (
+            models.Lead,
+            models.Workspace,
+            models.PolicyDecision,
+            models.ChatMessageNew,
+            models.ConversationThread,
+        )
+
+    def evaluate_outbound(self, lead_id: int, workspace_id: int, bypass_safety: bool = False) -> Any:
         """
         Main entry point for evaluating if an outbound message can be sent to a lead.
         Returns a PolicyDecision record (unsaved).
         """
+        Lead, Workspace, PolicyDecision, _, _ = self._crm_models()
         lead = self.session.get(Lead, lead_id)
         workspace = self.session.get(Workspace, workspace_id)
 
@@ -79,7 +91,8 @@ class PolicyEvaluator:
         # ALL PASSED
         return self._create_decision(lead, workspace, True, "POLICY_PASSED", {"status": "All safety flags green"})
 
-    def _create_decision(self, lead: Lead, workspace: Workspace, allow: bool, code: str, trace: Dict[str, Any]) -> PolicyDecision:
+    def _create_decision(self, lead: Any, workspace: Any, allow: bool, code: str, trace: Dict[str, Any]) -> Any:
+        _, _, PolicyDecision, _, _ = self._crm_models()
         return PolicyDecision(
             tenant_id=lead.tenant_id or workspace.tenant_id,
             workspace_id=workspace.id,
@@ -89,13 +102,14 @@ class PolicyEvaluator:
             rule_trace=trace
         )
 
-    def _deny(self, lead_id: int, workspace_id: int, code: str, trace: Dict[str, Any]) -> PolicyDecision:
+    def _deny(self, lead_id: int, workspace_id: int, code: str, trace: Dict[str, Any]) -> Any:
         # Legacy helper, update to use _create_decision if possible or fetch tenant
+        Lead, Workspace, _, _, _ = self._crm_models()
         lead = self.session.get(Lead, lead_id)
         workspace = self.session.get(Workspace, workspace_id)
         return self._create_decision(lead, workspace, False, code, trace)
 
-    def _check_quiet_hours(self, lead: Lead, workspace: Workspace) -> Tuple[bool, Optional[str], str]:
+    def _check_quiet_hours(self, lead: Any, workspace: Any) -> Tuple[bool, Optional[str], str]:
         # ... logic stays same ...
         tz_str = lead.timezone or workspace.timezone or "UTC"
         try:
@@ -120,6 +134,7 @@ class PolicyEvaluator:
         Reads from legacy ChatMessageNew table; returns False safely if table missing.
         """
         try:
+            _, _, _, ChatMessageNew, ConversationThread = self._crm_models()
             cutoff = datetime.utcnow() - timedelta(days=14)
 
             last_user_msg = self.session.exec(
@@ -147,8 +162,9 @@ class PolicyEvaluator:
             logger.warning("_check_stop_rule skipped (legacy table unavailable): %s", exc)
             return False
 
-    def validate_risk(self, lead_id: int, workspace_id: int, content: str, confidence_score: float) -> PolicyDecision:
+    def validate_risk(self, lead_id: int, workspace_id: int, content: str, confidence_score: float) -> Any:
         """Post-generation risk check."""
+        Lead, Workspace, _, _, _ = self._crm_models()
         lead = self.session.get(Lead, lead_id)
         workspace = self.session.get(Workspace, workspace_id)
         
@@ -166,6 +182,7 @@ class PolicyEvaluator:
         return self._create_decision(lead, workspace, True, "RISK_CHECK_PASSED", {"confidence": confidence_score})
 
     def _tag_for_review(self, lead_id: int):
+        Lead, _, _, _, _ = self._crm_models()
         lead = self.session.get(Lead, lead_id)
         if lead:
             current_tags = set(lead.tags)
@@ -174,7 +191,7 @@ class PolicyEvaluator:
             self.session.add(lead)
             self.session.commit()
 
-    def record_decision(self, decision: PolicyDecision):
+    def record_decision(self, decision: Any):
         """Persist the policy decision to the database."""
         self.session.add(decision)
         self.session.commit()
