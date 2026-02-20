@@ -6,12 +6,7 @@ from sqlmodel import SQLModel
 
 from src.adapters.api.dependencies import AuthContext, require_tenant_access
 from src.adapters.db.crm_models import Lead
-from src.app.runtime.leads_service import (
-    delete_lead_and_children,
-    get_or_create_default_workspace,
-    get_tenant_lead_or_404,
-    set_lead_mode_value,
-)
+from src.app.runtime.leads_service import delete_lead_and_children, get_tenant_lead_or_404, set_lead_mode_value
 from src.infra.database import get_session
 
 router = APIRouter(prefix="/api/v1/leads", tags=["Lead Management"])
@@ -35,9 +30,9 @@ def create_lead(
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access),
 ):
-    workspace = get_or_create_default_workspace(session, auth.tenant.id)
     lead.tenant_id = auth.tenant.id
-    lead.workspace_id = workspace.id
+    # Workspace is now optional at write-time; runtime can resolve default lazily.
+    lead.workspace_id = None
     session.add(lead)
     session.commit()
     session.refresh(lead)

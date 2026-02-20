@@ -105,7 +105,7 @@ class Lead(SQLModel, table=True):
     __tablename__ = "et_leads"
     id: Optional[int] = Field(default=None, primary_key=True)
     tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
-    workspace_id: int = Field(foreign_key="et_workspaces.id")
+    workspace_id: Optional[int] = Field(default=None, foreign_key="et_workspaces.id")
     external_id: str = Field(index=True) # e.g. Phone number/WhatsApp ID
     whatsapp_lid: Optional[str] = Field(default=None, index=True)
     is_whatsapp_valid: Optional[bool] = Field(default=None, index=True)
@@ -124,14 +124,14 @@ class Lead(SQLModel, table=True):
     
     created_at: datetime = Field(default_factory=datetime.utcnow)
     
-    workspace: "Workspace" = Relationship(back_populates="leads")
+    workspace: Optional["Workspace"] = Relationship(back_populates="leads")
     threads: List["ConversationThread"] = Relationship(back_populates="lead")
 
 class ConversationThread(SQLModel, table=True):
     __tablename__ = "legacy_conversation_threads"
     id: Optional[int] = Field(default=None, primary_key=True)
     tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
-    workspace_id: int = Field(foreign_key="et_workspaces.id")
+    workspace_id: Optional[int] = Field(default=None, foreign_key="et_workspaces.id")
     lead_id: int = Field(foreign_key="et_leads.id")
     channel_session_id: Optional[int] = Field(default=None, foreign_key="et_channel_sessions.id", index=True)  # Multi-channel support
     

@@ -267,3 +267,25 @@ def apply_ai_crm_additive_migration(engine: Engine):
         return
 
     logger.warning("Skipping AI CRM additive migration for unsupported dialect: %s", dialect)
+
+
+def apply_workspace_decoupling_migration(engine: Engine):
+    """
+    Allows leads/legacy threads to exist without workspace linkage.
+    Safe to run repeatedly.
+    """
+    dialect = engine.dialect.name
+
+    if dialect == "postgresql":
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE et_leads ALTER COLUMN workspace_id DROP NOT NULL"))
+            conn.execute(text("ALTER TABLE legacy_conversation_threads ALTER COLUMN workspace_id DROP NOT NULL"))
+        logger.info("Workspace decoupling migration applied for PostgreSQL.")
+        return
+
+    if dialect == "sqlite":
+        # SQLite cannot reliably drop NOT NULL in-place without table rebuild.
+        logger.warning("Skipping workspace decoupling migration for SQLite (requires table rebuild).")
+        return
+
+    logger.warning("Skipping workspace decoupling migration for unsupported dialect: %s", dialect)

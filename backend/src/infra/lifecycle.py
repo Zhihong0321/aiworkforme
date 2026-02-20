@@ -45,6 +45,7 @@ from src.infra.migrations import (
     apply_legacy_table_rename_migration,
     apply_message_usage_columns_migration,
     apply_multitenant_additive_migration,
+    apply_workspace_decoupling_migration,
     apply_sql_migration_file,
 )
 from src.infra.schema_checks import evaluate_message_schema_compat
@@ -89,6 +90,7 @@ async def run_startup_sequence() -> None:
 
         apply_message_usage_columns_migration(engine)
         apply_ai_crm_additive_migration(engine)
+        apply_workspace_decoupling_migration(engine)
 
         schema_check = evaluate_message_schema_compat(engine)
         STARTUP_HEALTH["schema"] = schema_check
