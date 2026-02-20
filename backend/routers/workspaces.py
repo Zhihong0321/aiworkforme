@@ -10,9 +10,7 @@ from src.infra.database import get_session
 from src.adapters.db.crm_models import Workspace, Lead, StrategyVersion, StrategyStatus
 from src.adapters.db.agent_models import Agent
 from src.adapters.api.dependencies import require_tenant_access, AuthContext
-from src.adapters.db.messaging_models import UnifiedMessage, UnifiedThread, OutboundQueue, ThreadInsight
-from src.adapters.db.crm_models import ConversationThread, ChatMessageNew, PolicyDecision, LeadMemory
-from src.adapters.db.calendar_models import CalendarEvent
+from src.app.runtime.leads_service import delete_lead_and_children, set_lead_mode_value
 
 router = APIRouter(prefix="/api/v1/workspaces", tags=["Workspace Management"])
 
@@ -28,10 +26,6 @@ class LeadCsvImportResponse(SQLModel):
     skipped_duplicates: int
     skipped_invalid: int
     errors: List[str] = []
-
-
-def _stage_value(stage) -> str:
-    return stage.value if hasattr(stage, "value") else str(stage)
 
 
 def _canonical_lead_key(value: Optional[str]) -> Optional[str]:
@@ -305,96 +299,7 @@ def delete_lead(
     if not lead or lead.tenant_id != auth.tenant.id or lead.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail="Lead not found")
 
-    # Unified messaging cleanup.
-    unified_messages = session.exec(
-        select(UnifiedMessage).where(
-            UnifiedMessage.tenant_id == auth.tenant.id,
-            UnifiedMessage.lead_id == lead.id,
-        )
-    ).all()
-    message_ids = [m.id for m in unified_messages if m.id is not None]
-    if message_ids:
-        queue_rows = session.exec(
-            select(OutboundQueue).where(
-                OutboundQueue.tenant_id == auth.tenant.id,
-                OutboundQueue.message_id.in_(message_ids),
-            )
-        ).all()
-        for row in queue_rows:
-            session.delete(row)
-
-    thread_rows = session.exec(
-        select(UnifiedThread).where(
-            UnifiedThread.tenant_id == auth.tenant.id,
-            UnifiedThread.lead_id == lead.id,
-        )
-    ).all()
-    thread_ids = [t.id for t in thread_rows if t.id is not None]
-    if thread_ids:
-        insight_rows = session.exec(
-            select(ThreadInsight).where(
-                ThreadInsight.tenant_id == auth.tenant.id,
-                ThreadInsight.thread_id.in_(thread_ids),
-            )
-        ).all()
-        for row in insight_rows:
-            session.delete(row)
-
-    for row in unified_messages:
-        session.delete(row)
-    for row in thread_rows:
-        session.delete(row)
-
-    # Legacy conversation cleanup.
-    legacy_threads = session.exec(
-        select(ConversationThread).where(
-            ConversationThread.tenant_id == auth.tenant.id,
-            ConversationThread.lead_id == lead.id,
-        )
-    ).all()
-    legacy_thread_ids = [t.id for t in legacy_threads if t.id is not None]
-    if legacy_thread_ids:
-        legacy_messages = session.exec(
-            select(ChatMessageNew).where(
-                ChatMessageNew.tenant_id == auth.tenant.id,
-                ChatMessageNew.thread_id.in_(legacy_thread_ids),
-            )
-        ).all()
-        for row in legacy_messages:
-            session.delete(row)
-    for row in legacy_threads:
-        session.delete(row)
-
-    # Other lead-linked rows.
-    policy_rows = session.exec(
-        select(PolicyDecision).where(
-            PolicyDecision.tenant_id == auth.tenant.id,
-            PolicyDecision.lead_id == lead.id,
-        )
-    ).all()
-    for row in policy_rows:
-        session.delete(row)
-
-    memory_row = session.exec(
-        select(LeadMemory).where(
-            LeadMemory.tenant_id == auth.tenant.id,
-            LeadMemory.lead_id == lead.id,
-        )
-    ).first()
-    if memory_row:
-        session.delete(memory_row)
-
-    calendar_rows = session.exec(
-        select(CalendarEvent).where(
-            CalendarEvent.tenant_id == auth.tenant.id,
-            CalendarEvent.lead_id == lead.id,
-        )
-    ).all()
-    for row in calendar_rows:
-        session.delete(row)
-
-    session.delete(lead)
-    session.commit()
+    delete_lead_and_children(session, auth.tenant.id, lead)
     return {"status": "deleted", "lead_id": lead_id}
 
 
@@ -414,19 +319,7 @@ def set_lead_mode(
     if not lead or lead.tenant_id != auth.tenant.id or lead.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail="Lead not found")
 
-    mode = (payload.mode or "").strip().lower()
-    tags = [str(t) for t in (lead.tags or []) if str(t) not in {"ON_HOLD", "WORKING"}]
-    if mode == "on_hold":
-        tags.append("ON_HOLD")
-    elif mode == "working":
-        tags.append("WORKING")
-        if _stage_value(lead.stage) == "NEW":
-            lead.stage = "CONTACTED"
-        lead.last_followup_review_at = datetime.utcnow()
-    else:
-        raise HTTPException(status_code=400, detail="mode must be one of: on_hold, working")
-
-    lead.tags = tags
+    lead = set_lead_mode_value(lead, payload.mode)
     session.add(lead)
     session.commit()
     session.refresh(lead)

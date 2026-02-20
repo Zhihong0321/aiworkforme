@@ -19,6 +19,7 @@ from routers import (
     chat,
     debug,
     knowledge,
+    leads,
     mcp,
     messaging,
     platform,
@@ -39,6 +40,7 @@ def register_api_routers(app: FastAPI) -> None:
     app.include_router(mcp.router, dependencies=tenant_dependencies)
     app.include_router(chat.router, dependencies=tenant_dependencies)
     app.include_router(agents.router, dependencies=tenant_dependencies)
+    app.include_router(leads.router, dependencies=tenant_dependencies)
     app.include_router(knowledge.router, dependencies=tenant_dependencies)
     app.include_router(policy.router, dependencies=tenant_dependencies)
     app.include_router(playground.router, dependencies=tenant_dependencies)

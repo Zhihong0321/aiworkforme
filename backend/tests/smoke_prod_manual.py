@@ -102,7 +102,6 @@ def main() -> int:
     print(f"Target: {base_url}")
 
     results: list[CheckResult] = []
-    workspace_id: int | None = None
     lead_id: int | None = None
     mcp_id: int | None = None
     token: str | None = None
@@ -126,7 +125,7 @@ def main() -> int:
         ("/api/v1/", 200),
         ("/api/v1/health", 200),
         ("/api/v1/ready", 200),
-        ("/api/v1/workspaces/", 200),
+        ("/api/v1/leads/", 200),
         ("/api/v1/agents/", 200),
         ("/api/v1/mcp/servers", 200),
         ("/api/v1/analytics/summary?window_hours=24", 200),
@@ -141,35 +140,23 @@ def main() -> int:
     code, body = _request(
         "POST",
         base_url,
-        "/api/v1/workspaces/",
+        "/api/v1/leads/",
         token=token,
-        json_body={"name": f"ProdTest-WS-{run_id}"},
+        json_body={"external_id": f"+1555{run_id[:4]}{run_id[4:]}"},
     )
-    _check(results, "POST /api/v1/workspaces/", code, 200)
+    _check(results, "POST /api/v1/leads/", code, 200)
     if code == 200 and isinstance(body, dict):
-        workspace_id = int(body.get("id") or 0) or None
+        lead_id = int(body.get("id") or 0) or None
 
-    if workspace_id is not None:
-        code, body = _request(
-            "POST",
-            base_url,
-            f"/api/v1/workspaces/{workspace_id}/leads",
-            token=token,
-            json_body={"external_id": f"+1555{run_id[:4]}{run_id[4:]}"},
-        )
-        _check(results, f"POST /api/v1/workspaces/{workspace_id}/leads", code, 200)
-        if code == 200 and isinstance(body, dict):
-            lead_id = int(body.get("id") or 0) or None
-
-    if workspace_id is not None and lead_id is not None:
+    if lead_id is not None:
         code, _ = _request(
             "POST",
             base_url,
-            f"/api/v1/workspaces/{workspace_id}/leads/{lead_id}/mode",
+            f"/api/v1/leads/{lead_id}/mode",
             token=token,
             json_body={"mode": "working"},
         )
-        _check(results, f"POST /api/v1/workspaces/{workspace_id}/leads/{lead_id}/mode", code, 200)
+        _check(results, f"POST /api/v1/leads/{lead_id}/mode", code, 200)
 
     code, _ = _request(
         "POST",
@@ -199,14 +186,14 @@ def main() -> int:
         mcp_id = int(body.get("id") or 0) or None
 
     # 4) Cleanup
-    if workspace_id is not None and lead_id is not None:
+    if lead_id is not None:
         code, _ = _request(
             "DELETE",
             base_url,
-            f"/api/v1/workspaces/{workspace_id}/leads/{lead_id}",
+            f"/api/v1/leads/{lead_id}",
             token=token,
         )
-        _check(results, f"DELETE /api/v1/workspaces/{workspace_id}/leads/{lead_id}", code, 200)
+        _check(results, f"DELETE /api/v1/leads/{lead_id}", code, 200)
 
     if mcp_id is not None:
         code, _ = _request(
@@ -227,8 +214,6 @@ def main() -> int:
     print(f"- Total checks: {len(results)}")
     print(f"- Passed: {passed}")
     print(f"- Failed: {failed}")
-    if workspace_id is not None:
-        print(f"- Created workspace_id: {workspace_id} (no workspace delete endpoint; may remain)")
     if lead_id is not None:
         print(f"- Created lead_id: {lead_id}")
     if mcp_id is not None:
