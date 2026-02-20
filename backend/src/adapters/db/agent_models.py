@@ -14,8 +14,15 @@ class Agent(SQLModel, table=True):
     tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
     name: str
     system_prompt: str
-    # model and reasoning_enabled removed — LLM provider is platform-admin controlled via env vars
+    # Legacy columns kept for production schema compatibility.
+    # Runtime routing remains platform-admin controlled elsewhere.
+    model: str = Field(default="glm-4.7-flash")
+    reasoning_enabled: bool = Field(default=True)
     created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column_kwargs={"onupdate": datetime.utcnow},
+    )
     
     chat_sessions: List["ChatSession"] = Relationship(
         back_populates="agent",
