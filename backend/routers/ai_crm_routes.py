@@ -27,10 +27,12 @@ from .ai_crm_helpers import (
     upsert_thread_state,
     validate_workspace,
 )
-from .ai_crm_runtime import scan_workspace_threads, trigger_due_followups
+from .ai_crm_runtime import fast_forward_followups, scan_workspace_threads, trigger_due_followups
 from .ai_crm_schemas import (
     AICRMControlResponse,
     AICRMControlUpdateRequest,
+    AICRMFastForwardRequest,
+    AICRMFastForwardResponse,
     AICRMScanRequest,
     AICRMScanResponse,
     AICRMThreadRow,
@@ -177,4 +179,27 @@ async def trigger_ai_crm_due_followups(
         router=llm_router,
         tenant_id=auth.tenant.id,
         workspace_id=workspace_id,
+    )
+
+
+@router.post("/{workspace_id}/ai-crm/fast-forward", response_model=AICRMFastForwardResponse)
+def fast_forward_ai_crm_followups(
+    workspace_id: int,
+    payload: AICRMFastForwardRequest,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    validate_workspace(session, auth.tenant.id, workspace_id)
+    target_followup_at, updated_states = fast_forward_followups(
+        session=session,
+        tenant_id=auth.tenant.id,
+        workspace_id=workspace_id,
+        seconds=payload.seconds,
+        include_overdue=bool(payload.include_overdue),
+    )
+    return AICRMFastForwardResponse(
+        workspace_id=workspace_id,
+        seconds=max(1, min(120, int(payload.seconds or 5))),
+        target_followup_at=target_followup_at,
+        updated_states=updated_states,
     )

@@ -70,3 +70,15 @@ class AICRMTriggerResponse(SQLModel):
     triggered: int
     skipped: int
     errors: List[str]
+
+
+class AICRMFastForwardRequest(SQLModel):
+    seconds: int = 5
+    include_overdue: bool = True
+
+
+class AICRMFastForwardResponse(SQLModel):
+    workspace_id: int
+    seconds: int
+    target_followup_at: datetime
+    updated_states: int

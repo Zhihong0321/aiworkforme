@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { store } from '../store'
 import { request } from '../services/api'
 import TuiBadge from '../components/ui/TuiBadge.vue'
@@ -27,14 +27,20 @@ const simLeadId = ref('')
 const simText = ref('Hi, I want to know more about your service.')
 const simLoading = ref(false)
 const simResult = ref('')
-const importLoading = ref(false)
-const importDialogOpen = ref(false)
-const importChatLimit = ref('300')
-const importMessageLimit = ref('100')
-const importIncludeGroups = ref(false)
-const importSeedPhone = ref('')
-const importSeedText = ref('Hi, this is a test message to initialize chat import.')
-const importSendSeedMessage = ref(true)
+const csvFile = ref(null)
+const csvImportLoading = ref(false)
+const followupTestLoading = ref(false)
+const followupCountdown = ref(0)
+const followupTriggering = ref(false)
+let followupCountdownTimer = null
+
+const clearFollowupCountdown = () => {
+  if (followupCountdownTimer) {
+    clearInterval(followupCountdownTimer)
+    followupCountdownTimer = null
+  }
+  followupCountdown.value = 0
+}
 
 const fetchLeads = async () => {
   if (!store.activeWorkspaceId) {
@@ -233,45 +239,44 @@ const simulateInbound = async () => {
   }
 }
 
-const importWhatsAppConversations = async () => {
+const onCsvFileSelected = (event) => {
+  const files = event?.target?.files
+  csvFile.value = files && files.length ? files[0] : null
+}
+
+const importLeadsFromCsv = async () => {
   actionError.value = ''
   actionMessage.value = ''
   if (!store.activeWorkspaceId) {
     actionError.value = 'No active workspace selected.'
     return
   }
+  if (!csvFile.value) {
+    actionError.value = 'Please choose a CSV file first.'
+    return
+  }
 
-  importLoading.value = true
+  csvImportLoading.value = true
   try {
-    const chatLimit = Math.max(1, Math.min(500, Number(importChatLimit.value || 300)))
-    const messageLimit = Math.max(1, Math.min(500, Number(importMessageLimit.value || 100)))
-    const seedPhone = String(importSeedPhone.value || '').trim()
-    if (importSendSeedMessage.value && !seedPhone) {
-      actionError.value = 'Please provide a WhatsApp contact number for the test message.'
-      importLoading.value = false
-      return
-    }
-    const result = await request(`/messaging/workspaces/${store.activeWorkspaceId}/import-whatsapp-conversations`, {
+    const formData = new FormData()
+    formData.append('file', csvFile.value)
+    formData.append('has_header', 'true')
+
+    const result = await request(`/workspaces/${store.activeWorkspaceId}/leads/import-csv`, {
       method: 'POST',
-      body: JSON.stringify({
-        chat_limit: chatLimit,
-        message_limit_per_chat: messageLimit,
-        include_group_chats: !!importIncludeGroups.value,
-        seed_phone: importSendSeedMessage.value ? seedPhone : null,
-        seed_text: importSendSeedMessage.value ? String(importSeedText.value || '').trim() : null
-      })
+      body: formData
     })
-    actionMessage.value = `Imported ${result.messages_created} messages from ${result.chats_imported}/${result.chats_scanned} chats. Leads created: ${result.leads_created}, names updated: ${result.lead_names_updated}.`
+    actionMessage.value = `CSV imported: created ${result.leads_created}, duplicates ${result.skipped_duplicates}, invalid ${result.skipped_invalid}.`
     if (Array.isArray(result.errors) && result.errors.length > 0) {
       actionError.value = result.errors.join(' | ')
     }
-    importDialogOpen.value = false
+    csvFile.value = null
     await fetchLeads()
     await refreshOperationalChecks()
   } catch (e) {
-    actionError.value = e.message || 'Failed to import WhatsApp conversations'
+    actionError.value = e.message || 'CSV import failed'
   } finally {
-    importLoading.value = false
+    csvImportLoading.value = false
   }
 }
 
@@ -286,10 +291,68 @@ const startAllLeads = async () => {
   }
 }
 
-const openImportDialog = () => {
+const triggerDueFollowupsNow = async () => {
+  if (!store.activeWorkspaceId) {
+    throw new Error('No active workspace selected.')
+  }
+  followupTriggering.value = true
+  try {
+    const result = await request(`/workspaces/${store.activeWorkspaceId}/ai-crm/trigger-due`, {
+      method: 'POST'
+    })
+    actionMessage.value = `Follow-up trigger finished: sent ${result.triggered}, skipped ${result.skipped}.`
+    if (Array.isArray(result.errors) && result.errors.length > 0) {
+      actionError.value = result.errors.join(' | ')
+    }
+    await fetchLeads()
+    await refreshOperationalChecks()
+  } finally {
+    followupTriggering.value = false
+  }
+}
+
+const processAllFollowupsNow = async () => {
   actionError.value = ''
   actionMessage.value = ''
-  importDialogOpen.value = true
+  clearFollowupCountdown()
+  if (!store.activeWorkspaceId) {
+    actionError.value = 'No active workspace selected.'
+    return
+  }
+
+  followupTestLoading.value = true
+  try {
+    const workspaceId = store.activeWorkspaceId
+    const scanResult = await request(`/workspaces/${workspaceId}/ai-crm/scan`, {
+      method: 'POST',
+      body: JSON.stringify({ force_all: true })
+    })
+
+    const fastForward = await request(`/workspaces/${workspaceId}/ai-crm/fast-forward`, {
+      method: 'POST',
+      body: JSON.stringify({ seconds: 5, include_overdue: true })
+    })
+    actionMessage.value = `AI CRM forced to test mode: scanned ${scanResult.scanned_threads}, pending follow-ups moved to ${fastForward.seconds}s (${fastForward.updated_states} thread states).`
+
+    followupCountdown.value = Number(fastForward.seconds || 5)
+    followupCountdownTimer = setInterval(async () => {
+      followupCountdown.value = Math.max(0, followupCountdown.value - 1)
+      if (followupCountdown.value > 0) {
+        return
+      }
+      clearFollowupCountdown()
+      try {
+        await triggerDueFollowupsNow()
+      } catch (e) {
+        actionError.value = e.message || 'Failed to trigger due follow-ups'
+      }
+    }, 1000)
+  } catch (e) {
+    clearFollowupCountdown()
+    actionError.value = e.message || 'Failed to process follow-ups now'
+  } finally {
+    followupTestLoading.value = false
+  }
 }
 
 onMounted(async () => {
@@ -297,8 +360,12 @@ onMounted(async () => {
   await refreshOperationalChecks()
 })
 watch(() => store.activeWorkspaceId, async () => {
+  clearFollowupCountdown()
   await fetchLeads()
   await refreshOperationalChecks()
+})
+onBeforeUnmount(() => {
+  clearFollowupCountdown()
 })
 </script>
 
@@ -313,10 +380,21 @@ watch(() => store.activeWorkspaceId, async () => {
         <p class="text-slate-500 text-sm">You have {{ leads.length }} potential conversations ready for your teammate to handle.</p>
       </div>
       <div class="flex gap-3">
-          <TuiButton variant="outline" size="lg" class="!rounded-2xl border-slate-200" :loading="importLoading" @click="openImportDialog">Import WhatsApp Conversations</TuiButton>
+          <TuiButton
+            variant="outline"
+            size="lg"
+            class="!rounded-2xl border-amber-300 text-amber-700 hover:!bg-amber-50"
+            :loading="followupTestLoading || followupTriggering"
+            @click="processAllFollowupsNow"
+          >
+            Process All Follow-up Now
+          </TuiButton>
           <TuiButton size="lg" class="!rounded-2xl bg-indigo-600 shadow-xl shadow-indigo-600/20 px-8" @click="startAllLeads">Send Agent to Work</TuiButton>
       </div>
     </header>
+    <p v-if="followupCountdown > 0" class="mb-4 text-xs font-black uppercase tracking-wider text-amber-700">
+      Follow-up test countdown: {{ followupCountdown }}s
+    </p>
 
     <div class="mb-8 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
       <div class="mb-4">
@@ -328,6 +406,14 @@ watch(() => store.activeWorkspaceId, async () => {
         <TuiInput v-model="newLeadExternalId" label="Phone / External ID" placeholder="60123456789" />
         <div class="flex items-end">
           <TuiButton class="w-full" :loading="isCreating" @click="createLead">Add Lead</TuiButton>
+        </div>
+      </div>
+      <div class="mt-5 border-t border-slate-100 pt-5">
+        <h3 class="text-sm font-black text-slate-900 tracking-tight">Import Leads From CSV</h3>
+        <p class="text-xs text-slate-500 mb-3">Use header columns: <code>external_id</code> (or <code>phone</code>) and optional <code>name</code>.</p>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <input type="file" accept=".csv,text/csv" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm md:col-span-2" @change="onCsvFileSelected" />
+          <TuiButton class="w-full" :loading="csvImportLoading" @click="importLeadsFromCsv">Import CSV</TuiButton>
         </div>
       </div>
       <p v-if="createError" class="mt-3 text-xs font-semibold text-red-600">{{ createError }}</p>
@@ -403,7 +489,6 @@ watch(() => store.activeWorkspaceId, async () => {
       </div>
       <h3 class="text-slate-900 font-bold mb-2">Your contact list is empty</h3>
       <p class="text-slate-500 text-sm mb-8 max-w-sm mx-auto">Add some contacts to give your AI teammate someone to talk to.</p>
-      <TuiButton variant="outline" class="!rounded-xl" :loading="importLoading" @click="openImportDialog">Import WhatsApp Conversations</TuiButton>
     </div>
 
     <div v-else class="bg-white border border-slate-200 rounded-[2rem] overflow-hidden shadow-xl shadow-slate-200/50">
@@ -490,37 +575,5 @@ watch(() => store.activeWorkspaceId, async () => {
       </div>
     </div>
 
-    <div v-if="importDialogOpen" class="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-      <div class="w-full max-w-lg rounded-3xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
-        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <div>
-            <h3 class="text-lg font-black text-slate-900 tracking-tight">Import WhatsApp Conversations</h3>
-            <p class="text-xs text-slate-500">Choose how much history to pull from Baileys into this workspace.</p>
-          </div>
-          <TuiButton variant="outline" size="sm" @click="importDialogOpen = false">Close</TuiButton>
-        </div>
-        <div class="p-6 space-y-4 bg-slate-50">
-          <TuiInput v-model="importChatLimit" label="Max Chats" placeholder="300" />
-          <TuiInput v-model="importMessageLimit" label="Max Messages Per Chat" placeholder="100" />
-          <label class="flex items-center gap-3 text-sm text-slate-700">
-            <input v-model="importSendSeedMessage" type="checkbox" class="rounded border-slate-300" />
-            Send test message first (recommended when no chats yet)
-          </label>
-          <TuiInput v-model="importSeedPhone" label="WhatsApp Contact For Test Message" placeholder="60123456789" />
-          <TuiInput v-model="importSeedText" label="Test Message Text" placeholder="Hi, this is a test message to initialize chat import." />
-          <label class="flex items-center gap-3 text-sm text-slate-700">
-            <input v-model="importIncludeGroups" type="checkbox" class="rounded border-slate-300" />
-            Include group chats
-          </label>
-          <p class="text-xs text-slate-500">
-            Tips: higher limits import more history but take longer. Existing messages are deduplicated.
-          </p>
-          <div class="flex items-center justify-end gap-3 pt-2">
-            <TuiButton variant="outline" @click="importDialogOpen = false">Cancel</TuiButton>
-            <TuiButton :loading="importLoading" @click="importWhatsAppConversations">Start Import</TuiButton>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </template>

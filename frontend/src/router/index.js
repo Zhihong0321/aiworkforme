@@ -14,6 +14,7 @@ import Login from '../views/Login.vue'
 import PlatformLogin from '../views/PlatformLogin.vue'
 import MessageHistory from '../views/MessageHistory.vue'
 import ModelBenchmark from '../views/ModelBenchmark.vue'
+import AICrmControl from '../views/AICrmControl.vue'
 
 const routes = [
   {
@@ -108,6 +109,12 @@ const routes = [
     path: '/calendar',
     name: 'Calendar',
     component: Calendar,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/ai-crm',
+    name: 'AI Control CRM',
+    component: AICrmControl,
     meta: { requiresAuth: true }
   }
 ]

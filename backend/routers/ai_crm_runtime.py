@@ -41,6 +41,50 @@ from .ai_crm_schemas import AICRMScanResponse, AICRMTriggerResponse
 logger = logging.getLogger(__name__)
 
 
+def fast_forward_followups(
+    session: Session,
+    tenant_id: int,
+    workspace_id: int,
+    seconds: int = 5,
+    include_overdue: bool = True,
+):
+    seconds = max(1, min(120, int(seconds or 5)))
+    now = datetime.utcnow()
+    target_followup_at = now + timedelta(seconds=seconds)
+
+    filters = [
+        AICRMThreadState.tenant_id == tenant_id,
+        AICRMThreadState.workspace_id == workspace_id,
+        AICRMThreadState.next_followup_at.is_not(None),
+        AICRMThreadState.followup_strategy != AICRMFollowupStrategy.STOP,
+    ]
+    if not include_overdue:
+        filters.append(AICRMThreadState.next_followup_at > now)
+
+    states = session.exec(select(AICRMThreadState).where(*filters)).all()
+    updated_states = 0
+
+    for state in states:
+        state.next_followup_at = target_followup_at
+        trace = dict(state.reason_trace or {})
+        trace["test_fast_forward_applied_at"] = now.isoformat()
+        trace["test_fast_forward_seconds"] = seconds
+        trace["test_fast_forward_target_followup_at"] = target_followup_at.isoformat()
+        state.reason_trace = trace
+        state.updated_at = now
+        session.add(state)
+
+        lead = session.get(Lead, state.lead_id)
+        if lead:
+            lead.next_followup_at = target_followup_at
+            session.add(lead)
+
+        updated_states += 1
+
+    session.commit()
+    return target_followup_at, updated_states
+
+
 async def scan_workspace_threads(
     session: Session,
     router: LLMRouter,

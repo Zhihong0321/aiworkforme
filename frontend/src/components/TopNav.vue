@@ -34,6 +34,7 @@ const navItems = computed(() => {
     { label: 'My AI Agent', path: '/agents' },
     { label: 'Playground', path: '/playground' },
     { label: 'Contact Book', path: '/leads' },
+    { label: 'AI Control CRM', path: '/ai-crm' },
     { label: 'Catalog', path: '/catalog' },
     { label: 'Knowledge', path: '/knowledge' },
     { label: 'Calendar', path: '/calendar' },
