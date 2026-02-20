@@ -4,6 +4,7 @@ from typing import List, Optional
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
 import json
+from pydantic import BaseModel
 
 from src.infra.database import get_session
 from src.adapters.api.dependencies import require_tenant_access, AuthContext, get_llm_router
@@ -15,6 +16,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/agents", tags=["Agent Management"])
+
+
+class AgentCreate(BaseModel):
+    name: Optional[str] = None
+    system_prompt: Optional[str] = None
 
 @router.get("/", response_model=List[AgentRead])
 def list_agents(
@@ -53,22 +59,39 @@ def list_agents(
 
 @router.post("/", response_model=AgentRead)
 def create_agent(
-    agent_in: AgentUpdate, # Use AgentUpdate or a dedicated AgentCreate model
+    agent_in: AgentCreate,
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access)
 ):
+    name = (agent_in.name or "").strip() or "New Agent"
+    system_prompt = (agent_in.system_prompt or "").strip()
+
     new_agent = Agent(
-        name=agent_in.name if agent_in.name else "New Agent",
-        system_prompt=agent_in.system_prompt if agent_in.system_prompt else "",
+        name=name,
+        system_prompt=system_prompt,
         tenant_id=auth.tenant.id,
         created_at=datetime.utcnow()
     )
     
     session.add(new_agent)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="Invalid agent payload") from exc
+    except Exception:
+        session.rollback()
+        logger.exception("CREATE AGENT ERROR")
+        raise HTTPException(status_code=500, detail="Failed to create agent")
     session.refresh(new_agent)
     
-    return AgentRead(**new_agent.model_dump())
+    return AgentRead(
+        id=new_agent.id,
+        name=new_agent.name,
+        system_prompt=new_agent.system_prompt,
+        linked_mcp_ids=[],
+        linked_mcp_count=0,
+    )
 
 @router.put("/{agent_id}", response_model=AgentRead)
 def update_agent(

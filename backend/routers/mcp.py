@@ -6,19 +6,43 @@ import os
 import hashlib
 import json
 import logging
+from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 
 from src.infra.database import get_session
 from src.adapters.db.mcp_models import MCPServer
-from src.adapters.api.dependencies import get_mcp_manager
+from src.adapters.api.dependencies import get_mcp_manager, AuthContext, require_tenant_access
 from src.adapters.mcp.manager import MCPManager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/mcp", tags=["MCP Management"])
 
+
+class MCPServerCreate(BaseModel):
+    name: str
+    script: str
+    command: str = "python"
+    args: str = "[]"
+    cwd: str = "/app"
+    env_vars: str = "{}"
+
+
+def _get_tenant_server_or_404(session: Session, server_id: int, tenant_id: int) -> MCPServer:
+    server = session.exec(
+        select(MCPServer).where(MCPServer.id == server_id, MCPServer.tenant_id == tenant_id)
+    ).first()
+    if not server:
+        raise HTTPException(status_code=404, detail="Server not found")
+    return server
+
 @router.get("/servers", response_model=List[MCPServer])
-async def list_mcp_servers(session: Session = Depends(get_session), mcp_manager: MCPManager = Depends(get_mcp_manager)):
-    servers = session.exec(select(MCPServer)).all()
+async def list_mcp_servers(
+    session: Session = Depends(get_session),
+    mcp_manager: MCPManager = Depends(get_mcp_manager),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    servers = session.exec(select(MCPServer).where(MCPServer.tenant_id == auth.tenant.id)).all()
     
     # Determine paths relative to this file's parent (backend/) to ensure compatibility
     # with different environments (Docker, Railway, Local).
@@ -49,28 +73,48 @@ async def list_mcp_servers(session: Session = Depends(get_session), mcp_manager:
     return servers
 
 @router.post("/servers", response_model=MCPServer)
-def create_mcp_server(server: MCPServer, session: Session = Depends(get_session)):
+def create_mcp_server(
+    server_in: MCPServerCreate,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
     # Validate env_vars and args are valid JSON
     try:
-        json.loads(server.env_vars)
+        json.loads(server_in.env_vars)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="env_vars must be a valid JSON string")
     
     try:
-        json.loads(server.args)
+        json.loads(server_in.args)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="args must be a valid JSON string")
 
+    server = MCPServer(
+        tenant_id=auth.tenant.id,
+        name=server_in.name,
+        script=server_in.script,
+        command=server_in.command,
+        args=server_in.args,
+        cwd=server_in.cwd,
+        env_vars=server_in.env_vars,
+    )
     session.add(server)
-    session.commit()
+    try:
+        session.commit()
+    except IntegrityError as exc:
+        session.rollback()
+        raise HTTPException(status_code=400, detail="Invalid MCP server payload") from exc
     session.refresh(server)
     return server
 
 @router.delete("/servers/{server_id}")
-async def delete_mcp_server(server_id: int, session: Session = Depends(get_session), mcp_manager: MCPManager = Depends(get_mcp_manager)):
-    server = session.get(MCPServer, server_id)
-    if not server:
-        raise HTTPException(status_code=404, detail="Server not found")
+async def delete_mcp_server(
+    server_id: int,
+    session: Session = Depends(get_session),
+    mcp_manager: MCPManager = Depends(get_mcp_manager),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    server = _get_tenant_server_or_404(session, server_id, auth.tenant.id)
     
     # Stop if running
     await mcp_manager.terminate_mcp(str(server_id))
@@ -80,10 +124,13 @@ async def delete_mcp_server(server_id: int, session: Session = Depends(get_sessi
     return {"ok": True}
 
 @router.post("/servers/{server_id}/start")
-async def start_mcp_server(server_id: int, session: Session = Depends(get_session), mcp_manager: MCPManager = Depends(get_mcp_manager)):
-    server = session.get(MCPServer, server_id)
-    if not server:
-        raise HTTPException(status_code=404, detail="Server not found")
+async def start_mcp_server(
+    server_id: int,
+    session: Session = Depends(get_session),
+    mcp_manager: MCPManager = Depends(get_mcp_manager),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    server = _get_tenant_server_or_404(session, server_id, auth.tenant.id)
 
     # Determine paths relative to this file's parent (backend/) to ensure compatibility
     # with different environments (Docker, Railway, Local).
@@ -138,17 +185,35 @@ async def start_mcp_server(server_id: int, session: Session = Depends(get_sessio
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/servers/{server_id}/stop")
-async def stop_mcp_server(server_id: int, mcp_manager: MCPManager = Depends(get_mcp_manager)):
+async def stop_mcp_server(
+    server_id: int,
+    session: Session = Depends(get_session),
+    mcp_manager: MCPManager = Depends(get_mcp_manager),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    _get_tenant_server_or_404(session, server_id, auth.tenant.id)
     await mcp_manager.terminate_mcp(str(server_id))
     return {"message": "Server stopped"}
 
 @router.get("/servers/{server_id}/status")
-async def mcp_server_status(server_id: int, mcp_manager: MCPManager = Depends(get_mcp_manager)):
+async def mcp_server_status(
+    server_id: int,
+    session: Session = Depends(get_session),
+    mcp_manager: MCPManager = Depends(get_mcp_manager),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    _get_tenant_server_or_404(session, server_id, auth.tenant.id)
     status = await mcp_manager.get_mcp_status(str(server_id))
     return status
 
 @router.get("/servers/{server_id}/tools")
-async def mcp_server_tools(server_id: int, mcp_manager: MCPManager = Depends(get_mcp_manager)):
+async def mcp_server_tools(
+    server_id: int,
+    session: Session = Depends(get_session),
+    mcp_manager: MCPManager = Depends(get_mcp_manager),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    _get_tenant_server_or_404(session, server_id, auth.tenant.id)
     try:
         tools = await mcp_manager.list_mcp_tools(str(server_id))
         return {"tools": [tool.model_dump() for tool in tools]}
@@ -156,7 +221,15 @@ async def mcp_server_tools(server_id: int, mcp_manager: MCPManager = Depends(get
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/servers/{server_id}/call/{tool_name}")
-async def call_mcp_server_tool(server_id: int, tool_name: str, tool_args: dict, mcp_manager: MCPManager = Depends(get_mcp_manager)):
+async def call_mcp_server_tool(
+    server_id: int,
+    tool_name: str,
+    tool_args: dict,
+    session: Session = Depends(get_session),
+    mcp_manager: MCPManager = Depends(get_mcp_manager),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    _get_tenant_server_or_404(session, server_id, auth.tenant.id)
     try:
         result = await mcp_manager.call_mcp_tool(str(server_id), tool_name, tool_args)
         return {"result": result}
