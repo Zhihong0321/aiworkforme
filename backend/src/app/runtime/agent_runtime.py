@@ -13,6 +13,7 @@ from src.domain.entities.enums import LeadStage
 from src.app.policy.evaluator import PolicyEvaluator
 from src.app.runtime.context_builder import ContextBuilder
 from src.app.runtime.memory_service import MemoryService
+from src.app.runtime.leads_service import get_or_create_default_workspace
 from src.ports.llm import LLMRouterPort
 
 logger = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ class ConversationAgentRuntime:
     async def run_turn(
         self,
         lead_id: int,
-        workspace_id: int,
+        workspace_id: Optional[int] = None,
         user_message: Optional[str] = None,
         agent_id_override: Optional[int] = None,
         bypass_safety: bool = False,
@@ -87,6 +88,22 @@ class ConversationAgentRuntime:
         from et_messages), skip fetching from ChatMessageNew and use this history
         directly. Format: [{"role": "user"|"assistant", "content": "..."}]
         """
+        # Resolve workspace lazily when callers do not provide one.
+        Lead, Workspace, _, _, _ = self._crm_models()
+        lead = self.session.get(Lead, lead_id)
+        if not lead:
+            return {"status": "blocked", "reason": "LEAD_NOT_FOUND"}
+        if workspace_id is None:
+            workspace_id = lead.workspace_id
+        if workspace_id is None:
+            if lead.tenant_id is None:
+                return {"status": "blocked", "reason": "LEAD_TENANT_NOT_FOUND"}
+            workspace = get_or_create_default_workspace(self.session, int(lead.tenant_id))
+            lead.workspace_id = workspace.id
+            self.session.add(lead)
+            self.session.commit()
+            workspace_id = workspace.id
+
         # 1. PRE-SEND POLICY CHECK
         policy_decision = self.policy.evaluate_outbound(lead_id, workspace_id, bypass_safety=bypass_safety)
         self.policy.record_decision(policy_decision)
@@ -121,7 +138,6 @@ class ConversationAgentRuntime:
 
         # 4. EXECUTE LLM CALL — let exceptions propagate so callers see real errors
         model_override = None
-        _, Workspace, _, _, _ = self._crm_models()
         workspace = self.session.get(Workspace, workspace_id)
         candidate_agent_id = agent_id_override or (workspace.agent_id if workspace else None)
         if candidate_agent_id:

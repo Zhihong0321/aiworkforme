@@ -10,6 +10,7 @@ from sqlmodel import Session, select, or_
 
 from src.domain.entities.enums import LeadStage, StrategyStatus, FollowUpPreset
 from src.app.runtime.agent_runtime import ConversationAgentRuntime
+from src.app.runtime.leads_service import get_or_create_default_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,14 @@ class CRMAgent:
         
         for lead in leads:
             logger.info(f"Dispatching due follow-up for lead {lead.id}")
+            if lead.workspace_id is None:
+                if lead.tenant_id is None:
+                    logger.warning("Skipping lead %s: missing tenant_id", lead.id)
+                    continue
+                workspace = get_or_create_default_workspace(self.session, int(lead.tenant_id))
+                lead.workspace_id = workspace.id
+                self.session.add(lead)
+                self.session.commit()
             # Execute turn
             result = await self.runtime.run_turn(lead.id, lead.workspace_id)
             
@@ -83,6 +92,14 @@ class CRMAgent:
         Calculates next_followup_at based on Workspace strategy presets.
         """
         _, _, StrategyVersion = self._crm_models()
+        if lead.workspace_id is None:
+            if lead.tenant_id is None:
+                lead.next_followup_at = datetime.utcnow() + timedelta(hours=48)
+                return
+            workspace = get_or_create_default_workspace(self.session, int(lead.tenant_id))
+            lead.workspace_id = workspace.id
+            self.session.add(lead)
+            self.session.commit()
         strategy = self.session.exec(
             select(StrategyVersion)
             .where(StrategyVersion.workspace_id == lead.workspace_id)

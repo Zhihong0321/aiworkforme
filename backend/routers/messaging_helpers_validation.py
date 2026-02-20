@@ -75,7 +75,7 @@ def resolve_agent_for_lead(session: Session, tenant_id: int, lead_id: int) -> in
 
     raise HTTPException(
         status_code=400,
-        detail="No AI agent is configured for tenant. Assign a workspace agent first.",
+        detail="No AI agent is configured for tenant. Configure at least one agent first.",
     )
 
 

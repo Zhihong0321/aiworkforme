@@ -11,6 +11,7 @@ from sqlalchemy import text
 from sqlmodel import Session, select
 
 from src.app.runtime.agent_runtime import ConversationAgentRuntime
+from src.app.runtime.leads_service import get_or_create_default_workspace
 from src.app.inbound_worker_notify import (
     open_inbound_listen_connection,
     wait_for_inbound_notify,
@@ -206,9 +207,9 @@ async def _process_one_inbound(session: Session, message: Any):
         return
 
     lead = session.get(Lead, message.lead_id)
-    if not lead or not lead.workspace_id:
+    if not lead:
         logger.error(
-            "Cannot process inbound message_id=%s: lead %s has no workspace_id",
+            "Cannot process inbound message_id=%s: lead %s not found",
             message.id, message.lead_id,
         )
         message.delivery_status = "inbound_error"
@@ -216,6 +217,22 @@ async def _process_one_inbound(session: Session, message: Any):
         session.add(message)
         session.commit()
         return
+    if not lead.workspace_id:
+        if lead.tenant_id is None:
+            logger.error(
+                "Cannot process inbound message_id=%s: lead %s has no tenant_id",
+                message.id, message.lead_id,
+            )
+            message.delivery_status = "inbound_error"
+            message.updated_at = datetime.now(timezone.utc)
+            session.add(message)
+            session.commit()
+            return
+        workspace = get_or_create_default_workspace(session, int(lead.tenant_id))
+        lead.workspace_id = workspace.id
+        session.add(lead)
+        session.commit()
+        session.refresh(lead)
 
     history = _build_thread_history(session, message)
 

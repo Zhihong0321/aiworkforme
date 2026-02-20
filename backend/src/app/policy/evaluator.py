@@ -10,6 +10,7 @@ from typing import Optional, Tuple, Dict, Any
 from sqlmodel import Session, select, func
 
 from src.domain.entities.enums import LeadStage, LeadTag
+from src.app.runtime.leads_service import get_or_create_default_workspace
 
 logger = logging.getLogger(__name__)
 
@@ -33,19 +34,26 @@ class PolicyEvaluator:
             models.ConversationThread,
         )
 
-    def evaluate_outbound(self, lead_id: int, workspace_id: int, bypass_safety: bool = False) -> Any:
+    def evaluate_outbound(self, lead_id: int, workspace_id: int | None, bypass_safety: bool = False) -> Any:
         """
         Main entry point for evaluating if an outbound message can be sent to a lead.
         Returns a PolicyDecision record (unsaved).
         """
         Lead, Workspace, PolicyDecision, _, _ = self._crm_models()
         lead = self.session.get(Lead, lead_id)
-        workspace = self.session.get(Workspace, workspace_id)
+        workspace = self.session.get(Workspace, workspace_id) if workspace_id is not None else None
+
+        if lead and workspace is None and lead.tenant_id is not None:
+            workspace = get_or_create_default_workspace(self.session, int(lead.tenant_id))
+            if lead.workspace_id is None:
+                lead.workspace_id = workspace.id
+                self.session.add(lead)
+                self.session.commit()
 
         if not lead or not workspace:
             # Fallback if entities missing
             return PolicyDecision(
-                workspace_id=workspace_id,
+                workspace_id=workspace_id or 0,
                 lead_id=lead_id,
                 allow_send=False,
                 reason_code="ENTITY_NOT_FOUND",
@@ -102,7 +110,7 @@ class PolicyEvaluator:
             rule_trace=trace
         )
 
-    def _deny(self, lead_id: int, workspace_id: int, code: str, trace: Dict[str, Any]) -> Any:
+    def _deny(self, lead_id: int, workspace_id: int | None, code: str, trace: Dict[str, Any]) -> Any:
         # Legacy helper, update to use _create_decision if possible or fetch tenant
         Lead, Workspace, _, _, _ = self._crm_models()
         lead = self.session.get(Lead, lead_id)
@@ -162,11 +170,17 @@ class PolicyEvaluator:
             logger.warning("_check_stop_rule skipped (legacy table unavailable): %s", exc)
             return False
 
-    def validate_risk(self, lead_id: int, workspace_id: int, content: str, confidence_score: float) -> Any:
+    def validate_risk(self, lead_id: int, workspace_id: int | None, content: str, confidence_score: float) -> Any:
         """Post-generation risk check."""
         Lead, Workspace, _, _, _ = self._crm_models()
         lead = self.session.get(Lead, lead_id)
-        workspace = self.session.get(Workspace, workspace_id)
+        workspace = self.session.get(Workspace, workspace_id) if workspace_id is not None else None
+        if lead and workspace is None and lead.tenant_id is not None:
+            workspace = get_or_create_default_workspace(self.session, int(lead.tenant_id))
+            if lead.workspace_id is None:
+                lead.workspace_id = workspace.id
+                self.session.add(lead)
+                self.session.commit()
         
         sensitive_keywords = ["scam", "spam", "unsolicited", "guaranteed returns", "exclusive offer", "pay now", "bank account", "password"]
         matched = [w for w in sensitive_keywords if w in content.lower()]
@@ -193,6 +207,10 @@ class PolicyEvaluator:
 
     def record_decision(self, decision: Any):
         """Persist the policy decision to the database."""
-        self.session.add(decision)
-        self.session.commit()
-        self.session.refresh(decision)
+        try:
+            self.session.add(decision)
+            self.session.commit()
+            self.session.refresh(decision)
+        except Exception as exc:
+            self.session.rollback()
+            logger.warning("Skipping policy decision persistence due to DB error: %s", exc)
