@@ -52,5 +52,6 @@ export async function request(path, options = {}) {
         throw new Error(errorDetail)
     }
 
-    return response.json()
+    const text = await response.text();
+    return text ? JSON.parse(text) : null;
 }
