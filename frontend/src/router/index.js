@@ -15,6 +15,7 @@ import PlatformLogin from '../views/PlatformLogin.vue'
 import MessageHistory from '../views/MessageHistory.vue'
 import ModelBenchmark from '../views/ModelBenchmark.vue'
 import AICrmControl from '../views/AICrmControl.vue'
+import Home from '../views/Home.vue'
 
 const routes = [
   {
@@ -31,7 +32,13 @@ const routes = [
   },
   {
     path: '/',
-    redirect: '/playground'
+    redirect: '/home'
+  },
+  {
+    path: '/home',
+    name: 'Home',
+    component: Home,
+    meta: { requiresAuth: true }
   },
   {
     path: '/agents',

@@ -21,14 +21,14 @@ const props = defineProps({
 })
 
 const base =
-  'relative overflow-hidden inline-flex items-center justify-center gap-2 rounded-md border font-semibold uppercase tracking-wider transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[rgba(31,31,31,0.08)] active:translate-y-[1px] select-none'
+  'inline-flex items-center justify-center gap-2 rounded-md border font-semibold uppercase tracking-[0.12em] transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-[rgba(29,78,216,0.2)] active:translate-y-[1px] select-none'
 
 const variants = {
   primary:
-    'border-[#ff8200] bg-[#ff8200] text-white hover:bg-[#e87400] active:bg-[#d96b00]',
+    'border-[var(--accent)] bg-[var(--accent)] text-white hover:brightness-95',
   outline:
-    'border-[var(--border-strong)] bg-white text-[var(--text)] hover:bg-[var(--accent-soft)] active:bg-[var(--accent-soft)]',
-  ghost: 'border-transparent bg-transparent text-[var(--text)] hover:bg-[rgba(0,0,0,0.04)] active:bg-[rgba(0,0,0,0.06)]'
+    'border-[var(--border-strong)] bg-white text-[var(--text)] hover:bg-[var(--accent-soft)]',
+  ghost: 'border-transparent bg-transparent text-[var(--text)] hover:bg-[var(--accent-soft)]'
 }
 
 const sizes = {
@@ -61,27 +61,7 @@ const classes = computed(() => [
     </span>
   </button>
 </template>
-
 <style scoped>
-button {
-  position: relative;
-}
-
-button::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at var(--x, 50%) var(--y, 50%), rgba(15, 23, 42, 0.16), transparent 45%);
-  opacity: 0;
-  transform: scale(0);
-  transition: opacity 300ms ease, transform 300ms ease;
-}
-
-button:active::after {
-  opacity: 1;
-  transform: scale(1);
-}
-
 .dot-pulse {
   width: 6px;
   height: 6px;

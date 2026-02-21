@@ -1,69 +1,50 @@
-const API_BASE = '/api/v1/catalog';
+import { request } from './api'
 
 export const CatalogService = {
     async getCategories() {
-        const resp = await fetch(`${API_BASE}/categories`);
-        if (!resp.ok) throw new Error('Failed to fetch categories');
-        return await resp.json();
+        return request('/catalog/categories')
     },
 
     async createCategory(payload) {
-        const resp = await fetch(`${API_BASE}/categories`, {
+        return request('/catalog/categories', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
-        });
-        if (!resp.ok) throw new Error('Failed to create category');
-        return await resp.json();
+        })
     },
 
     async deleteCategory(categoryId) {
-        const resp = await fetch(`${API_BASE}/categories/${categoryId}`, {
+        return request(`/catalog/categories/${categoryId}`, {
             method: 'DELETE'
-        });
-        if (!resp.ok) throw new Error('Failed to delete category');
-        return await resp.json();
+        })
     },
 
     async getProducts(categoryId = null) {
-        let url = `${API_BASE}/products`;
-        if (categoryId) url += `?category_id=${categoryId}`;
-        const resp = await fetch(url);
-        if (!resp.ok) throw new Error('Failed to fetch products');
-        return await resp.json();
+        let path = '/catalog/products'
+        if (categoryId) path += `?category_id=${categoryId}`
+        return request(path)
     },
 
     async getProduct(productId) {
-        const resp = await fetch(`${API_BASE}/products/${productId}`);
-        if (!resp.ok) throw new Error('Failed to fetch product');
-        return await resp.json();
+        return request(`/catalog/products/${productId}`)
     },
 
     async createProduct(payload) {
-        const resp = await fetch(`${API_BASE}/products`, {
+        return request('/catalog/products', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
-        });
-        if (!resp.ok) throw new Error('Failed to create product');
-        return await resp.json();
+        })
     },
 
     async updateProduct(productId, payload) {
-        const resp = await fetch(`${API_BASE}/products/${productId}`, {
+        return request(`/catalog/products/${productId}`, {
             method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
-        });
-        if (!resp.ok) throw new Error('Failed to update product');
-        return await resp.json();
+        })
     },
 
     async deleteProduct(productId) {
-        const resp = await fetch(`${API_BASE}/products/${productId}`, {
+        return request(`/catalog/products/${productId}`, {
             method: 'DELETE'
-        });
-        if (!resp.ok) throw new Error('Failed to delete product');
-        return await resp.json();
+        })
     }
-};
+}

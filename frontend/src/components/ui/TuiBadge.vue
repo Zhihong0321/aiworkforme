@@ -14,11 +14,11 @@ const props = defineProps({
 
 const variants = {
   success:
-    'border-[#1f1f1f] bg-[#1f1f1f] text-white',
+    'border-emerald-200 bg-emerald-50 text-emerald-700',
   info:
     'border-[var(--border-strong)] bg-white text-[var(--text)]',
   warning:
-    'border-[var(--border-strong)] bg-[var(--accent-soft)] text-[var(--text)]',
+    'border-amber-200 bg-amber-50 text-amber-700',
   muted:
     'border-[var(--border)] bg-white text-[var(--muted)]',
   danger:

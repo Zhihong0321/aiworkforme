@@ -48,8 +48,7 @@ const handleLogin = async () => {
     localStorage.setItem('user_id', data.user_id)
     localStorage.setItem('is_platform_admin', 'false')
     
-    // Redirect to home or playground
-    router.push('/playground')
+    router.push('/home')
   } catch (e) {
     error.value = e.message
   } finally {

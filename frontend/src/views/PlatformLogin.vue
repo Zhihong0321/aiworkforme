@@ -43,7 +43,7 @@ const handleLogin = async () => {
     localStorage.removeItem('tenant_id')
     localStorage.setItem('user_id', data.user_id)
     localStorage.setItem('is_platform_admin', 'true')
-    router.push('/settings')
+    router.push('/home')
   } catch (e) {
     error.value = e.message
   } finally {
