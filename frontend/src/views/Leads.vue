@@ -370,29 +370,29 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="min-h-[calc(100vh-64px)] w-full bg-onyx font-inter text-slate-200 flex flex-col pb-20">
+  <div class="min-h-[calc(100vh-64px)] w-full bg-white font-inter text-slate-700 flex flex-col pb-20">
     
     <!-- Header -->
-    <div class="p-5 border-b border-slate-800/50 glass-panel-light rounded-b-[2rem] sticky top-0 z-30 mb-4">
+    <div class="p-5 border-b border-slate-200 bg-white border border-slate-200 shadow-sm rounded-b-[2rem] sticky top-0 z-30 mb-4">
       <div class="flex justify-between items-end">
         <div>
-          <h1 class="text-3xl font-semibold text-white tracking-tight mb-1">Contacts</h1>
+          <h1 class="text-3xl font-semibold text-slate-900 tracking-tight mb-1">Contacts</h1>
           <p class="text-sm text-purple-300 font-medium tracking-wide">
             {{ leads.length }} Leads Ready
           </p>
         </div>
-        <button class="h-12 w-12 rounded-full bg-aurora-gradient flex items-center justify-center text-white shadow-lg shadow-purple-500/30 active:scale-95 transition-all">
+        <button class="h-12 w-12 rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700 flex items-center justify-center text-slate-900 shadow-lg shadow-purple-500/30 active:scale-95 transition-all">
           <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
         </button>
       </div>
 
       <!-- Quick Actions -->
       <div class="flex gap-3 mt-5 overflow-x-auto pb-2 scrollbar-none [scrollbar-width:none]">
-        <button @click="startAllLeads" class="px-5 py-2.5 rounded-full text-sm font-semibold bg-aurora-gradient text-white shadow-lg shadow-purple-500/25 shrink-0 active:scale-95 transition-transform flex items-center gap-2">
+        <button @click="startAllLeads" class="px-5 py-2.5 rounded-full text-sm font-semibold bg-blue-600 text-white shadow-sm hover:bg-blue-700 shadow-lg shadow-purple-500/25 shrink-0 active:scale-95 transition-transform flex items-center gap-2">
            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
            Send Agent to Work
         </button>
-        <button @click="processAllFollowupsNow" :disabled="followupTestLoading || followupTriggering" class="px-5 py-2.5 rounded-full text-sm font-semibold glass-panel border border-amber-500/30 text-amber-300 hover:text-amber-200 shrink-0 active:scale-95 transition-transform">
+        <button @click="processAllFollowupsNow" :disabled="followupTestLoading || followupTriggering" class="px-5 py-2.5 rounded-full text-sm font-semibold bg-white border border-slate-200 shadow-sm border border-amber-500/30 text-amber-300 hover:text-amber-200 shrink-0 active:scale-95 transition-transform">
            Process Follow-ups
         </button>
       </div>
@@ -408,15 +408,15 @@ onBeforeUnmount(() => {
         <div class="w-2.5 h-2.5 rounded-full bg-purple-500 animate-bounce [animation-delay:0.2s]"></div>
         <div class="w-2.5 h-2.5 rounded-full bg-purple-500 animate-bounce [animation-delay:0.4s]"></div>
       </div>
-      <p class="text-xs text-slate-500 font-bold tracking-widest uppercase">Syncing Contacts</p>
+      <p class="text-xs text-slate-600 font-bold tracking-widest uppercase">Syncing Contacts</p>
     </div>
 
     <div v-else-if="leads.length === 0" class="flex-grow flex flex-col items-center justify-center p-10 text-center">
-      <div class="w-20 h-20 rounded-full glass-panel flex items-center justify-center mb-6 ring-1 ring-white/10">
+      <div class="w-20 h-20 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center mb-6 ring-1 ring-white/10">
         <svg class="w-10 h-10 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
       </div>
-      <h3 class="text-lg font-bold text-white mb-2">No Contacts Yet</h3>
-      <p class="text-sm text-slate-400">Add a contact to let your AI start chatting and capturing leads.</p>
+      <h3 class="text-lg font-bold text-slate-900 mb-2">No Contacts Yet</h3>
+      <p class="text-sm text-slate-600">Add a contact to let your AI start chatting and capturing leads.</p>
     </div>
 
     <!-- Contact Cards (Mobile Replacement for Table) -->
@@ -424,13 +424,13 @@ onBeforeUnmount(() => {
       <div 
         v-for="lead in leads" 
         :key="lead.id" 
-        class="glass-panel p-5 rounded-3xl relative overflow-hidden group border border-slate-700/50"
+        class="bg-white border border-slate-200 shadow-sm p-5 rounded-3xl relative overflow-hidden group border border-slate-200"
       >
         <!-- Top Row: Name & Status -->
         <div class="flex justify-between items-start mb-3">
           <div>
-            <h3 class="text-lg font-bold text-white leading-tight break-words">{{ lead.name || 'Unknown' }}</h3>
-            <p class="text-xs text-slate-400 font-medium mt-1 uppercase tracking-wider">{{ lead.external_id || 'No Number' }}</p>
+            <h3 class="text-lg font-bold text-slate-900 leading-tight break-words">{{ lead.name || 'Unknown' }}</h3>
+            <p class="text-xs text-slate-600 font-medium mt-1 uppercase tracking-wider">{{ lead.external_id || 'No Number' }}</p>
           </div>
           <span 
             class="px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg shrink-0 w-max"
@@ -441,7 +441,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- AI Summary Context (Mock/Placeholder styled nicely) -->
-        <div class="mb-4 text-sm text-slate-300 leading-relaxed max-w-full">
+        <div class="mb-4 text-sm text-slate-700 leading-relaxed max-w-full">
           <span class="text-purple-400 font-semibold mr-1">AI Context:</span>
           Interaction active. Current mode: {{ getModeLabel(lead) }}.
         </div>
@@ -450,35 +450,35 @@ onBeforeUnmount(() => {
         <div class="mb-4">
            <div v-if="lead.next_followup_at" class="flex items-center gap-2">
                <span class="w-2 h-2 rounded-full bg-purple-500 animate-pulse shrink-0"></span>
-               <span class="text-xs text-slate-400">
-                 Follow-up due <span class="text-white font-medium">{{ new Date(lead.next_followup_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }}</span>
+               <span class="text-xs text-slate-600">
+                 Follow-up due <span class="text-slate-900 font-medium">{{ new Date(lead.next_followup_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }}</span>
                </span>
            </div>
            <div v-else class="flex items-center gap-2">
                <span class="w-2 h-2 rounded-full bg-slate-600 shrink-0"></span>
-               <span class="text-xs text-slate-500 font-medium uppercase tracking-tight">On Hold</span>
+               <span class="text-xs text-slate-600 font-medium uppercase tracking-tight">On Hold</span>
            </div>
         </div>
 
         <!-- Action Row -->
-        <div class="flex items-center justify-between border-t border-slate-700/50 pt-4 w-full">
+        <div class="flex items-center justify-between border-t border-slate-200 pt-4 w-full">
            <!-- Mode Toggles -->
-           <div class="flex bg-slate-900/50 rounded-full p-1 border border-slate-700/50">
+           <div class="flex bg-slate-50 rounded-full p-1 border border-slate-200">
              <button 
                @click="setLeadMode(lead, 'on_hold')"
                class="px-3 py-1.5 rounded-full text-[11px] font-bold uppercase transition-all whitespace-nowrap"
-               :class="getModeLabel(lead) !== 'WORKING' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-500'"
+               :class="getModeLabel(lead) !== 'WORKING' ? 'bg-slate-200 text-slate-900 shadow-sm' : 'text-slate-600'"
              >Hold</button>
              <button 
                @click="setLeadMode(lead, 'working')"
                class="px-3 py-1.5 rounded-full text-[11px] font-bold uppercase transition-all whitespace-nowrap"
-               :class="getModeLabel(lead) === 'WORKING' ? 'bg-purple-600 text-white shadow-sm shadow-purple-500/30' : 'text-slate-500'"
+               :class="getModeLabel(lead) === 'WORKING' ? 'bg-purple-600 text-white shadow-sm shadow-purple-500/30' : 'text-slate-600'"
              >Work</button>
            </div>
            
            <div class="flex gap-2">
              <!-- Review Chat Button -->
-             <button @click="reviewLeadChat(lead)" class="h-9 w-9 rounded-full bg-slate-800 text-purple-300 flex items-center justify-center border border-slate-700 hover:bg-slate-700 shrink-0">
+             <button @click="reviewLeadChat(lead)" class="h-9 w-9 rounded-full bg-slate-100 text-purple-300 flex items-center justify-center border border-slate-200 hover:bg-slate-200 shrink-0">
                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
              </button>
              <!-- Delete Button -->
@@ -493,13 +493,13 @@ onBeforeUnmount(() => {
     <!-- Utility Blocks (Add Lead, Import, Check) - Collapsed vertically at bottom -->
     <div class="px-4 mt-8 space-y-4">
       <!-- Create Lead Card -->
-      <div class="glass-panel p-5 rounded-[2rem] border border-slate-700/50">
-        <h3 class="text-white font-semibold mb-1">Add Contact</h3>
-        <p class="text-xs text-slate-400 mb-4">Manually create a contact for the AI.</p>
+      <div class="bg-white border border-slate-200 shadow-sm p-5 rounded-[2rem] border border-slate-200">
+        <h3 class="text-slate-900 font-semibold mb-1">Add Contact</h3>
+        <p class="text-xs text-slate-600 mb-4">Manually create a contact for the AI.</p>
         <div class="space-y-3">
-          <input v-model="newLeadName" type="text" placeholder="Contact Name" class="w-full bg-slate-900/60 border border-slate-700/50 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors placeholder:text-slate-600" />
-          <input v-model="newLeadExternalId" type="text" placeholder="Phone Number (e.g. 60123...)" class="w-full bg-slate-900/60 border border-slate-700/50 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors placeholder:text-slate-600" />
-          <button @click="createLead" :disabled="isCreating" class="w-full bg-aurora-gradient text-white font-bold text-sm py-3 rounded-xl shadow-lg shadow-purple-500/20 active:scale-[0.98] transition-all flex justify-center mt-2">
+          <input v-model="newLeadName" type="text" placeholder="Contact Name" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-purple-500 transition-colors placeholder:text-slate-600" />
+          <input v-model="newLeadExternalId" type="text" placeholder="Phone Number (e.g. 60123...)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-purple-500 transition-colors placeholder:text-slate-600" />
+          <button @click="createLead" :disabled="isCreating" class="w-full bg-blue-600 text-white shadow-sm hover:bg-blue-700 font-bold text-sm py-3 rounded-xl shadow-lg shadow-purple-500/20 active:scale-[0.98] transition-all flex justify-center mt-2">
             {{ isCreating ? 'Adding...' : 'Save Contact' }}
           </button>
           <p v-if="createError" class="text-xs text-red-400 text-center mt-2">{{ createError }}</p>
@@ -507,41 +507,41 @@ onBeforeUnmount(() => {
       </div>
       
       <!-- Operations Feedback -->
-      <div v-if="actionError || actionMessage" class="glass-panel p-4 rounded-xl border border-slate-700 flex flex-col items-center text-center">
+      <div v-if="actionError || actionMessage" class="bg-white border border-slate-200 shadow-sm p-4 rounded-xl border border-slate-200 flex flex-col items-center text-center">
          <p v-if="actionError" class="text-xs text-red-400 font-medium">{{ actionError }}</p>
          <p v-if="actionMessage" class="text-xs text-emerald-400 font-medium">{{ actionMessage }}</p>
       </div>
     </div>
 
     <!-- Review Chat Modal -->
-    <div v-if="chatOpen" class="fixed inset-0 z-50 bg-onyx/90 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div class="w-full max-w-2xl bg-onyx sm:rounded-3xl rounded-t-3xl border-t border-slate-700 sm:border shadow-2xl overflow-hidden h-[85vh] sm:h-[70vh] flex flex-col">
-        <div class="px-5 py-4 border-b border-slate-800 glass-panel-light flex items-center justify-between sticky top-0">
+    <div v-if="chatOpen" class="fixed inset-0 z-50 bg-white/90 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div class="w-full max-w-2xl bg-white sm:rounded-3xl rounded-t-3xl border-t border-slate-200 sm:border shadow-2xl overflow-hidden h-[85vh] sm:h-[70vh] flex flex-col">
+        <div class="px-5 py-4 border-b border-slate-300 bg-white border border-slate-200 shadow-sm flex items-center justify-between sticky top-0">
           <div>
-            <h3 class="text-lg font-bold text-white tracking-tight">{{ chatLead?.name || 'Contact' }}</h3>
+            <h3 class="text-lg font-bold text-slate-900 tracking-tight">{{ chatLead?.name || 'Contact' }}</h3>
             <p class="text-[10px] text-purple-400 font-bold uppercase tracking-widest">{{ chatLead?.external_id || 'Reviewing History' }}</p>
           </div>
-          <button @click="chatOpen = false" class="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
+          <button @click="chatOpen = false" class="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors">
             <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
         
-        <div class="flex-grow overflow-y-auto p-5 space-y-4 bg-mobile-aurora scrollbar-none pb-10">
-          <div v-if="chatLoading" class="flex flex-col items-center justify-center h-full text-slate-500 space-y-3">
+        <div class="flex-grow overflow-y-auto p-5 space-y-4 hidden scrollbar-none pb-10">
+          <div v-if="chatLoading" class="flex flex-col items-center justify-center h-full text-slate-600 space-y-3">
              <div class="w-6 h-6 rounded-full border-t-2 border-r-2 border-purple-500 animate-spin"></div>
              <p class="text-xs font-medium uppercase tracking-widest">Loading Logs...</p>
           </div>
           <p v-else-if="chatError" class="text-sm font-semibold text-red-500 text-center mt-10">{{ chatError }}</p>
-          <p v-else-if="chatMessages.length === 0" class="text-sm text-slate-500 text-center mt-10 italic">No message history.</p>
+          <p v-else-if="chatMessages.length === 0" class="text-sm text-slate-600 text-center mt-10 italic">No message history.</p>
           
           <div v-else v-for="msg in chatMessages" :key="msg.id" 
                class="max-w-[85%] p-3.5 rounded-2xl text-[14px] leading-relaxed relative"
-               :class="msg.direction === 'outbound' ? 'bg-aurora-gradient text-white ml-auto rounded-tr-sm shadow-lg shadow-purple-500/20' : 'glass-panel text-slate-200 mr-auto rounded-tl-sm'">
+               :class="msg.direction === 'outbound' ? 'bg-blue-600 text-white shadow-sm hover:bg-blue-700 ml-auto rounded-tr-sm shadow-lg shadow-purple-500/20' : 'bg-white border border-slate-200 shadow-sm text-slate-700 mr-auto rounded-tl-sm'">
             
             <p class="whitespace-pre-wrap">{{ msg.text_content || '(non-text message)' }}</p>
             
-            <div class="flex items-center justify-between mt-2 pt-2 border-t border-white/10" :class="msg.direction === 'outbound' ? 'border-white/20' : 'border-slate-700/50'">
-              <span class="text-[9px] font-bold uppercase tracking-wider" :class="msg.direction === 'outbound' ? 'text-white/70' : 'text-slate-400'">{{ msg.direction }}</span>
+            <div class="flex items-center justify-between mt-2 pt-2 border-t border-white/10" :class="msg.direction === 'outbound' ? 'border-white/20' : 'border-slate-200'">
+              <span class="text-[9px] font-bold uppercase tracking-wider" :class="msg.direction === 'outbound' ? 'text-slate-900/70' : 'text-slate-600'">{{ msg.direction }}</span>
               <span class="text-[9px] opacity-70">{{ new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
             </div>
             

@@ -258,7 +258,7 @@ onMounted(() => {
           <div class="space-y-2">
             <p class="text-[10px] uppercase font-black tracking-[0.32em] text-indigo-600">Pillar 4</p>
             <h1 class="text-3xl font-black text-slate-900 tracking-tight">Inbound Reactive Command</h1>
-            <p class="text-sm text-slate-500 max-w-xl">
+            <p class="text-sm text-slate-600 max-w-xl">
               Decide how your AI teammate should react when someone reaches out. Should they take over immediately, or wait for your approval?
             </p>
           </div>
@@ -272,7 +272,7 @@ onMounted(() => {
             <div class="flex items-center justify-between p-4 rounded-2xl border border-indigo-100 bg-indigo-50/50">
                <div>
                   <p class="text-xs font-black uppercase tracking-widest text-indigo-600 mb-1">Manual Approval</p>
-                  <p class="text-[11px] text-slate-500">I want to review every message before it goes out.</p>
+                  <p class="text-[11px] text-slate-600">I want to review every message before it goes out.</p>
                </div>
                <div class="w-12 h-6 bg-slate-200 rounded-full relative cursor-not-allowed">
                   <div class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm"></div>
@@ -282,7 +282,7 @@ onMounted(() => {
             <div class="flex items-center justify-between p-4 rounded-2xl border border-green-100 bg-green-50/50">
                <div>
                   <p class="text-xs font-black uppercase tracking-widest text-green-600 mb-1">Fully Autonomous</p>
-                  <p class="text-[11px] text-slate-500">The Teammate can talk to new customers 24/7 without asking me.</p>
+                  <p class="text-[11px] text-slate-600">The Teammate can talk to new customers 24/7 without asking me.</p>
                </div>
                <div class="w-12 h-6 bg-green-500 rounded-full relative cursor-pointer">
                   <div class="absolute right-1 top-1 w-4 h-4 bg-white rounded-full shadow-sm"></div>
@@ -290,11 +290,11 @@ onMounted(() => {
             </div>
 
             <div class="pt-4 border-t border-slate-100">
-               <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Assigned Inbound Teammate</label>
+               <label class="text-[10px] font-black uppercase tracking-widest text-slate-600 block mb-2">Assigned Inbound Teammate</label>
                <select class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-800 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none">
                   <option>AI Teammate (Primary)</option>
                </select>
-               <p class="text-[10px] text-slate-400 mt-2 italic">Who should handle new people reaching out?</p>
+               <p class="text-[10px] text-slate-600 mt-2 italic">Who should handle new people reaching out?</p>
             </div>
           </div>
         </TuiCard>
@@ -308,7 +308,7 @@ onMounted(() => {
               <TuiBadge :variant="zaiStatus === 'set' ? 'success' : 'warning'">
                 {{ zaiStatus === 'set' ? 'Connected' : 'Missing' }}
               </TuiBadge>
-              <span v-if="zaiMasked" class="text-[10px] text-slate-400 font-mono">{{ zaiMasked }}</span>
+              <span v-if="zaiMasked" class="text-[10px] text-slate-600 font-mono">{{ zaiMasked }}</span>
             </div>
             <TuiInput v-model="zaiKey" type="password" placeholder="sk-..." label="API Key" />
             <TuiButton @click="saveZai" :loading="isSaving" class="w-full">Update Z.ai Key</TuiButton>
@@ -326,7 +326,7 @@ onMounted(() => {
               <TuiBadge :variant="uniStatus === 'set' ? 'success' : 'warning'">
                 {{ uniStatus === 'set' ? 'Connected' : 'Missing' }}
               </TuiBadge>
-              <span v-if="uniMasked" class="text-[10px] text-slate-400 font-mono">{{ uniMasked }}</span>
+              <span v-if="uniMasked" class="text-[10px] text-slate-600 font-mono">{{ uniMasked }}</span>
             </div>
             <TuiInput v-model="uniKey" type="password" placeholder="Key..." label="UniAPI Key" />
             <TuiButton @click="saveUni" :loading="isSaving" variant="outline" class="w-full">Update UniAPI Key</TuiButton>
@@ -339,12 +339,12 @@ onMounted(() => {
       </div>
 
       <TuiCard title="Platform Context Recording" subtitle="Control whether built context prompts are recorded in outbound AI metadata">
-        <div v-if="recordContextPromptLoading" class="text-sm text-slate-500 py-4">Loading setting...</div>
+        <div v-if="recordContextPromptLoading" class="text-sm text-slate-600 py-4">Loading setting...</div>
         <div v-else class="space-y-4">
           <div class="flex items-center justify-between rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <div>
               <p class="text-sm font-bold text-slate-800">record_context_prompt</p>
-              <p class="text-[11px] text-slate-500">When enabled, outbound AI rows include `raw_payload.ai_trace.context_prompt`.</p>
+              <p class="text-[11px] text-slate-600">When enabled, outbound AI rows include `raw_payload.ai_trace.context_prompt`.</p>
             </div>
             <label class="inline-flex items-center gap-2 text-xs font-bold text-slate-700">
               <input v-model="recordContextPrompt" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
@@ -359,7 +359,7 @@ onMounted(() => {
 
       <!-- LLM ROUTING CARD -->
       <TuiCard title="LLM Routing Strategy" subtitle="Control which provider handles specific tasks">
-        <div v-if="llmRoutingLoading" class="text-sm text-slate-500 py-4">Loading strategy...</div>
+        <div v-if="llmRoutingLoading" class="text-sm text-slate-600 py-4">Loading strategy...</div>
         <div v-else class="space-y-6">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div v-for="task in llmTasks" :key="task" class="space-y-2">
@@ -381,7 +381,7 @@ onMounted(() => {
       </TuiCard>
 
       <TuiCard title="Default Model Per Workflow" subtitle="Set the default model for each workflow task, including AI CRM">
-        <div v-if="llmRoutingLoading" class="text-sm text-slate-500 py-4">Loading task model defaults...</div>
+        <div v-if="llmRoutingLoading" class="text-sm text-slate-600 py-4">Loading task model defaults...</div>
         <div v-else class="space-y-6">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div v-for="task in llmTasks" :key="`model-${task}`" class="space-y-2">
@@ -408,8 +408,8 @@ onMounted(() => {
       </TuiCard>
 
       <TuiCard title="Available LLM Models" subtitle="Configured provider catalog returned by platform API">
-        <div v-if="llmRoutingLoading" class="text-sm text-slate-500 py-4">Loading models...</div>
-        <div v-else-if="llmModels.length === 0" class="text-sm text-slate-500 py-4">No models published.</div>
+        <div v-if="llmRoutingLoading" class="text-sm text-slate-600 py-4">Loading models...</div>
+        <div v-else-if="llmModels.length === 0" class="text-sm text-slate-600 py-4">No models published.</div>
         <div v-else class="space-y-2">
           <article
             v-for="item in llmModels"
@@ -417,7 +417,7 @@ onMounted(() => {
             class="rounded-xl border border-slate-200 bg-white px-3 py-2"
           >
             <p class="text-xs font-black text-slate-800">{{ item.model }}</p>
-            <p class="text-[10px] uppercase tracking-widest text-slate-500">{{ item.provider }} · {{ item.schema }}</p>
+            <p class="text-[10px] uppercase tracking-widest text-slate-600">{{ item.provider }} · {{ item.schema }}</p>
           </article>
         </div>
       </TuiCard>
@@ -426,7 +426,7 @@ onMounted(() => {
         <div class="space-y-4">
           <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div>
-              <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Direction</label>
+              <label class="text-[10px] font-black uppercase tracking-widest text-slate-600 block mb-2">Direction</label>
               <select v-model="historyDirection" class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800">
                 <option value="">All</option>
                 <option value="inbound">Inbound</option>
@@ -434,7 +434,7 @@ onMounted(() => {
               </select>
             </div>
             <div>
-              <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Limit</label>
+              <label class="text-[10px] font-black uppercase tracking-widest text-slate-600 block mb-2">Limit</label>
               <input v-model.number="historyLimit" type="number" min="1" max="1000" class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800" />
             </div>
             <div class="flex items-end">
@@ -448,11 +448,11 @@ onMounted(() => {
             </div>
           </div>
 
-          <div v-if="platformMessagesLoading" class="text-sm text-slate-500 py-4">Loading message history...</div>
-          <div v-else-if="platformMessages.length === 0" class="text-sm text-slate-500 py-4">No messages found for the selected filters.</div>
+          <div v-if="platformMessagesLoading" class="text-sm text-slate-600 py-4">Loading message history...</div>
+          <div v-else-if="platformMessages.length === 0" class="text-sm text-slate-600 py-4">No messages found for the selected filters.</div>
           <div v-else class="space-y-3 max-h-[28rem] overflow-y-auto pr-1">
             <article v-for="msg in platformMessages" :key="msg.message_id" class="rounded-2xl border border-slate-200 bg-white p-4">
-              <div class="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest font-black text-slate-500">
+              <div class="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest font-black text-slate-600">
                 <span>#{{ msg.message_id }}</span>
                 <span>{{ msg.direction }}</span>
                 <span>{{ msg.channel }}</span>
@@ -473,7 +473,7 @@ onMounted(() => {
       <TuiCard title="Platform System Health" subtitle="Permanent readiness and schema diagnostics">
         <div class="space-y-4">
           <div class="flex items-center justify-between">
-            <div v-if="platformSystemHealthLoading" class="text-sm text-slate-500">Loading system health...</div>
+            <div v-if="platformSystemHealthLoading" class="text-sm text-slate-600">Loading system health...</div>
             <div v-else class="text-sm font-bold" :class="platformSystemHealth?.ready ? 'text-emerald-700' : 'text-red-700'">
               {{ platformSystemHealth?.ready ? 'READY' : 'NOT READY' }}
             </div>
@@ -486,7 +486,7 @@ onMounted(() => {
       <TuiCard title="Appearance" subtitle="Theme selection">
         <div class="flex items-center gap-4">
           <TuiButton @click="toggleTheme">{{ themeLabel }} Mode Active</TuiButton>
-          <p class="text-xs text-slate-500">Persists locally on this browser.</p>
+          <p class="text-xs text-slate-600">Persists locally on this browser.</p>
         </div>
       </TuiCard>
 

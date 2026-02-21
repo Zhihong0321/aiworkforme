@@ -233,7 +233,7 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
     <header class="mb-12 flex flex-col md:flex-row md:justify-between items-start md:items-end gap-6">
       <div>
         <h1 class="text-3xl font-black text-slate-900 tracking-tight mb-2">Knowledge Base</h1>
-        <p class="text-slate-500 text-sm">Upload documentation or images for Agent to reference during conversations.</p>
+        <p class="text-slate-600 text-sm">Upload documentation or images for Agent to reference during conversations.</p>
       </div>
       <div class="flex gap-3">
         <TuiButton variant="outline" @click="createNewText">
@@ -248,12 +248,12 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
 
     <div v-if="!store.activeWorkspace?.agent_id" class="p-20 text-center border-2 border-dashed border-slate-200 rounded-[2rem] bg-slate-50/50">
       <div class="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-6">
-          <svg class="w-8 h-8 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg class="w-8 h-8 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
       </div>
       <h3 class="text-slate-900 font-bold mb-2">No Agent Linked</h3>
-      <p class="text-slate-500 text-sm max-w-sm mx-auto">Configure an agent for this workspace to start building your knowledge base.</p>
+      <p class="text-slate-600 text-sm max-w-sm mx-auto">Configure an agent for this workspace to start building your knowledge base.</p>
     </div>
 
     <div v-else class="grid grid-cols-1 xl:grid-cols-4 gap-8">
@@ -267,9 +267,9 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
                    <div class="w-8 h-8 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 text-sm">🧠</div>
                    <h3 class="font-black text-slate-900">Fundamental Context</h3>
                </div>
-               <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-4">Appears in every prompt</p>
+               <p class="text-[10px] text-slate-600 font-bold uppercase tracking-widest mb-4">Appears in every prompt</p>
                <textarea v-model="contextContent" rows="4" placeholder="e.g. You are an AI assistant for a gym." class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all mb-4 resize-none flex-1"></textarea>
-               <TuiButton @click="saveContext" :loading="isSavingContext" size="sm" class="mt-auto bg-slate-900 text-white hover:bg-slate-800">Save Context</TuiButton>
+               <TuiButton @click="saveContext" :loading="isSavingContext" size="sm" class="mt-auto bg-slate-50 text-slate-900 hover:bg-slate-100">Save Context</TuiButton>
             </div>
             
             <div class="bg-white border border-slate-200 rounded-[2rem] p-6 shadow-xl shadow-slate-200/50 flex flex-col hover:border-emerald-200 transition-colors">
@@ -277,9 +277,9 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
                    <div class="w-8 h-8 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600 text-sm">🎯</div>
                    <h3 class="font-black text-slate-900">Agent Goal</h3>
                </div>
-               <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-4">Appears in every prompt</p>
+               <p class="text-[10px] text-slate-600 font-bold uppercase tracking-widest mb-4">Appears in every prompt</p>
                <textarea v-model="goalContent" rows="4" placeholder="e.g. Your goal is to schedule a visit." class="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium text-slate-700 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all mb-4 resize-none flex-1"></textarea>
-               <TuiButton @click="saveGoal" :loading="isSavingGoal" size="sm" class="mt-auto bg-slate-900 text-white hover:bg-slate-800">Save Goal</TuiButton>
+               <TuiButton @click="saveGoal" :loading="isSavingGoal" size="sm" class="mt-auto bg-slate-50 text-slate-900 hover:bg-slate-100">Save Goal</TuiButton>
             </div>
         </div>
 
@@ -287,13 +287,13 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
         <div class="bg-white border border-slate-200 rounded-[2rem] overflow-hidden shadow-xl shadow-slate-200/50">
              <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                  <div class="flex items-center gap-3">
-                     <span class="text-[10px] uppercase font-black tracking-widest text-slate-400">Frequently Asked Questions</span>
+                     <span class="text-[10px] uppercase font-black tracking-widest text-slate-600">Frequently Asked Questions</span>
                      <TuiBadge variant="success" size="sm">{{ faqs.length }} Pairs</TuiBadge>
                  </div>
                  <TuiButton variant="outline" size="sm" class="!rounded-xl border-slate-200" @click="createNewFaq">+ Add FAQ</TuiButton>
              </div>
              <div v-if="faqs.length === 0" class="p-10 text-center">
-                 <p class="text-slate-400 text-sm">No FAQs added yet. Provide Q&A pairs to help the AI answer precisely.</p>
+                 <p class="text-slate-600 text-sm">No FAQs added yet. Provide Q&A pairs to help the AI answer precisely.</p>
              </div>
              <div v-else class="divide-y divide-slate-50">
                 <div v-for="(faq, index) in faqs" :key="index" class="p-6 hover:bg-slate-50/80 transition-colors group flex gap-4">
@@ -303,7 +303,7 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
                             <span class="text-sm font-bold text-slate-900">{{ faq.q }}</span>
                         </div>
                         <div class="flex gap-3">
-                            <span class="font-black text-slate-400">A.</span>
+                            <span class="font-black text-slate-600">A.</span>
                             <span class="text-sm font-medium text-slate-600">{{ faq.a }}</span>
                         </div>
                     </div>
@@ -318,7 +318,7 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
         <!-- Source List -->
         <div class="bg-white border border-slate-200 rounded-[2rem] overflow-hidden shadow-xl shadow-slate-200/50">
             <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                <span class="text-[10px] uppercase font-black tracking-widest text-slate-400">Agent Memory Vault</span>
+                <span class="text-[10px] uppercase font-black tracking-widest text-slate-600">Agent Memory Vault</span>
                <TuiBadge variant="info" size="sm">{{ standardDocuments.length }} Sources</TuiBadge>
             </div>
             
@@ -328,11 +328,11 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
                     <span class="w-2 h-2 rounded-full bg-indigo-600 animate-bounce [animation-delay:0.2s]"></span>
                     <span class="w-2 h-2 rounded-full bg-indigo-600 animate-bounce [animation-delay:0.4s]"></span>
                 </div>
-                <p class="text-[10px] text-slate-400 font-black uppercase tracking-widest">Indexing knowledge...</p>
+                <p class="text-[10px] text-slate-600 font-black uppercase tracking-widest">Indexing knowledge...</p>
             </div>
             
             <div v-else-if="standardDocuments.length === 0" class="p-20 text-center">
-               <p class="text-slate-400 text-sm">Your agent's brain is currently empty. Upload some sources to get started.</p>
+               <p class="text-slate-600 text-sm">Your agent's brain is currently empty. Upload some sources to get started.</p>
             </div>
 
             <div v-else class="divide-y divide-slate-50">
@@ -346,7 +346,7 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
                    </div>
                    <div>
                       <div class="text-sm font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{{ doc.filename }}</div>
-                      <div class="text-[10px] text-slate-400 font-medium mt-0.5">
+                      <div class="text-[10px] text-slate-600 font-medium mt-0.5">
                         {{ new Date(doc.created_at).toLocaleDateString() }} • {{ (doc.content.length / 1024).toFixed(1) }} KB
                       </div>
                    </div>
@@ -362,7 +362,7 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
 
       <!-- Stats / Right Bar -->
       <div class="space-y-6">
-        <div class="bg-indigo-600 p-8 rounded-[2rem] text-white shadow-xl shadow-indigo-600/30 relative overflow-hidden">
+        <div class="bg-indigo-600 p-8 rounded-[2rem] text-slate-900 shadow-xl shadow-indigo-600/30 relative overflow-hidden">
            <div class="relative z-10">
                <h4 class="text-[10px] font-black uppercase tracking-widest opacity-60 mb-4">RAG Engine Status</h4>
                <div class="text-3xl font-black mb-1">98.2%</div>
@@ -379,25 +379,25 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
 
     <!-- Editor Drawer (Overlay) -->
     <div v-if="isEditing" class="fixed inset-0 z-50 flex justify-end">
-        <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="isEditing = false"></div>
+        <div class="absolute inset-0 bg-slate-50 backdrop-blur-sm" @click="isEditing = false"></div>
         <div class="relative w-full max-w-2xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
             <header class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                 <div>
                    <h3 class="font-black text-slate-900 uppercase tracking-tight">{{ editingDoc.id ? 'Edit Source' : 'New Source' }}</h3>
-                   <div class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Knowledge Material</div>
+                   <div class="text-[10px] text-slate-600 font-bold uppercase tracking-widest">Knowledge Material</div>
                 </div>
-                <button @click="isEditing = false" class="text-slate-400 hover:text-slate-600 transition-colors">
+                <button @click="isEditing = false" class="text-slate-600 hover:text-slate-600 transition-colors">
                     <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
             </header>
             
             <div class="p-8 flex-1 overflow-y-auto space-y-6">
                 <div>
-                    <label class="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Filename</label>
+                    <label class="block text-[10px] font-black uppercase text-slate-600 tracking-widest mb-2">Filename</label>
                     <TuiInput v-model="editingDoc.filename" placeholder="documentation.txt" class="!rounded-2xl" />
                 </div>
                 <div class="flex-1 flex flex-col h-[500px]">
-                    <label class="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Content</label>
+                    <label class="block text-[10px] font-black uppercase text-slate-600 tracking-widest mb-2">Content</label>
                     <textarea 
                         v-model="editingDoc.content" 
                         class="flex-1 w-full p-6 bg-slate-50 border border-slate-200 rounded-3xl text-sm font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none transition-all resize-none"
@@ -417,25 +417,25 @@ watch(() => store.activeWorkspaceId, fetchKnowledge)
 
     <!-- FAQ Drawer (Overlay) -->
     <div v-if="isEditingFaq" class="fixed inset-0 z-50 flex justify-end">
-        <div class="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" @click="isEditingFaq = false"></div>
+        <div class="absolute inset-0 bg-slate-50 backdrop-blur-sm" @click="isEditingFaq = false"></div>
         <div class="relative w-full max-w-xl bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
             <header class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                 <div>
                    <h3 class="font-black text-slate-900 uppercase tracking-tight">{{ editingFaqIndex >= 0 ? 'Edit FAQ' : 'New FAQ' }}</h3>
-                   <div class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Knowledge Pair</div>
+                   <div class="text-[10px] text-slate-600 font-bold uppercase tracking-widest">Knowledge Pair</div>
                 </div>
-                <button @click="isEditingFaq = false" class="text-slate-400 hover:text-slate-600 transition-colors">
+                <button @click="isEditingFaq = false" class="text-slate-600 hover:text-slate-600 transition-colors">
                     <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
                 </button>
             </header>
             
             <div class="p-8 flex-1 overflow-y-auto space-y-6">
                 <div>
-                    <label class="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Question</label>
+                    <label class="block text-[10px] font-black uppercase text-slate-600 tracking-widest mb-2">Question</label>
                     <TuiInput v-model="editingFaqItem.q" placeholder="e.g. What are your working hours?" class="!rounded-2xl" />
                 </div>
                 <div class="flex flex-col">
-                    <label class="block text-[10px] font-black uppercase text-slate-400 tracking-widest mb-2">Answer</label>
+                    <label class="block text-[10px] font-black uppercase text-slate-600 tracking-widest mb-2">Answer</label>
                     <textarea 
                         v-model="editingFaqItem.a" 
                         rows="6"

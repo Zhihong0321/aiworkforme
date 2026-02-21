@@ -161,7 +161,7 @@ watch(
         <span class="text-[11px] uppercase tracking-[0.2em] text-slate-600">{{ label }}</span>
         <span class="mt-1 text-xl font-semibold gradient-text">{{ text.join('') }}</span>
       </div>
-      <span class="rounded-md border border-slate-900 bg-slate-900 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-white">
+      <span class="rounded-md border border-slate-900 bg-slate-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-900">
         {{ pillLabel }}
       </span>
     </div>

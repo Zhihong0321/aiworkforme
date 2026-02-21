@@ -57,7 +57,7 @@ const handleLogin = async () => {
     <div class="max-w-md w-full">
       <div class="text-center mb-10">
         <h2 class="text-3xl font-black text-slate-900 uppercase tracking-tighter">Aiworkfor.me</h2>
-        <p class="mt-2 text-sm text-slate-500 uppercase tracking-widest font-bold">Platform Admin Console</p>
+        <p class="mt-2 text-sm text-slate-600 uppercase tracking-widest font-bold">Platform Admin Console</p>
       </div>
 
       <div class="bg-white p-10 rounded-[2.5rem] shadow-2xl shadow-slate-200 border border-slate-100">

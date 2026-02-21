@@ -4,7 +4,7 @@
       <header class="tui-surface rounded-xl border border-slate-200 p-6">
         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div class="space-y-2">
-            <p class="text-xs uppercase tracking-[0.32em] text-slate-500">z.ai admin</p>
+            <p class="text-xs uppercase tracking-[0.32em] text-slate-600">z.ai admin</p>
             <h1 class="text-3xl font-bold text-slate-900">Knowledge Vault for Agent: {{ agentId }}</h1>
             <p class="text-sm text-slate-600">
               Manage knowledge files, tags, and descriptions for this agent.
@@ -21,17 +21,17 @@
 
       <section class="tui-surface rounded-xl border border-slate-200 p-6">
         <h2 class="text-xl font-semibold mb-4">Attached Knowledge Files</h2>
-        <div v-if="isLoading" class="text-center py-8 text-slate-500">Loading knowledge files...</div>
-        <div v-else-if="!knowledgeFiles.length" class="text-center py-8 text-slate-500">No knowledge files attached yet.</div>
+        <div v-if="isLoading" class="text-center py-8 text-slate-600">Loading knowledge files...</div>
+        <div v-else-if="!knowledgeFiles.length" class="text-center py-8 text-slate-600">No knowledge files attached yet.</div>
         <div v-else class="overflow-x-auto">
           <table class="min-w-full divide-y divide-slate-200">
             <thead class="bg-slate-50">
               <tr>
-                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Filename</th>
-                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Description</th>
-                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Tags</th>
-                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Last Triggered (Debug)</th>
-                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Filename</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Description</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Tags</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Last Triggered (Debug)</th>
+                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-600 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-slate-200">
@@ -39,15 +39,15 @@
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
                   {{ file.filename }}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
                   {{ file.description || 'No description' }}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
                   <div class="flex flex-wrap gap-1">
                     <TuiBadge v-for="tag in parseJsonArray(file.tags)" :key="tag" variant="outline">{{ tag }}</TuiBadge>
                   </div>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-600">
                   <div class="flex flex-wrap gap-1">
                     <TuiBadge v-for="input in parseJsonArray(file.last_trigger_inputs)" :key="input" variant="muted" class="text-xs">{{ input }}</TuiBadge>
                   </div>
@@ -70,7 +70,7 @@
         <form @submit.prevent="saveKnowledge">
           <div class="mb-4">
             <TuiInput label="Filename" v-model="form.filename" :disabled="!!editingFile" />
-            <p v-if="editingFile" class="text-xs text-slate-500 mt-1">Filename cannot be changed after creation.</p>
+            <p v-if="editingFile" class="text-xs text-slate-600 mt-1">Filename cannot be changed after creation.</p>
           </div>
           <div class="mb-4">
             <label class="block text-sm font-medium text-slate-700 mb-1">Description</label>
@@ -87,7 +87,7 @@
           </div>
           <div v-if="!editingFile" class="mb-4">
             <label class="block text-sm font-medium text-slate-700 mb-1">Upload File</label>
-            <input type="file" ref="fileInput" @change="handleFileUpload" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"/>
+            <input type="file" ref="fileInput" @change="handleFileUpload" class="block w-full text-sm text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"/>
           </div>
           <div v-else class="mb-4">
             <label class="block text-sm font-medium text-slate-700 mb-1">File Content</label>

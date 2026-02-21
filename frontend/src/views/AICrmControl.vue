@@ -203,7 +203,7 @@ onMounted(loadAll)
           <div class="space-y-2">
             <p class="text-[10px] uppercase font-black tracking-[0.3em] text-orange-600">AI Control CRM</p>
             <h1 class="text-3xl font-black text-slate-900 tracking-tight">Conversation Scan + Follow-up Trigger</h1>
-            <p class="text-sm text-slate-500 max-w-3xl">
+            <p class="text-sm text-slate-600 max-w-3xl">
               AI scans each conversation every N messages, classifies lead status, and schedules follow-up timing with passive, balanced, or aggressive behavior.
             </p>
           </div>
@@ -216,11 +216,11 @@ onMounted(loadAll)
       </header>
 
       <TuiCard title="AI CRM Controls" subtitle="Set scan frequency, follow-up aggressiveness, and rejected-lead strategy">
-        <div v-if="isLoading" class="text-sm text-slate-500 py-6">Loading AI CRM control...</div>
+        <div v-if="isLoading" class="text-sm text-slate-600 py-6">Loading AI CRM control...</div>
         <div v-else class="space-y-5">
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <label class="space-y-2">
-              <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">Enable AI CRM</span>
+              <span class="text-[10px] font-black uppercase tracking-widest text-slate-600">Enable AI CRM</span>
               <select v-model="control.enabled" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800">
                 <option :value="true">Enabled</option>
                 <option :value="false">Disabled</option>
@@ -235,7 +235,7 @@ onMounted(loadAll)
               :max="10"
             />
             <label class="space-y-2">
-              <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">Follow-up Aggressiveness</span>
+              <span class="text-[10px] font-black uppercase tracking-widest text-slate-600">Follow-up Aggressiveness</span>
               <select v-model="control.aggressiveness" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800">
                 <option value="PASSIVE">Passive</option>
                 <option value="BALANCED">Balanced</option>
@@ -246,7 +246,7 @@ onMounted(loadAll)
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <label class="space-y-2">
-              <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">Not Interested Strategy</span>
+              <span class="text-[10px] font-black uppercase tracking-widest text-slate-600">Not Interested Strategy</span>
               <select v-model="control.not_interested_strategy" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800">
                 <option value="PROMO">Promo</option>
                 <option value="DISCOUNT">Discount</option>
@@ -255,7 +255,7 @@ onMounted(loadAll)
               </select>
             </label>
             <label class="space-y-2">
-              <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">Rejected Strategy</span>
+              <span class="text-[10px] font-black uppercase tracking-widest text-slate-600">Rejected Strategy</span>
               <select v-model="control.rejected_strategy" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800">
                 <option value="DISCOUNT">Discount</option>
                 <option value="PROMO">Promo</option>
@@ -264,7 +264,7 @@ onMounted(loadAll)
               </select>
             </label>
             <label class="space-y-2">
-              <span class="text-[10px] font-black uppercase tracking-widest text-slate-500">Double Reject Strategy</span>
+              <span class="text-[10px] font-black uppercase tracking-widest text-slate-600">Double Reject Strategy</span>
               <select v-model="control.double_reject_strategy" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800">
                 <option value="STOP">Stop Follow-up</option>
                 <option value="DISCOUNT">Discount</option>
@@ -281,12 +281,12 @@ onMounted(loadAll)
       </TuiCard>
 
       <TuiCard title="Thread Status" subtitle="Live AI classification and follow-up schedule per conversation">
-        <div v-if="isLoading" class="text-sm text-slate-500 py-6">Loading conversation states...</div>
-        <div v-else-if="sortedThreads.length === 0" class="text-sm text-slate-500 py-6">No active conversation threads found in this workspace.</div>
+        <div v-if="isLoading" class="text-sm text-slate-600 py-6">Loading conversation states...</div>
+        <div v-else-if="sortedThreads.length === 0" class="text-sm text-slate-600 py-6">No active conversation threads found in this workspace.</div>
         <div v-else class="overflow-x-auto">
           <table class="w-full min-w-[1400px] text-sm">
             <thead>
-              <tr class="text-left text-[10px] uppercase tracking-[0.2em] text-slate-500 border-b border-slate-200">
+              <tr class="text-left text-[10px] uppercase tracking-[0.2em] text-slate-600 border-b border-slate-200">
                 <th class="py-3 pr-3">Lead</th>
                 <th class="py-3 pr-3">Status</th>
                 <th class="py-3 pr-3">Reaction</th>
@@ -303,7 +303,7 @@ onMounted(loadAll)
               <tr v-for="row in sortedThreads" :key="row.thread_id" class="border-b border-slate-100 align-top">
                 <td class="py-3 pr-3">
                   <p class="font-bold text-slate-900">{{ row.lead_name || `Lead #${row.lead_id}` }}</p>
-                  <p class="text-[11px] text-slate-500">{{ row.lead_external_id }}</p>
+                  <p class="text-[11px] text-slate-600">{{ row.lead_external_id }}</p>
                 </td>
                 <td class="py-3 pr-3">
                   <TuiBadge :variant="statusVariant(row.status)">{{ statusLabel(row.status) }}</TuiBadge>

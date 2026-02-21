@@ -107,7 +107,7 @@ onBeforeUnmount(() => {
       <header class="tui-surface rounded-xl border border-slate-200 p-6">
         <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div class="space-y-3">
-            <p class="text-xs uppercase tracking-[0.32em] text-slate-500">z.ai design</p>
+            <p class="text-xs uppercase tracking-[0.32em] text-slate-600">z.ai design</p>
             <TuiScrambleTitle text="COMPONENT RESCAN" variant="mono" />
             <p class="text-sm text-slate-600">
               Light TUI primitives for dashboards, agents, and MCP workflows — scanned and ready.
@@ -137,7 +137,7 @@ onBeforeUnmount(() => {
                 <TuiBadge variant="info">focus-visible</TuiBadge>
               </div>
               <div class="rounded-lg border border-slate-200 bg-white">
-                <div class="flex items-center justify-between border-b border-slate-200 px-4 py-2 text-[11px] uppercase tracking-[0.2em] text-slate-500">
+                <div class="flex items-center justify-between border-b border-slate-200 px-4 py-2 text-[11px] uppercase tracking-[0.2em] text-slate-600">
                   <span>scan log</span>
                   <span>{{ scanState }}</span>
                 </div>
@@ -159,7 +159,7 @@ onBeforeUnmount(() => {
               />
               <div class="grid grid-cols-3 gap-3">
                 <div v-for="metric in surfaceMetrics" :key="metric.label" class="rounded-lg border border-slate-200 bg-white p-3">
-                  <p class="text-[11px] uppercase tracking-[0.2em] text-slate-500">{{ metric.label }}</p>
+                  <p class="text-[11px] uppercase tracking-[0.2em] text-slate-600">{{ metric.label }}</p>
                   <p class="text-lg font-semibold text-slate-900">{{ metric.value }}</p>
                   <p class="text-xs text-slate-600">{{ metric.note }}</p>
                 </div>
@@ -171,7 +171,7 @@ onBeforeUnmount(() => {
         <TuiCard title="Tokens & Pills" subtitle="theme">
           <div class="grid grid-cols-2 gap-3">
             <div v-for="token in tokens" :key="token.label" class="rounded-lg border border-slate-200 p-3">
-              <p class="text-[11px] uppercase tracking-[0.2em] text-slate-500">{{ token.label }}</p>
+              <p class="text-[11px] uppercase tracking-[0.2em] text-slate-600">{{ token.label }}</p>
               <p class="text-sm text-slate-800">{{ token.value }}</p>
             </div>
           </div>
@@ -268,7 +268,7 @@ onBeforeUnmount(() => {
       <section>
         <TuiCard title="Component Matrix" subtitle="status grid">
           <div class="rounded-lg border border-slate-200 bg-white">
-            <div class="grid grid-cols-[1.4fr_1fr_auto] gap-3 border-b border-slate-200 px-4 py-2 text-[11px] uppercase tracking-[0.18em] text-slate-500">
+            <div class="grid grid-cols-[1.4fr_1fr_auto] gap-3 border-b border-slate-200 px-4 py-2 text-[11px] uppercase tracking-[0.18em] text-slate-600">
               <span>component</span>
               <span>coverage</span>
               <span>state</span>

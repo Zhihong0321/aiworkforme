@@ -77,11 +77,11 @@ onMounted(() => {
       <header class="tui-surface rounded-3xl border border-slate-200 p-8 shadow-sm">
         <p class="text-[10px] uppercase font-black tracking-[0.32em] text-indigo-600">Platform Admin</p>
         <h1 class="mt-2 text-3xl font-black text-slate-900 tracking-tight">Model Benchmark</h1>
-        <p class="mt-2 text-sm text-slate-500">Run internal model comparison by latency and token usage.</p>
+        <p class="mt-2 text-sm text-slate-600">Run internal model comparison by latency and token usage.</p>
       </header>
 
       <TuiCard title="Benchmark Config" subtitle="Prompt once, run across selected models">
-        <div v-if="loadingModels" class="text-sm text-slate-500 py-4">Loading model catalog...</div>
+        <div v-if="loadingModels" class="text-sm text-slate-600 py-4">Loading model catalog...</div>
         <div v-else class="space-y-4">
           <label class="text-xs font-bold uppercase tracking-wider text-slate-700 block">Models (one per line)</label>
           <textarea
@@ -114,7 +114,7 @@ onMounted(() => {
         <div class="overflow-x-auto">
           <table class="min-w-full text-sm">
             <thead>
-              <tr class="text-left text-slate-500 border-b border-slate-200">
+              <tr class="text-left text-slate-600 border-b border-slate-200">
                 <th class="py-2 pr-3">Model</th>
                 <th class="py-2 pr-3">Schema</th>
                 <th class="py-2 pr-3">Success</th>
@@ -143,7 +143,7 @@ onMounted(() => {
         <div class="overflow-x-auto max-h-[26rem]">
           <table class="min-w-full text-sm">
             <thead>
-              <tr class="text-left text-slate-500 border-b border-slate-200">
+              <tr class="text-left text-slate-600 border-b border-slate-200">
                 <th class="py-2 pr-3">Model</th>
                 <th class="py-2 pr-3">Run</th>
                 <th class="py-2 pr-3">Status</th>

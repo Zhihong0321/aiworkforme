@@ -113,7 +113,7 @@ onMounted(() => {
       <header class="tui-surface rounded-xl border border-slate-200 p-6">
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div class="space-y-2">
-            <p class="text-xs uppercase tracking-[0.32em] text-slate-500">z.ai admin</p>
+            <p class="text-xs uppercase tracking-[0.32em] text-slate-600">z.ai admin</p>
             <h1 class="text-3xl font-bold text-slate-900">MCP Management</h1>
             <p class="text-sm text-slate-600">
               Register MCP servers, check status, and view endpoints for agents to link.
@@ -140,11 +140,11 @@ onMounted(() => {
               <div class="space-y-1">
                 <p class="text-base font-semibold text-slate-900">{{ server.name }}</p>
                 <p class="text-sm text-slate-600 break-all">{{ server.endpoint }}</p>
-                <p class="text-[11px] uppercase tracking-[0.18em] text-slate-500">env</p>
+                <p class="text-[11px] uppercase tracking-[0.18em] text-slate-600">env</p>
                 <p class="text-xs text-slate-700 break-all">{{ server.env_vars }}</p>
               </div>
               <div class="flex flex-col gap-2 text-sm text-slate-700">
-                <p class="text-[11px] uppercase tracking-[0.18em] text-slate-500">status</p>
+                <p class="text-[11px] uppercase tracking-[0.18em] text-slate-600">status</p>
                 <TuiBadge :variant="statusVariant(server.status)" class="w-24 justify-center">
                   {{ server.status || 'online' }}
                 </TuiBadge>
@@ -175,7 +175,7 @@ onMounted(() => {
             <label class="flex flex-col gap-2 text-sm text-slate-800">
               <div class="flex items-center justify-between">
                 <span class="text-[11px] uppercase tracking-[0.2em] text-slate-600">Env Vars (JSON)</span>
-                <span class="text-[11px] text-slate-500">optional</span>
+                <span class="text-[11px] text-slate-600">optional</span>
               </div>
               <div class="relative breathing-ring">
                 <textarea

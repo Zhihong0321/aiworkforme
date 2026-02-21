@@ -102,13 +102,13 @@ onMounted(() => {
       <header class="tui-surface rounded-3xl border border-slate-200 p-8 shadow-sm">
         <p class="text-[10px] uppercase font-black tracking-[0.32em] text-indigo-600">Platform Admin</p>
         <h1 class="mt-2 text-3xl font-black text-slate-900 tracking-tight">Message History</h1>
-        <p class="mt-2 text-sm text-slate-500">Review inbound/outbound messages with LLM usage and trace metadata.</p>
+        <p class="mt-2 text-sm text-slate-600">Review inbound/outbound messages with LLM usage and trace metadata.</p>
       </header>
 
       <TuiCard title="Filters" subtitle="Narrow the history view">
         <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
           <div>
-            <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Direction</label>
+            <label class="text-[10px] font-black uppercase tracking-widest text-slate-600 block mb-2">Direction</label>
             <select v-model="historyDirection" class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800">
               <option value="">All</option>
               <option value="inbound">Inbound</option>
@@ -116,7 +116,7 @@ onMounted(() => {
             </select>
           </div>
           <div>
-            <label class="text-[10px] font-black uppercase tracking-widest text-slate-400 block mb-2">Limit</label>
+            <label class="text-[10px] font-black uppercase tracking-widest text-slate-600 block mb-2">Limit</label>
             <input v-model.number="historyLimit" type="number" min="1" max="1000" class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800" />
           </div>
           <div class="flex items-end">
@@ -164,11 +164,11 @@ onMounted(() => {
           </table>
         </div>
 
-        <div v-if="platformMessagesLoading" class="text-sm text-slate-500 py-4">Loading message history...</div>
-        <div v-else-if="platformMessages.length === 0" class="text-sm text-slate-500 py-4">No messages found for the selected filters.</div>
+        <div v-if="platformMessagesLoading" class="text-sm text-slate-600 py-4">Loading message history...</div>
+        <div v-else-if="platformMessages.length === 0" class="text-sm text-slate-600 py-4">No messages found for the selected filters.</div>
         <div v-else class="space-y-3 max-h-[36rem] overflow-y-auto pr-1">
           <article v-for="msg in platformMessages" :key="msg.message_id" class="rounded-2xl border border-slate-200 bg-white p-4">
-            <div class="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest font-black text-slate-500">
+            <div class="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest font-black text-slate-600">
               <span>#{{ msg.message_id }}</span>
               <span>{{ msg.direction }}</span>
               <span>{{ msg.channel }}</span>

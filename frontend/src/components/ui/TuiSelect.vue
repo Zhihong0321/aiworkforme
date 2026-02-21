@@ -32,17 +32,17 @@ const onChange = (event) => {
 </script>
 
 <template>
-  <label :class="['flex flex-col gap-2 text-sm', dark ? 'text-white' : 'text-[var(--text)]']">
+  <label :class="['flex flex-col gap-2 text-sm', dark ? 'text-slate-900' : 'text-[var(--text)]']">
     <div class="flex items-center justify-between">
-      <span :class="['text-[10px] font-bold uppercase tracking-widest', dark ? 'text-white/40' : 'text-[var(--muted)]']">{{ label }}</span>
-      <span v-if="hint" :class="['text-xs', dark ? 'text-white/40' : 'text-[var(--muted)]']">{{ hint }}</span>
+      <span :class="['text-[10px] font-bold uppercase tracking-widest', dark ? 'text-slate-900/40' : 'text-[var(--muted)]']">{{ label }}</span>
+      <span v-if="hint" :class="['text-xs', dark ? 'text-slate-900/40' : 'text-[var(--muted)]']">{{ hint }}</span>
     </div>
     <div class="relative">
       <select
         :class="[
           'w-full appearance-none rounded-xl border px-4 py-3 pr-10 text-sm transition-all focus:outline-none focus:ring-2',
           dark 
-            ? 'bg-white/5 border-white/10 text-white focus:border-white/30 focus:ring-white/10' 
+            ? 'bg-white/5 border-white/10 text-slate-900 focus:border-white/30 focus:ring-white/10' 
             : 'bg-white border-[var(--border-strong)] text-[var(--text)] focus:border-[var(--accent)] focus:ring-[rgba(29,78,216,0.15)]'
         ]"
         :value="modelValue"
@@ -56,8 +56,8 @@ const onChange = (event) => {
       <span
         :class="[
           'pointer-events-none absolute inset-y-0 right-4 flex items-center transition text-[10px]',
-          dark ? 'text-white/40' : 'text-[var(--muted)]',
-          hasValue ? 'opacity-100' : 'opacity-40'
+          dark ? 'text-slate-900/40' : 'text-[var(--muted)]',
+          hasValue ? 'opacity-100' : 'opacity-10'
         ]"
       >
         ▼

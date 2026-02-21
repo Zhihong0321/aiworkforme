@@ -25,7 +25,7 @@ const base =
 
 const variants = {
   primary:
-    'border-[var(--accent)] bg-[var(--accent)] text-white hover:brightness-95',
+    'border-[var(--accent)] bg-[var(--accent)] text-slate-900 hover:brightness-95',
   outline:
     'border-[var(--border-strong)] bg-white text-[var(--text)] hover:bg-[var(--accent-soft)]',
   ghost: 'border-transparent bg-transparent text-[var(--text)] hover:bg-[var(--accent-soft)]'

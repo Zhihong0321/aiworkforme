@@ -226,14 +226,14 @@ onMounted(() => {
       <header class="mb-8">
         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div class="space-y-1">
-            <p class="text-xs uppercase tracking-wider text-slate-500">z.ai control</p>
+            <p class="text-xs uppercase tracking-wider text-slate-600">z.ai control</p>
             <h1 class="text-3xl font-bold">Operations Dashboard</h1>
             <p class="text-sm text-slate-600">
               Live agent, MCP, and chat controls. Use this page to glance and act without leaving the shell vibe.
             </p>
             <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
               <span class="uppercase tracking-wider">/api/v1</span>
-              <span class="uppercase tracking-wider text-slate-500">base: {{ origin }}</span>
+              <span class="uppercase tracking-wider text-slate-600">base: {{ origin }}</span>
             </div>
           </div>
           <div class="flex flex-wrap items-center gap-2">
@@ -276,17 +276,17 @@ onMounted(() => {
                 </div>
                 <div class="min-w-0 flex-1">
                   <p class="truncate text-base font-semibold leading-tight">{{ agent.name }}</p>
-                  <p class="truncate text-xs uppercase tracking-wider text-slate-500">{{ agent.model }}</p>
+                  <p class="truncate text-xs uppercase tracking-wider text-slate-600">{{ agent.model }}</p>
                 </div>
               </div>
 
               <div class="hidden items-center gap-3 text-sm text-slate-700 sm:flex">
                 <div class="text-center">
-                  <p class="text-xs uppercase tracking-wider text-slate-500">tokens</p>
+                  <p class="text-xs uppercase tracking-wider text-slate-600">tokens</p>
                   <p class="font-semibold tabular-nums">{{ formatTokens(agent.tokenCountToday) }}</p>
                 </div>
                 <div class="text-center">
-                  <p class="text-xs uppercase tracking-wider text-slate-500">active</p>
+                  <p class="text-xs uppercase tracking-wider text-slate-600">active</p>
                   <p class="font-semibold tabular-nums">{{ agent.lastActive || '—' }}</p>
                 </div>
                 <TuiBadge :variant="statusVariant(agent.status)" class="w-24 justify-center">
@@ -314,10 +314,10 @@ onMounted(() => {
               placeholder="Select agent"
             />
             <div class="border rounded-md border-slate-200 p-3 h-48 overflow-y-auto">
-              <p v-if="!quickLog.length" class="text-xs text-slate-500">Messages will appear here.</p>
+              <p v-if="!quickLog.length" class="text-xs text-slate-600">Messages will appear here.</p>
               <div v-else class="space-y-3">
                 <div v-for="(entry, idx) in quickLog" :key="idx" class="text-sm leading-relaxed">
-                  <p class="text-xs uppercase tracking-wider text-slate-500">
+                  <p class="text-xs uppercase tracking-wider text-slate-600">
                     {{ entry.role }} — {{ new Date(entry.ts).toLocaleTimeString() }}
                   </p>
                   <p class="whitespace-pre-wrap text-slate-800">{{ entry.text }}</p>
@@ -396,13 +396,13 @@ onMounted(() => {
               <p><strong>DB:</strong> {{ health?.database_status?.message || '—' }}</p>
             </div>
             <div class="space-y-1">
-              <p class="text-xs uppercase tracking-wider text-slate-500">Recent Events</p>
+              <p class="text-xs uppercase tracking-wider text-slate-600">Recent Events</p>
               <p class="mt-1 text-sm text-slate-600 min-h-[3em]">
                 {{ message || 'Use quick chat or MCP controls to populate this space.' }}
               </p>
             </div>
             <div class="space-y-2 text-xs text-slate-600">
-              <p class="text-xs uppercase tracking-wider text-slate-500">API Endpoints</p>
+              <p class="text-xs uppercase tracking-wider text-slate-600">API Endpoints</p>
               <p><strong>Agents</strong>: GET /agents/</p>
               <p><strong>MCP</strong>: GET /mcp/servers</p>
               <p><strong>Chat</strong>: POST /chat/</p>

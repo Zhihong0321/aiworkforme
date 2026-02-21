@@ -139,11 +139,11 @@ onMounted(() => {
 
 <template>
   <div class="relative min-h-screen bg-white">
-    <div class="pointer-events-none absolute inset-0 tui-grid opacity-40" aria-hidden="true"></div>
+    <div class="pointer-events-none absolute inset-0 tui-grid opacity-10" aria-hidden="true"></div>
     <main class="relative z-10 mx-auto w-full max-w-5xl px-4 py-8 sm:px-6 lg:px-10 space-y-8">
       <header class="flex flex-col gap-3">
         <div class="space-y-2">
-          <p class="text-xs uppercase tracking-[0.32em] text-slate-500">tester</p>
+          <p class="text-xs uppercase tracking-[0.32em] text-slate-600">tester</p>
           <h1 class="text-3xl font-bold text-slate-900">Agent Chat Tester</h1>
           <p class="text-sm text-slate-600">
             Lightweight surface for external testers. No admin navigation.
@@ -183,7 +183,7 @@ onMounted(() => {
           <div class="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
             <div class="flex items-center justify-between">
               <div>
-                <p class="text-[11px] uppercase tracking-[0.2em] text-slate-500">session</p>
+                <p class="text-[11px] uppercase tracking-[0.2em] text-slate-600">session</p>
                 <h2 class="text-lg font-semibold text-slate-900">HTTP Chat</h2>
               </div>
               <TuiBadge variant="muted">
@@ -200,7 +200,7 @@ onMounted(() => {
         <div class="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
           <header class="mb-3 flex items-center justify-between">
             <div>
-              <p class="text-[11px] uppercase tracking-[0.2em] text-slate-500">conversation</p>
+              <p class="text-[11px] uppercase tracking-[0.2em] text-slate-600">conversation</p>
               <h2 class="text-xl font-semibold text-slate-900">{{ currentAgent?.name || 'Select an agent' }}</h2>
             </div>
             <TuiBadge v-if="currentAgent" variant="muted">{{ currentAgent.model }}</TuiBadge>
@@ -221,14 +221,14 @@ onMounted(() => {
                   :class="[
                     'max-w-full rounded-lg border px-3 py-2 text-sm sm:max-w-[75%]',
                     message.role === 'user'
-                      ? 'border-slate-900 bg-slate-900 text-white'
+                      ? 'border-slate-900 bg-slate-50 text-slate-900'
                       : 'border-slate-200 bg-white text-slate-900'
                   ]"
                 >
-                  <p class="text-[11px] uppercase tracking-[0.16em] text-slate-500" v-if="message.role === 'assistant'">
+                  <p class="text-[11px] uppercase tracking-[0.16em] text-slate-600" v-if="message.role === 'assistant'">
                     {{ currentAgent?.name || 'agent' }}
                   </p>
-                  <p class="text-[11px] uppercase tracking-[0.16em] text-white/80" v-else>
+                  <p class="text-[11px] uppercase tracking-[0.16em] text-slate-900/80" v-else>
                     you
                   </p>
                   <p class="whitespace-pre-wrap leading-relaxed">
@@ -243,7 +243,7 @@ onMounted(() => {
             <label class="flex flex-col gap-2 text-sm text-slate-800">
               <div class="flex items-center justify-between">
                 <span class="text-[11px] uppercase tracking-[0.2em] text-slate-600">message</span>
-                <span class="text-[11px] text-slate-500">agent: {{ currentAgent?.name || 'none' }}</span>
+                <span class="text-[11px] text-slate-600">agent: {{ currentAgent?.name || 'none' }}</span>
               </div>
               <div class="relative breathing-ring">
                 <textarea
@@ -270,22 +270,22 @@ onMounted(() => {
       <section class="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 shadow-sm">
         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <p class="text-[11px] uppercase tracking-[0.2em] text-slate-500">agent config</p>
+            <p class="text-[11px] uppercase tracking-[0.2em] text-slate-600">agent config</p>
             <h3 class="text-lg font-semibold text-slate-900">Details</h3>
           </div>
           <TuiBadge v-if="currentAgent" variant="muted">{{ currentAgent.model }}</TuiBadge>
         </div>
         <div class="mt-3 grid gap-3 sm:grid-cols-3 text-sm text-slate-800">
           <div>
-            <p class="text-[11px] uppercase tracking-[0.18em] text-slate-500">name</p>
+            <p class="text-[11px] uppercase tracking-[0.18em] text-slate-600">name</p>
             <p class="font-semibold">{{ currentAgent?.name || 'Select agent' }}</p>
           </div>
           <div>
-            <p class="text-[11px] uppercase tracking-[0.18em] text-slate-500">status</p>
+            <p class="text-[11px] uppercase tracking-[0.18em] text-slate-600">status</p>
             <p class="font-semibold capitalize">{{ currentAgent?.status || 'unknown' }}</p>
           </div>
           <div>
-            <p class="text-[11px] uppercase tracking-[0.18em] text-slate-500">last active</p>
+            <p class="text-[11px] uppercase tracking-[0.18em] text-slate-600">last active</p>
             <p class="font-semibold">{{ currentAgent?.lastActive || '—' }}</p>
           </div>
         </div>

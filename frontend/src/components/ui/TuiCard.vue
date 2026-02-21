@@ -9,7 +9,7 @@ const props = defineProps({
   <div class="border-b border-slate-200 px-5 py-6">
     <header v-if="title || subtitle" class="mb-4 flex items-start justify-between gap-3">
       <div class="space-y-1">
-        <p v-if="subtitle" class="text-xs uppercase tracking-wider text-slate-500">
+        <p v-if="subtitle" class="text-xs uppercase tracking-wider text-slate-600">
           {{ subtitle }}
         </p>
         <h3 v-if="title" class="text-lg font-semibold text-slate-900">{{ title }}</h3>
