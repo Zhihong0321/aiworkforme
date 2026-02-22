@@ -1,6 +1,6 @@
 import { store } from '../store'
 
-const API_BASE = (import.meta.env.VITE_API_BASE || 'http://localhost:8000/api/v1').replace(/\/$/, '')
+const API_BASE = (import.meta.env.VITE_API_BASE || `${window.location.origin}/api/v1`).replace(/\/$/, '')
 
 async function request(path, options = {}) {
     const url = `${API_BASE}${path}`
