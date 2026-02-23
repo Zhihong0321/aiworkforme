@@ -16,18 +16,6 @@ const openPage = (path) => {
 <template>
   <div class="home-shell min-h-[calc(100vh-64px)] px-4 pb-8 pt-5 sm:px-6">
     <section class="mx-auto max-w-5xl">
-      <header class="home-hero mb-5 rounded-3xl p-5 sm:p-8">
-        <p class="mb-2 text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--muted)]">
-          Control Center
-        </p>
-        <h1 class="text-2xl font-semibold tracking-tight text-[var(--text)] sm:text-3xl">
-          Home Dashboard
-        </h1>
-        <p class="mt-2 max-w-2xl text-sm text-[var(--muted)]">
-          Quick access to every page from one place. Optimized for mobile operation.
-        </p>
-      </header>
-
       <section class="home-card rounded-3xl p-4 sm:p-6">
         <div class="mb-4 flex items-center justify-between">
           <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-[var(--muted)]">
@@ -36,7 +24,7 @@ const openPage = (path) => {
           <span class="text-xs text-[var(--muted)]">{{ quickLinks.length }} pages</span>
         </div>
 
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           <button
             v-for="item in quickLinks"
             :key="item.path"
@@ -64,12 +52,6 @@ const openPage = (path) => {
     radial-gradient(circle at 18% 12%, rgba(15, 23, 42, 0.05), transparent 40%),
     radial-gradient(circle at 85% 10%, rgba(30, 64, 175, 0.08), transparent 42%),
     var(--bg);
-}
-
-.home-hero {
-  border: 1px solid var(--border);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(248, 250, 252, 0.9));
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
 }
 
 .home-card {
