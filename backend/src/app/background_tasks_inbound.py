@@ -462,7 +462,7 @@ def _is_any_media_message(message: Any) -> bool:
     return _is_pdf_message(message) or _is_image_message(message) or _is_voice_message(message)
 
 
-async def _transcribe_voice_note(audio_bytes: bytes, mime_type: str) -> str:
+async def _transcribe_voice_note(audio_bytes: bytes, mime_type: str, media_url: str = "") -> str:
     llm_task = importlib.import_module("src.infra.llm.schemas").LLMTask
     response = await _get_llm_router().execute(
         task=llm_task.VOICE_NOTE,
@@ -483,6 +483,8 @@ async def _transcribe_voice_note(audio_bytes: bytes, mime_type: str) -> str:
         max_tokens=1200,
         audio_content=audio_bytes,
         audio_mime_type=mime_type,
+        audio_url=(str(media_url).strip() or None),
+        media_url=(str(media_url).strip() or None),
     )
     transcript = (response.content or "").strip()
     if not transcript:
@@ -638,7 +640,7 @@ async def _prepare_media_inbound_for_runtime(message: Any) -> Dict[str, Any]:
             try:
                 audio_bytes = await _download_audio_bytes(media_url)
                 processing["bytes"] = len(audio_bytes)
-                transcript = await _transcribe_voice_note(audio_bytes, mime_type)
+                transcript = await _transcribe_voice_note(audio_bytes, mime_type, media_url)
                 processing["status"] = "ok"
                 processing["transcript_chars"] = len(transcript)
             except Exception as exc:

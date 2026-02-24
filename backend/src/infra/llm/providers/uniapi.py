@@ -1,5 +1,6 @@
 import logging
 import httpx
+import asyncio
 from typing import Dict, Optional, Any, List
 
 from ..schemas import LLMRequest, LLMResponse, LLMMessage
@@ -14,6 +15,7 @@ class UniAPIProvider(BaseLLMProvider):
     - gemini_native: /gemini/v1beta/models/{model}:generateContent
     - openai_chat: /v1/chat/completions
     - openai_responses: /v1/responses
+    - ali_asr_filetrans: /ali/api/v1/services/audio/asr/transcription
     """
     def __init__(
         self,
@@ -43,6 +45,10 @@ class UniAPIProvider(BaseLLMProvider):
         "gemini-3-flash-preview",
     ]
 
+    ALI_ASR_FILETRANS_MODELS: List[str] = [
+        "qwen3-asr-flash-filetrans",
+    ]
+
     def set_api_key(self, api_key: str) -> None:
         self.api_key = api_key.strip() if api_key else None
 
@@ -62,6 +68,14 @@ class UniAPIProvider(BaseLLMProvider):
                     "provider": "uniapi",
                     "model": model,
                     "schema": "openai_chat",
+                }
+            )
+        for model in self.ALI_ASR_FILETRANS_MODELS:
+            models.append(
+                {
+                    "provider": "uniapi",
+                    "model": model,
+                    "schema": "ali_asr_filetrans",
                 }
             )
         return models
@@ -90,13 +104,179 @@ class UniAPIProvider(BaseLLMProvider):
             return await self._generate_openai_chat(request, api_key, model)
         if schema == "openai_responses":
             return await self._generate_openai_responses(request, api_key, model)
+        if schema == "ali_asr_filetrans":
+            return await self._generate_ali_asr_filetrans(request, api_key, model)
 
         raise ValueError(f"Unsupported UniAPI schema '{schema}'")
 
     def _infer_schema(self, model: str) -> str:
         if model.startswith("gemini-"):
             return "gemini_native"
+        if model.startswith("qwen3-asr-flash-filetrans"):
+            return "ali_asr_filetrans"
         return "openai_chat"
+
+    async def _generate_ali_asr_filetrans(
+        self, request: LLMRequest, api_key: str, model: str
+    ) -> LLMResponse:
+        extra = request.extra_params or {}
+        file_url = (
+            str(
+                extra.get("file_url")
+                or extra.get("audio_url")
+                or extra.get("media_url")
+                or ""
+            )
+            .strip()
+        )
+        if not file_url:
+            raise ValueError("ali_asr_filetrans requires file_url/audio_url/media_url")
+
+        submit_url = f"{self.base_url}/ali/api/v1/services/audio/asr/transcription"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "X-DashScope-Async": "enable",
+        }
+
+        params: Dict[str, Any] = {
+            "channel_id": extra.get("asr_channel_id") or [0],
+            "enable_itn": bool(extra.get("asr_enable_itn", False)),
+        }
+        if extra.get("asr_language"):
+            params["language"] = str(extra["asr_language"]).strip()
+        if "asr_enable_words" in extra:
+            params["enable_words"] = bool(extra.get("asr_enable_words"))
+        corpus_text = str(extra.get("asr_corpus_text", "") or "").strip()
+        if corpus_text:
+            params["corpus"] = {"text": corpus_text}
+
+        submit_payload: Dict[str, Any] = {
+            "model": model,
+            "input": {"file_url": file_url},
+            "parameters": params,
+        }
+
+        submit_resp = await self.http_client.post(
+            submit_url, headers=headers, json=submit_payload
+        )
+        submit_resp.raise_for_status()
+        submit_data = submit_resp.json()
+        task_id = (
+            ((submit_data.get("output") or {}).get("task_id"))
+            if isinstance(submit_data, dict)
+            else None
+        )
+        if not task_id:
+            raise RuntimeError(f"ASR submit missing task_id: {submit_data}")
+
+        max_polls = int(extra.get("asr_max_polls", 40) or 40)
+        poll_interval = float(extra.get("asr_poll_interval_seconds", 1.0) or 1.0)
+        poll_data: Dict[str, Any] = {}
+        output: Dict[str, Any] = {}
+
+        for _ in range(max_polls):
+            poll_data = await self._fetch_ali_task(task_id, headers)
+            output = poll_data.get("output") or {}
+            task_status = str(output.get("task_status") or "").upper()
+            if task_status == "SUCCEEDED":
+                break
+            if task_status in {"FAILED", "UNKNOWN"}:
+                code = output.get("code")
+                message = output.get("message")
+                raise RuntimeError(f"ASR task {task_status}: {code} {message}".strip())
+            await asyncio.sleep(max(poll_interval, 0.1))
+        else:
+            raise TimeoutError(f"ASR task polling timeout for task_id={task_id}")
+
+        result = output.get("result") if isinstance(output, dict) else {}
+        transcript = ""
+        if isinstance(result, dict):
+            transcription_url = str(result.get("transcription_url") or "").strip()
+            if transcription_url:
+                transcript_data = await self._fetch_json_or_text(transcription_url)
+                transcript = self._extract_transcript_text(transcript_data)
+            else:
+                transcript = self._extract_transcript_text(result)
+        if not transcript:
+            transcript = self._extract_transcript_text(poll_data)
+        if not transcript:
+            raise RuntimeError("ASR task succeeded but transcript is empty")
+
+        return LLMResponse(
+            content=transcript,
+            usage={},
+            provider_info={"provider": "uniapi", "model": model, "schema": "ali_asr_filetrans"},
+        )
+
+    async def _fetch_ali_task(self, task_id: str, headers: Dict[str, str]) -> Dict[str, Any]:
+        task_id = str(task_id).strip()
+        candidates = [
+            f"{self.base_url}/ali/api/v1/tasks/{task_id}",
+            f"{self.base_url}/api/v1/tasks/{task_id}",
+        ]
+        last_error: Optional[Exception] = None
+        for url in candidates:
+            try:
+                resp = await self.http_client.get(url, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+                if isinstance(data, dict):
+                    return data
+                raise RuntimeError(f"Unexpected ASR task response shape from {url}")
+            except Exception as exc:
+                last_error = exc
+                continue
+        raise RuntimeError(f"ASR task polling failed for task_id={task_id}: {last_error}")
+
+    async def _fetch_json_or_text(self, url: str) -> Any:
+        resp = await self.http_client.get(url)
+        resp.raise_for_status()
+        content_type = str(resp.headers.get("content-type", "")).lower()
+        if "application/json" in content_type:
+            try:
+                return resp.json()
+            except Exception:
+                return resp.text
+        try:
+            return resp.json()
+        except Exception:
+            return resp.text
+
+    def _extract_transcript_text(self, payload: Any) -> str:
+        chunks: List[str] = []
+        self._collect_transcript_chunks(payload, chunks)
+        merged = "\n".join([c for c in chunks if isinstance(c, str) and c.strip()]).strip()
+        return merged
+
+    def _collect_transcript_chunks(self, payload: Any, chunks: List[str]) -> None:
+        if payload is None:
+            return
+        if isinstance(payload, str):
+            text = payload.strip()
+            if text:
+                chunks.append(text)
+            return
+        if isinstance(payload, list):
+            for item in payload:
+                self._collect_transcript_chunks(item, chunks)
+            return
+        if not isinstance(payload, dict):
+            return
+
+        for key in ("transcript_text", "transcription_text", "text", "transcript", "sentence"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                chunks.append(value.strip())
+
+        for key in ("sentences", "segments", "utterances", "transcripts", "results", "channels", "channel_results"):
+            value = payload.get(key)
+            if isinstance(value, (dict, list)):
+                self._collect_transcript_chunks(value, chunks)
+
+        for value in payload.values():
+            if isinstance(value, (dict, list)):
+                self._collect_transcript_chunks(value, chunks)
 
     async def _generate_gemini_native(
         self, request: LLMRequest, api_key: str, model: str

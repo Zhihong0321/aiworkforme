@@ -414,7 +414,7 @@ def test_prepare_media_inbound_for_runtime_voice_note(monkeypatch):
     async def _fake_download(_url):
         return b"audio-bytes"
 
-    async def _fake_transcribe(_bytes, _mime):
+    async def _fake_transcribe(_bytes, _mime, _media_url=""):
         return "hello from voice note"
 
     monkeypatch.setattr(inbound_tasks, "_download_audio_bytes", _fake_download)
