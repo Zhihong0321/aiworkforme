@@ -111,6 +111,8 @@ class UniAPIProvider(BaseLLMProvider):
 
         image_content = request.extra_params.get("image_content")
         image_mime = request.extra_params.get("image_mime_type", "image/jpeg")
+        audio_content = request.extra_params.get("audio_content")
+        audio_mime = request.extra_params.get("audio_mime_type", "audio/ogg")
         user_message_indexes = [
             idx
             for idx, m in enumerate(request.messages)
@@ -136,6 +138,13 @@ class UniAPIProvider(BaseLLMProvider):
                     {"inline_data": {"mime_type": image_mime, "data": b64_data}}
                 )
                 image_content = None
+
+            if audio_content and gemini_role == "user" and idx == last_user_index:
+                b64_data = base64.b64encode(audio_content).decode("utf-8")
+                current_parts.append(
+                    {"inline_data": {"mime_type": audio_mime, "data": b64_data}}
+                )
+                audio_content = None
 
             if gemini_contents and gemini_contents[-1]["role"] == gemini_role:
                 gemini_contents[-1]["parts"].extend(current_parts)

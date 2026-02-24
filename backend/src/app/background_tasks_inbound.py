@@ -33,6 +33,7 @@ PDF_MAX_PAGES = 5
 PDF_MAX_CHARS = 12000
 PDF_MAX_DOWNLOAD_BYTES = 15 * 1024 * 1024
 IMAGE_MAX_DOWNLOAD_BYTES = 12 * 1024 * 1024
+AUDIO_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 _ENGINE = None
 _LLM_ROUTER = None
 _DB_MODELS = None
@@ -212,8 +213,35 @@ def _message_media_url(message: Any) -> str:
     if direct:
         return direct
     payload = _message_payload(message)
-    fallback = str(payload.get("media_url", "") or "").strip()
-    return fallback
+    for key in ("media_url", "mediaUrl", "url", "downloadUrl", "download_url"):
+        fallback = str(payload.get(key, "") or "").strip()
+        if fallback:
+            return fallback
+
+    raw_message = payload.get("message")
+    if isinstance(raw_message, dict):
+        for container_key in (
+            "documentMessage",
+            "imageMessage",
+            "audioMessage",
+            "videoMessage",
+        ):
+            media_body = raw_message.get(container_key)
+            if not isinstance(media_body, dict):
+                continue
+            for key in ("url", "mediaUrl", "media_url", "downloadUrl", "download_url"):
+                nested = str(media_body.get(key, "") or "").strip()
+                if nested:
+                    return nested
+
+    media_obj = payload.get("media")
+    if isinstance(media_obj, dict):
+        for key in ("url", "mediaUrl", "media_url", "downloadUrl", "download_url"):
+            nested = str(media_obj.get(key, "") or "").strip()
+            if nested:
+                return nested
+
+    return ""
 
 
 def _pdf_filename(message: Any) -> str:
@@ -299,6 +327,23 @@ async def _download_image_bytes(media_url: str) -> bytes:
         return data
 
 
+async def _download_audio_bytes(media_url: str) -> bytes:
+    parsed = urlparse(media_url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Unsupported media_url scheme for audio download")
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        response = await client.get(media_url)
+        response.raise_for_status()
+        data = response.content
+        if not data:
+            raise ValueError("Downloaded audio is empty")
+        if len(data) > AUDIO_MAX_DOWNLOAD_BYTES:
+            raise ValueError(
+                f"Audio exceeds max allowed size ({AUDIO_MAX_DOWNLOAD_BYTES} bytes)"
+            )
+        return data
+
+
 def _extract_pdf_text(pdf_bytes: bytes) -> Dict[str, Any]:
     try:
         from pypdf import PdfReader  # type: ignore
@@ -368,6 +413,83 @@ def _is_image_message(message: Any) -> bool:
     )
 
 
+def _voice_mime_type(message: Any) -> str:
+    payload = _message_payload(message)
+    raw_message = payload.get("message")
+    if isinstance(raw_message, dict):
+        audio_body = raw_message.get("audioMessage")
+        if isinstance(audio_body, dict):
+            candidate = str(
+                audio_body.get("mimetype") or audio_body.get("mime_type") or ""
+            ).strip().lower()
+            if candidate:
+                return candidate
+    candidate = str(payload.get("mime_type") or "").strip().lower()
+    return candidate
+
+
+def _voice_filename(message: Any) -> str:
+    payload = _message_payload(message)
+    raw_message = payload.get("message")
+    if isinstance(raw_message, dict):
+        audio_body = raw_message.get("audioMessage")
+        if isinstance(audio_body, dict):
+            candidate = str(audio_body.get("fileName") or audio_body.get("filename") or "").strip()
+            if candidate:
+                return candidate
+    candidate = str(payload.get("filename") or "").strip()
+    return candidate
+
+
+def _is_voice_message(message: Any) -> bool:
+    msg_type = _message_type(message)
+    if msg_type in {"audio", "voice", "voice_note", "ptt"}:
+        return True
+    mime_type = _voice_mime_type(message)
+    if mime_type.startswith("audio/"):
+        return True
+    payload = _message_payload(message)
+    raw_message = payload.get("message")
+    return isinstance(raw_message, dict) and isinstance(
+        raw_message.get("audioMessage"), dict
+    )
+
+
+def _is_any_media_message(message: Any) -> bool:
+    msg_type = _message_type(message)
+    if msg_type in {"image", "photo", "video", "audio", "voice", "voice_note", "ptt", "document", "file", "pdf"}:
+        return True
+    return _is_pdf_message(message) or _is_image_message(message) or _is_voice_message(message)
+
+
+async def _transcribe_voice_note(audio_bytes: bytes, mime_type: str) -> str:
+    llm_task = importlib.import_module("src.infra.llm.schemas").LLMTask
+    response = await _get_llm_router().execute(
+        task=llm_task.VOICE_NOTE,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You transcribe voice notes. Return plain transcript text only. "
+                    "Do not add explanations."
+                ),
+            },
+            {
+                "role": "user",
+                "content": "Transcribe this voice note to text.",
+            },
+        ],
+        temperature=0.0,
+        max_tokens=1200,
+        audio_content=audio_bytes,
+        audio_mime_type=mime_type,
+    )
+    transcript = (response.content or "").strip()
+    if not transcript:
+        raise ValueError("Voice note transcription returned empty text")
+    return transcript
+
+
 async def _prepare_media_inbound_for_runtime(message: Any) -> Dict[str, Any]:
     llm_task = importlib.import_module("src.infra.llm.schemas").LLMTask
     base_text = str(getattr(message, "text_content", "") or "").strip()
@@ -376,6 +498,8 @@ async def _prepare_media_inbound_for_runtime(message: Any) -> Dict[str, Any]:
         "user_message": base_text,
         "processing": None,
         "llm_extra_params": None,
+        "should_run_runtime": True,
+        "skip_reason": None,
     }
 
     if _is_pdf_message(message):
@@ -434,6 +558,9 @@ async def _prepare_media_inbound_for_runtime(message: Any) -> Dict[str, Any]:
         prepared["task"] = llm_task.PDF
         prepared["user_message"] = "\n\n".join(prompt_parts).strip()
         prepared["processing"] = processing
+        if processing.get("status") != "ok" and not base_text:
+            prepared["should_run_runtime"] = False
+            prepared["skip_reason"] = "PDF_PROCESSING_FAILED_NO_TEXT"
         return prepared
 
     if _is_image_message(message):
@@ -485,7 +612,76 @@ async def _prepare_media_inbound_for_runtime(message: Any) -> Dict[str, Any]:
                 "image_content": image_bytes,
                 "image_mime_type": mime_type,
             }
+        if processing.get("status") != "ok" and not base_text:
+            prepared["should_run_runtime"] = False
+            prepared["skip_reason"] = "IMAGE_PROCESSING_FAILED_NO_TEXT"
         return prepared
+
+    if _is_voice_message(message):
+        media_url = _message_media_url(message)
+        mime_type = _voice_mime_type(message) or "audio/ogg"
+        filename = _voice_filename(message)
+        processing: Dict[str, Any] = {
+            "type": "voice_note",
+            "workflow_task": llm_task.VOICE_NOTE.value,
+            "media_url": media_url or None,
+            "filename": filename or None,
+            "mime_type": mime_type,
+            "status": "pending",
+        }
+
+        transcript = ""
+        if not media_url:
+            processing["status"] = "error"
+            processing["error"] = "No media_url found for voice note message"
+        else:
+            try:
+                audio_bytes = await _download_audio_bytes(media_url)
+                processing["bytes"] = len(audio_bytes)
+                transcript = await _transcribe_voice_note(audio_bytes, mime_type)
+                processing["status"] = "ok"
+                processing["transcript_chars"] = len(transcript)
+            except Exception as exc:
+                processing["status"] = "error"
+                processing["error"] = str(exc)[:500]
+
+        prompt_parts = []
+        if base_text:
+            prompt_parts.append(f"User message: {base_text}")
+        prompt_parts.append("User sent a voice note.")
+        if filename:
+            prompt_parts.append(f"Voice note filename: {filename}")
+        prompt_parts.append(f"Voice note mime type: {mime_type}")
+        if processing["status"] == "ok":
+            prompt_parts.append(
+                "Voice note transcript:\n"
+                f"{transcript}"
+            )
+        else:
+            prompt_parts.append(
+                f"Voice note processing failed: {processing.get('error', 'unknown error')}"
+            )
+
+        prompt_parts.append(
+            "Based on conversation history and this voice note transcript, infer intent and respond helpfully."
+        )
+
+        prepared["task"] = llm_task.CONVERSATION
+        prepared["user_message"] = "\n\n".join(prompt_parts).strip()
+        prepared["processing"] = processing
+        if processing.get("status") != "ok" and not base_text:
+            prepared["should_run_runtime"] = False
+            prepared["skip_reason"] = "VOICE_PROCESSING_FAILED_NO_TEXT"
+        return prepared
+
+    if _is_any_media_message(message) and not base_text:
+        prepared["processing"] = {
+            "type": _message_type(message) or "media",
+            "status": "error",
+            "error": "Unsupported or unprocessable media without text context",
+        }
+        prepared["should_run_runtime"] = False
+        prepared["skip_reason"] = "UNPROCESSABLE_MEDIA_NO_TEXT"
 
     return prepared
 
@@ -541,6 +737,25 @@ async def _process_one_inbound(session: Session, message: Any):
         payload = _message_payload(message)
         payload["media_processing"] = prepared["processing"]
         message.raw_payload = payload
+        session.add(message)
+        session.commit()
+        session.refresh(message)
+
+    if not bool(prepared.get("should_run_runtime", True)):
+        payload = _message_payload(message)
+        payload["inbound_skip_reason"] = prepared.get("skip_reason") or "MEDIA_PROCESSING_REQUIRED"
+        payload["inbound_skip_at"] = _iso_now()
+        message.raw_payload = payload
+        message.delivery_status = "inbound_human_takeover"
+        message.updated_at = datetime.now(timezone.utc)
+        session.add(message)
+        session.commit()
+        logger.warning(
+            "Skipping AI auto-reply for media-only inbound message_id=%s: %s",
+            message.id,
+            payload["inbound_skip_reason"],
+        )
+        return
 
     logger.info(
         "Running AI agent (id=%s, name=%s) for inbound message_id=%s (lead=%s)",

@@ -372,6 +372,129 @@ def test_prepare_media_inbound_for_runtime_image(monkeypatch):
     assert "User attached an image." in prepared["user_message"]
 
 
+def test_message_media_url_supports_nested_payload_url():
+    message = type(
+        "Msg",
+        (),
+        {
+            "media_url": None,
+            "raw_payload": {
+                "message": {
+                    "imageMessage": {
+                        "url": "https://cdn.example.com/nested-image.jpg",
+                    }
+                }
+            },
+        },
+    )()
+
+    resolved = inbound_tasks._message_media_url(message)
+    assert resolved == "https://cdn.example.com/nested-image.jpg"
+
+
+def test_prepare_media_inbound_for_runtime_voice_note(monkeypatch):
+    message = type(
+        "Msg",
+        (),
+        {
+            "message_type": "audio",
+            "text_content": None,
+            "media_url": "https://cdn.example.com/voice.ogg",
+            "raw_payload": {
+                "message": {
+                    "audioMessage": {
+                        "mimetype": "audio/ogg",
+                        "fileName": "voice.ogg",
+                    }
+                }
+            },
+        },
+    )()
+
+    async def _fake_download(_url):
+        return b"audio-bytes"
+
+    async def _fake_transcribe(_bytes, _mime):
+        return "hello from voice note"
+
+    monkeypatch.setattr(inbound_tasks, "_download_audio_bytes", _fake_download)
+    monkeypatch.setattr(inbound_tasks, "_transcribe_voice_note", _fake_transcribe)
+
+    prepared = asyncio.run(inbound_tasks._prepare_media_inbound_for_runtime(message))
+
+    assert getattr(prepared["task"], "value", None) == "conversation"
+    assert prepared["processing"]["status"] == "ok"
+    assert prepared["processing"]["bytes"] == len(b"audio-bytes")
+    assert prepared["processing"]["transcript_chars"] == len("hello from voice note")
+    assert prepared["should_run_runtime"] is True
+    assert "Voice note transcript" in prepared["user_message"]
+
+
+def test_prepare_media_inbound_for_runtime_blocks_unprocessable_media_without_text():
+    message = type(
+        "Msg",
+        (),
+        {
+            "message_type": "video",
+            "text_content": None,
+            "media_url": None,
+            "raw_payload": {},
+        },
+    )()
+
+    prepared = asyncio.run(inbound_tasks._prepare_media_inbound_for_runtime(message))
+
+    assert prepared["should_run_runtime"] is False
+    assert prepared["skip_reason"] == "UNPROCESSABLE_MEDIA_NO_TEXT"
+    assert prepared["processing"]["status"] == "error"
+
+
+def test_process_one_inbound_skips_runtime_for_unprocessable_media(monkeypatch):
+    session = _FakeSession()
+    message = type(
+        "Msg",
+        (),
+        {
+            "id": 4,
+            "tenant_id": 99,
+            "lead_id": 88,
+            "delivery_status": "received",
+            "updated_at": None,
+            "text_content": None,
+            "raw_payload": {},
+        },
+    )()
+    lead = type("LeadObj", (), {"workspace_id": 77})()
+    agent = type("AgentObj", (), {"id": 55, "name": "C"})()
+
+    monkeypatch.setattr(inbound_tasks, "_resolve_thread_agent", lambda *_args: agent)
+    monkeypatch.setattr(inbound_tasks, "_build_thread_history", lambda *_args: [])
+    async def _fake_prepare(*_args):
+        return {
+            "task": None,
+            "user_message": "",
+            "processing": {"type": "image", "status": "error", "error": "No media_url found"},
+            "llm_extra_params": None,
+            "should_run_runtime": False,
+            "skip_reason": "IMAGE_PROCESSING_FAILED_NO_TEXT",
+        }
+
+    monkeypatch.setattr(inbound_tasks, "_prepare_media_inbound_for_runtime", _fake_prepare)
+    monkeypatch.setattr(session, "get", lambda _model, _id: lead)
+
+    class _Runtime:
+        def __init__(self, *_args, **_kwargs):
+            raise AssertionError("Runtime should not be instantiated when media processing blocks")
+
+    monkeypatch.setattr(inbound_tasks, "ConversationAgentRuntime", _Runtime)
+
+    asyncio.run(inbound_tasks._process_one_inbound(session, message))
+
+    assert message.delivery_status == "inbound_human_takeover"
+    assert message.raw_payload["inbound_skip_reason"] == "IMAGE_PROCESSING_FAILED_NO_TEXT"
+    assert session.commits >= 2
+
+
 def test_agent_runtime_run_turn_blocks_before_llm_call():
     session = _FakeSession()
     router = _FakeRouter(content="should-not-be-used")
