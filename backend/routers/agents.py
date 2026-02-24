@@ -42,7 +42,9 @@ def list_agents(
             ]
 
             # Use model_dump in Pydantic v2 or dict in v1
-            agent_data = agent.model_dump(exclude={"chat_sessions", "mcp_servers", "knowledge_files"})
+            agent_data = agent.model_dump(
+                exclude={"chat_sessions", "mcp_servers", "knowledge_files", "model", "reasoning_enabled"}
+            )
             results.append(
                 AgentRead(
                     **agent_data,
@@ -112,7 +114,11 @@ def update_agent(
     session.add(agent)
     session.commit()
     session.refresh(agent)
-    return AgentRead(**agent.model_dump())
+    return AgentRead(
+        **agent.model_dump(
+            exclude={"chat_sessions", "mcp_servers", "knowledge_files", "model", "reasoning_enabled"}
+        )
+    )
 
 @router.get("/{agent_id}", response_model=AgentRead)
 def get_agent(
@@ -129,7 +135,9 @@ def get_agent(
     ).all()
 
     return AgentRead(
-        **agent.model_dump(exclude={"chat_sessions", "mcp_servers", "knowledge_files"}),
+        **agent.model_dump(
+            exclude={"chat_sessions", "mcp_servers", "knowledge_files", "model", "reasoning_enabled"}
+        ),
         linked_mcp_ids=list(linked_ids),
         linked_mcp_count=len(linked_ids)
     )

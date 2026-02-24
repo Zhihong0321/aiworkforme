@@ -77,13 +77,12 @@ const loadAgents = async () => {
     if (!res.ok) throw new Error('Failed to fetch agents')
     const data = await res.json()
     agents.value = Array.isArray(data)
-      ? data.map((agent, index) => ({
-          id: agent.id ?? index,
-          name: agent.name ?? 'Unknown Agent',
-          model: agent.model ?? 'n/a',
-          status: (agent.status ?? 'ready').toLowerCase(),
-          lastActive: agent.lastActive ?? agent.last_active ?? '—',
-          tokenCountToday: agent.tokenCountToday ?? agent.token_count_today ?? 0
+        ? data.map((agent, index) => ({
+            id: agent.id ?? index,
+            name: agent.name ?? 'Unknown Agent',
+            status: (agent.status ?? 'ready').toLowerCase(),
+            lastActive: agent.lastActive ?? agent.last_active ?? '—',
+            tokenCountToday: agent.tokenCountToday ?? agent.token_count_today ?? 0
         }))
       : []
     if (!quickAgentId.value && agents.value.length) {
@@ -276,7 +275,6 @@ onMounted(() => {
                 </div>
                 <div class="min-w-0 flex-1">
                   <p class="truncate text-base font-semibold leading-tight">{{ agent.name }}</p>
-                  <p class="truncate text-xs uppercase tracking-wider text-slate-600">{{ agent.model }}</p>
                 </div>
               </div>
 

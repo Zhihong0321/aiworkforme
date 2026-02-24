@@ -63,7 +63,6 @@ const loadAgents = async () => {
       ? data.map((agent, index) => ({
           id: agent.id ?? index,
           name: agent.name ?? 'Agent',
-          model: agent.model ?? 'n/a',
           status: (agent.status ?? 'ready').toLowerCase(),
           lastActive: agent.lastActive ?? agent.last_active ?? '—',
           tokenCountToday: agent.tokenCountToday ?? agent.token_count_today ?? 0
@@ -203,7 +202,6 @@ onMounted(() => {
               <p class="text-[11px] uppercase tracking-[0.2em] text-slate-600">conversation</p>
               <h2 class="text-xl font-semibold text-slate-900">{{ currentAgent?.name || 'Select an agent' }}</h2>
             </div>
-            <TuiBadge v-if="currentAgent" variant="muted">{{ currentAgent.model }}</TuiBadge>
           </header>
 
           <div class="flex flex-col gap-3 rounded-lg border border-slate-200 bg-white p-3 sm:p-4 max-h-[55vh] overflow-y-auto">
@@ -273,7 +271,6 @@ onMounted(() => {
             <p class="text-[11px] uppercase tracking-[0.2em] text-slate-600">agent config</p>
             <h3 class="text-lg font-semibold text-slate-900">Details</h3>
           </div>
-          <TuiBadge v-if="currentAgent" variant="muted">{{ currentAgent.model }}</TuiBadge>
         </div>
         <div class="mt-3 grid gap-3 sm:grid-cols-3 text-sm text-slate-800">
           <div>

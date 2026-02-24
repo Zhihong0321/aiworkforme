@@ -561,7 +561,7 @@ def test_agent_runtime_run_turn_sent_path_with_history_override():
     assert result["ai_trace"]["task"] == "conversation"
     assert result["ai_trace"]["context_prompt"] is None
     assert len(router.calls) == 1
-    assert router.calls[0]["model"] == "override-model"
+    assert "model" not in router.calls[0]
     assert len(runtime.policy.recorded) == 2
 
 

@@ -90,7 +90,6 @@ def seed_default_assets(engine: Engine):
                 tenant_id=tenant_id,
                 name="My AI Agent",
                 system_prompt="You are a helpful assistant. Use your tools to find information and help the user.",
-                model="glm-4.7-flash",
             )
             session.add(agent)
             session.commit()

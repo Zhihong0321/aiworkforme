@@ -55,12 +55,11 @@ const loadAgents = async () => {
     if (!res.ok) throw new Error('Failed to fetch agents')
     const data = await res.json()
     agents.value = Array.isArray(data)
-      ? data.map((agent, index) => ({
-          id: agent.id ?? index,
-          name: agent.name ?? 'Agent',
-          model: agent.model ?? 'n/a',
-          status: (agent.status ?? 'ready').toLowerCase()
-        }))
+        ? data.map((agent, index) => ({
+            id: agent.id ?? index,
+            name: agent.name ?? 'Agent',
+            status: (agent.status ?? 'ready').toLowerCase()
+          }))
       : []
   } catch (error) {
     console.error('Failed to load agents', error)

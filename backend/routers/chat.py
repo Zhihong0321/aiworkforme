@@ -207,13 +207,11 @@ async def chat_with_agent(
                     task=task,
                     messages=messages,
                     tools=tools if tools else None,
-                    model=getattr(agent, "model", None),
                 )
                 t_llm1 = time.perf_counter()
                 logger.info(
-                    "chat llm call: agent_id=%s model=%s tool_mode=%s dt=%.3fs",
+                    "chat llm call: agent_id=%s routing=platform tool_mode=%s dt=%.3fs",
                     agent.id,
-                    agent.model,
                     bool(tools),
                     (t_llm1 - t_llm0),
                 )

@@ -91,7 +91,7 @@ class ConversationAgentRuntime:
         directly. Format: [{"role": "user"|"assistant", "content": "..."}]
         """
         # Resolve workspace lazily when callers do not provide one.
-        Lead, Workspace, _, _, _ = self._crm_models()
+        Lead, _, _, _, _ = self._crm_models()
         lead = self.session.get(Lead, lead_id)
         if not lead:
             return {"status": "blocked", "reason": "LEAD_NOT_FOUND"}
@@ -139,14 +139,6 @@ class ConversationAgentRuntime:
                 self._save_message(thread.id, "user", user_message)
 
         # 4. EXECUTE LLM CALL — let exceptions propagate so callers see real errors
-        model_override = None
-        workspace = self.session.get(Workspace, workspace_id)
-        candidate_agent_id = agent_id_override or (workspace.agent_id if workspace else None)
-        if candidate_agent_id:
-            Agent = self._agent_model()
-            agent = self.session.get(Agent, candidate_agent_id)
-            model_override = getattr(agent, "model", None)
-
         llm_task = self._llm_task()
         selected_task = llm_task.CONVERSATION
         if task_override is not None:
@@ -158,8 +150,6 @@ class ConversationAgentRuntime:
         execute_kwargs: Dict[str, Any] = {}
         if llm_extra_params:
             execute_kwargs.update(llm_extra_params)
-        if model_override:
-            execute_kwargs["model"] = model_override
         response = await self.router.execute(
             task=selected_task,
             messages=messages,
