@@ -1,12 +1,15 @@
 """Inbound worker for processing inbound unified messages through agent runtime."""
 import asyncio
+import io
 import importlib
 import logging
 import os
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
+from urllib.parse import urlparse
 from uuid import uuid4
 
+import httpx
 from sqlalchemy import text
 from sqlmodel import Session, select
 
@@ -26,6 +29,10 @@ logger = logging.getLogger(__name__)
 INBOUND_POLL_SECONDS = float(os.getenv("MESSAGING_INBOUND_POLL_SECONDS", "2"))
 INBOUND_BATCH_SIZE = int(os.getenv("MESSAGING_INBOUND_BATCH_SIZE", "5"))
 INBOUND_NOTIFY_CHANNEL = os.getenv("MESSAGING_INBOUND_NOTIFY_CHANNEL", "inbound_new_message")
+PDF_MAX_PAGES = 5
+PDF_MAX_CHARS = 12000
+PDF_MAX_DOWNLOAD_BYTES = 15 * 1024 * 1024
+IMAGE_MAX_DOWNLOAD_BYTES = 12 * 1024 * 1024
 _ENGINE = None
 _LLM_ROUTER = None
 _DB_MODELS = None
@@ -189,6 +196,300 @@ def _enqueue_outbound_reply(
     session.add(queue)
     session.commit()
     return outbound
+
+
+def _message_type(message: Any) -> str:
+    return str(getattr(message, "message_type", "") or "").strip().lower()
+
+
+def _message_payload(message: Any) -> Dict[str, Any]:
+    payload = getattr(message, "raw_payload", {})
+    return payload if isinstance(payload, dict) else {}
+
+
+def _message_media_url(message: Any) -> str:
+    direct = str(getattr(message, "media_url", "") or "").strip()
+    if direct:
+        return direct
+    payload = _message_payload(message)
+    fallback = str(payload.get("media_url", "") or "").strip()
+    return fallback
+
+
+def _pdf_filename(message: Any) -> str:
+    payload = _message_payload(message)
+    raw_message = payload.get("message")
+    if isinstance(raw_message, dict):
+        doc = raw_message.get("documentMessage")
+        if isinstance(doc, dict):
+            candidate = str(
+                doc.get("fileName") or doc.get("filename") or doc.get("title") or ""
+            ).strip()
+            if candidate:
+                return candidate
+    candidate = str(payload.get("filename") or "").strip()
+    return candidate
+
+
+def _pdf_mime_type(message: Any) -> str:
+    payload = _message_payload(message)
+    raw_message = payload.get("message")
+    if isinstance(raw_message, dict):
+        doc = raw_message.get("documentMessage")
+        if isinstance(doc, dict):
+            candidate = str(doc.get("mimetype") or doc.get("mime_type") or "").strip().lower()
+            if candidate:
+                return candidate
+    candidate = str(payload.get("mime_type") or "").strip().lower()
+    return candidate
+
+
+def _is_pdf_message(message: Any) -> bool:
+    msg_type = _message_type(message)
+    if msg_type == "pdf":
+        return True
+    if msg_type not in {"document", "file"}:
+        return False
+
+    mime_type = _pdf_mime_type(message)
+    if mime_type == "application/pdf":
+        return True
+
+    filename = _pdf_filename(message).lower()
+    if filename.endswith(".pdf"):
+        return True
+
+    media_url = _message_media_url(message)
+    if not media_url:
+        return False
+    return urlparse(media_url).path.lower().endswith(".pdf")
+
+
+async def _download_pdf_bytes(media_url: str) -> bytes:
+    parsed = urlparse(media_url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Unsupported media_url scheme for PDF download")
+    async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
+        response = await client.get(media_url)
+        response.raise_for_status()
+        data = response.content
+        if not data:
+            raise ValueError("Downloaded PDF is empty")
+        if len(data) > PDF_MAX_DOWNLOAD_BYTES:
+            raise ValueError(
+                f"PDF exceeds max allowed size ({PDF_MAX_DOWNLOAD_BYTES} bytes)"
+            )
+        return data
+
+
+async def _download_image_bytes(media_url: str) -> bytes:
+    parsed = urlparse(media_url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError("Unsupported media_url scheme for image download")
+    async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
+        response = await client.get(media_url)
+        response.raise_for_status()
+        data = response.content
+        if not data:
+            raise ValueError("Downloaded image is empty")
+        if len(data) > IMAGE_MAX_DOWNLOAD_BYTES:
+            raise ValueError(
+                f"Image exceeds max allowed size ({IMAGE_MAX_DOWNLOAD_BYTES} bytes)"
+            )
+        return data
+
+
+def _extract_pdf_text(pdf_bytes: bytes) -> Dict[str, Any]:
+    try:
+        from pypdf import PdfReader  # type: ignore
+    except Exception as exc:
+        raise RuntimeError("pypdf is required for PDF processing") from exc
+
+    reader = PdfReader(io.BytesIO(pdf_bytes))
+    pages_to_read = min(len(reader.pages), PDF_MAX_PAGES)
+    page_chunks: List[str] = []
+    for idx in range(pages_to_read):
+        page_text = (reader.pages[idx].extract_text() or "").strip()
+        if page_text:
+            page_chunks.append(f"[Page {idx + 1}]\n{page_text}")
+
+    combined = "\n\n".join(page_chunks).strip()
+    truncated = False
+    if len(combined) > PDF_MAX_CHARS:
+        combined = combined[:PDF_MAX_CHARS]
+        truncated = True
+
+    return {
+        "pages_read": pages_to_read,
+        "text": combined,
+        "text_truncated": truncated,
+    }
+
+
+def _image_mime_type(message: Any) -> str:
+    payload = _message_payload(message)
+    raw_message = payload.get("message")
+    if isinstance(raw_message, dict):
+        image_body = raw_message.get("imageMessage")
+        if isinstance(image_body, dict):
+            candidate = str(
+                image_body.get("mimetype") or image_body.get("mime_type") or ""
+            ).strip().lower()
+            if candidate:
+                return candidate
+    candidate = str(payload.get("mime_type") or "").strip().lower()
+    return candidate
+
+
+def _image_filename(message: Any) -> str:
+    payload = _message_payload(message)
+    raw_message = payload.get("message")
+    if isinstance(raw_message, dict):
+        image_body = raw_message.get("imageMessage")
+        if isinstance(image_body, dict):
+            candidate = str(image_body.get("fileName") or image_body.get("filename") or "").strip()
+            if candidate:
+                return candidate
+    candidate = str(payload.get("filename") or "").strip()
+    return candidate
+
+
+def _is_image_message(message: Any) -> bool:
+    msg_type = _message_type(message)
+    if msg_type in {"image", "photo"}:
+        return True
+    mime_type = _image_mime_type(message)
+    if mime_type.startswith("image/"):
+        return True
+    payload = _message_payload(message)
+    raw_message = payload.get("message")
+    return isinstance(raw_message, dict) and isinstance(
+        raw_message.get("imageMessage"), dict
+    )
+
+
+async def _prepare_media_inbound_for_runtime(message: Any) -> Dict[str, Any]:
+    llm_task = importlib.import_module("src.infra.llm.schemas").LLMTask
+    base_text = str(getattr(message, "text_content", "") or "").strip()
+    prepared: Dict[str, Any] = {
+        "task": llm_task.CONVERSATION,
+        "user_message": base_text,
+        "processing": None,
+        "llm_extra_params": None,
+    }
+
+    if _is_pdf_message(message):
+        media_url = _message_media_url(message)
+        filename = _pdf_filename(message)
+        processing: Dict[str, Any] = {
+            "type": "pdf",
+            "workflow_task": llm_task.PDF.value,
+            "media_url": media_url or None,
+            "filename": filename or None,
+            "mime_type": _pdf_mime_type(message) or None,
+            "status": "pending",
+        }
+
+        pdf_text = ""
+        pages_read = 0
+        if not media_url:
+            processing["status"] = "error"
+            processing["error"] = "No media_url found for PDF message"
+        else:
+            try:
+                pdf_bytes = await _download_pdf_bytes(media_url)
+                extraction = _extract_pdf_text(pdf_bytes)
+                pdf_text = extraction.get("text", "") or ""
+                pages_read = int(extraction.get("pages_read", 0) or 0)
+                processing["status"] = "ok"
+                processing["pages_read"] = pages_read
+                processing["text_truncated"] = bool(extraction.get("text_truncated", False))
+                processing["text_chars"] = len(pdf_text)
+            except Exception as exc:
+                processing["status"] = "error"
+                processing["error"] = str(exc)[:500]
+
+        prompt_parts: List[str] = []
+        if base_text:
+            prompt_parts.append(f"User message: {base_text}")
+        prompt_parts.append("User attached a PDF document.")
+        if filename:
+            prompt_parts.append(f"PDF filename: {filename}")
+        if processing["status"] == "ok":
+            prompt_parts.append(
+                "PDF extracted text "
+                f"(first {pages_read} page(s), max {PDF_MAX_PAGES}):\n"
+                f"{pdf_text or '[No readable text extracted]'}"
+            )
+        else:
+            prompt_parts.append(
+                f"PDF extraction failed: {processing.get('error', 'unknown error')}"
+            )
+
+        prompt_parts.append(
+            "Based on conversation history and this PDF content, "
+            "infer why the user sent the PDF, then respond helpfully."
+        )
+
+        prepared["task"] = llm_task.PDF
+        prepared["user_message"] = "\n\n".join(prompt_parts).strip()
+        prepared["processing"] = processing
+        return prepared
+
+    if _is_image_message(message):
+        media_url = _message_media_url(message)
+        mime_type = _image_mime_type(message) or "image/jpeg"
+        filename = _image_filename(message)
+        processing = {
+            "type": "image",
+            "workflow_task": llm_task.IMAGES.value,
+            "media_url": media_url or None,
+            "filename": filename or None,
+            "mime_type": mime_type,
+            "status": "pending",
+        }
+
+        image_bytes: Optional[bytes] = None
+        if not media_url:
+            processing["status"] = "error"
+            processing["error"] = "No media_url found for image message"
+        else:
+            try:
+                image_bytes = await _download_image_bytes(media_url)
+                processing["status"] = "ok"
+                processing["bytes"] = len(image_bytes)
+            except Exception as exc:
+                processing["status"] = "error"
+                processing["error"] = str(exc)[:500]
+
+        prompt_parts = []
+        if base_text:
+            prompt_parts.append(f"User message: {base_text}")
+        prompt_parts.append("User attached an image.")
+        if filename:
+            prompt_parts.append(f"Image filename: {filename}")
+        prompt_parts.append(f"Image mime type: {mime_type}")
+        if processing.get("status") != "ok":
+            prompt_parts.append(
+                f"Image fetch failed: {processing.get('error', 'unknown error')}"
+            )
+        prompt_parts.append(
+            "Based on conversation history and this image, infer why the user sent it, then respond helpfully."
+        )
+
+        prepared["task"] = llm_task.IMAGES
+        prepared["user_message"] = "\n\n".join(prompt_parts).strip()
+        prepared["processing"] = processing
+        if image_bytes is not None:
+            prepared["llm_extra_params"] = {
+                "image_content": image_bytes,
+                "image_mime_type": mime_type,
+            }
+        return prepared
+
+    return prepared
+
+
 async def _process_one_inbound(session: Session, message: Any):
     _, _, _, Lead, _, _ = _get_db_models()
     if message.delivery_status != "inbound_processing":
@@ -235,6 +536,11 @@ async def _process_one_inbound(session: Session, message: Any):
         session.refresh(lead)
 
     history = _build_thread_history(session, message)
+    prepared = await _prepare_media_inbound_for_runtime(message)
+    if prepared.get("processing"):
+        payload = _message_payload(message)
+        payload["media_processing"] = prepared["processing"]
+        message.raw_payload = payload
 
     logger.info(
         "Running AI agent (id=%s, name=%s) for inbound message_id=%s (lead=%s)",
@@ -244,10 +550,12 @@ async def _process_one_inbound(session: Session, message: Any):
     result = await runtime.run_turn(
         lead_id=message.lead_id,
         workspace_id=lead.workspace_id,
-        user_message=message.text_content or "",
+        user_message=prepared.get("user_message") or "",
         agent_id_override=agent.id,
         bypass_safety=True,
         history_override=history,
+        task_override=prepared.get("task"),
+        llm_extra_params=prepared.get("llm_extra_params"),
     )
 
     status = result.get("status")

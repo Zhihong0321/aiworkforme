@@ -273,6 +273,7 @@ def create_inbound_message(
         direction="inbound",
         message_type=payload.message_type,
         text_content=payload.text_content,
+        media_url=payload.media_url,
         raw_payload=payload.raw_payload or {},
         delivery_status="received",
         created_at=now,

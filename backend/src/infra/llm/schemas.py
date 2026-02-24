@@ -8,6 +8,9 @@ class LLMTask(str, Enum):
     REASONING = "reasoning"
     TOOL_USE = "tool_use"
     AI_CRM = "ai_crm"
+    PDF = "pdf"
+    IMAGES = "images"
+    VOICE_NOTE = "voice_note"
 
 class LLMMessage(BaseModel):
     role: str  # 'system', 'user', 'assistant', 'tool'
