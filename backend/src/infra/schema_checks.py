@@ -19,6 +19,7 @@ REQUIRED_ET_MESSAGES_COLUMNS: List[str] = [
     "channel",
     "direction",
     "text_content",
+    "media_url",
     "raw_payload",
     "delivery_status",
     "created_at",

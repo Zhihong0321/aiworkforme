@@ -111,8 +111,14 @@ class UniAPIProvider(BaseLLMProvider):
 
         image_content = request.extra_params.get("image_content")
         image_mime = request.extra_params.get("image_mime_type", "image/jpeg")
+        user_message_indexes = [
+            idx
+            for idx, m in enumerate(request.messages)
+            if m.role != "system" and m.role != "assistant"
+        ]
+        last_user_index = user_message_indexes[-1] if user_message_indexes else -1
 
-        for msg in request.messages:
+        for idx, msg in enumerate(request.messages):
             if msg.role == "system":
                 text = msg.content or ""
                 if system_instruction:
@@ -124,7 +130,7 @@ class UniAPIProvider(BaseLLMProvider):
             gemini_role = "model" if msg.role == "assistant" else "user"
             current_parts = [{"text": msg.content or ""}]
 
-            if image_content and gemini_role == "user" and not any(c["role"] == "user" for c in gemini_contents):
+            if image_content and gemini_role == "user" and idx == last_user_index:
                 b64_data = base64.b64encode(image_content).decode("utf-8")
                 current_parts.append(
                     {"inline_data": {"mime_type": image_mime, "data": b64_data}}

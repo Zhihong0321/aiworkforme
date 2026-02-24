@@ -188,13 +188,25 @@ def get_llm_routing(
     session: Session = Depends(get_session),
     _context: AuthContext = Depends(require_platform_admin),
 ):
-    setting = session.get(SystemSetting, "llm_routing_config")
-    if setting and setting.value:
-        return json.loads(setting.value)
-
     from src.adapters.api.dependencies import llm_router
 
-    return {k.value: v for k, v in llm_router.routing_config.items()}
+    defaults = {
+        t.value: llm_router.routing_config.get(t, llm_router.default_provider)
+        for t in LLMTask
+    }
+    setting = session.get(SystemSetting, "llm_routing_config")
+    if setting and setting.value:
+        stored = json.loads(setting.value)
+        if isinstance(stored, dict):
+            valid_tasks = {t.value for t in LLMTask}
+            defaults.update(
+                {
+                    k: str(v).strip()
+                    for k, v in stored.items()
+                    if k in valid_tasks and isinstance(v, str) and str(v).strip()
+                }
+            )
+    return defaults
 
 
 @router.get("/llm/task-models")

@@ -80,6 +80,8 @@ class ConversationAgentRuntime:
         agent_id_override: Optional[int] = None,
         bypass_safety: bool = False,
         history_override: Optional[List[Dict[str, str]]] = None,
+        task_override: Optional[Any] = None,
+        llm_extra_params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Executes a single workflow turn.
@@ -146,10 +148,22 @@ class ConversationAgentRuntime:
             model_override = getattr(agent, "model", None)
 
         llm_task = self._llm_task()
+        selected_task = llm_task.CONVERSATION
+        if task_override is not None:
+            selected_task = (
+                llm_task(task_override)
+                if isinstance(task_override, str)
+                else task_override
+            )
+        execute_kwargs: Dict[str, Any] = {}
+        if llm_extra_params:
+            execute_kwargs.update(llm_extra_params)
+        if model_override:
+            execute_kwargs["model"] = model_override
         response = await self.router.execute(
-            task=llm_task.CONVERSATION,
+            task=selected_task,
             messages=messages,
-            model=model_override,
+            **execute_kwargs,
         )
         model_text = response.content
         if not model_text:
@@ -188,7 +202,7 @@ class ConversationAgentRuntime:
         )
         ai_trace = {
             "schema_version": "1.0",
-            "task": llm_task.CONVERSATION.value,
+            "task": selected_task.value,
             "provider": provider_name,
             "model": model_name,
             "usage": {**usage, "estimated_cost_usd": estimated_cost_usd},

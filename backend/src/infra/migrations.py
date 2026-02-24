@@ -163,7 +163,8 @@ def apply_message_usage_columns_migration(engine: Engine):
     Ensures et_messages has LLM usage columns required by current code.
     Safe to run repeatedly.
     """
-    llm_columns = {
+    required_columns = {
+        "media_url": "TEXT",
         "llm_provider": "VARCHAR(32)",
         "llm_model": "VARCHAR(128)",
         "llm_prompt_tokens": "INTEGER",
@@ -175,7 +176,7 @@ def apply_message_usage_columns_migration(engine: Engine):
     dialect = engine.dialect.name
     if dialect == "postgresql":
         with engine.begin() as conn:
-            for name, ddl in llm_columns.items():
+            for name, ddl in required_columns.items():
                 conn.execute(text(f"ALTER TABLE et_messages ADD COLUMN IF NOT EXISTS {name} {ddl}"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_messages_llm_provider ON et_messages(llm_provider)"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_messages_llm_model ON et_messages(llm_model)"))
@@ -198,7 +199,7 @@ def apply_message_usage_columns_migration(engine: Engine):
             return
         existing_cols = {col["name"] for col in insp.get_columns("et_messages")}
         with engine.begin() as conn:
-            for name, ddl in llm_columns.items():
+            for name, ddl in required_columns.items():
                 if name not in existing_cols:
                     conn.execute(text(f"ALTER TABLE et_messages ADD COLUMN {name} {ddl}"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_messages_llm_provider ON et_messages(llm_provider)"))

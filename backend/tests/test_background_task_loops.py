@@ -301,6 +301,77 @@ def test_process_one_inbound_handles_sent_result(monkeypatch):
     assert enqueue_calls == [True]
 
 
+def test_prepare_media_inbound_for_runtime_pdf(monkeypatch):
+    message = type(
+        "Msg",
+        (),
+        {
+            "message_type": "document",
+            "text_content": "please check",
+            "media_url": "https://cdn.example.com/invoice.pdf",
+            "raw_payload": {
+                "message": {
+                    "documentMessage": {
+                        "mimetype": "application/pdf",
+                        "fileName": "invoice.pdf",
+                    }
+                }
+            },
+        },
+    )()
+
+    async def _fake_download(_url):
+        return b"%PDF-sample%"
+
+    monkeypatch.setattr(inbound_tasks, "_download_pdf_bytes", _fake_download)
+    monkeypatch.setattr(
+        inbound_tasks,
+        "_extract_pdf_text",
+        lambda _bytes: {"pages_read": 2, "text": "line one", "text_truncated": False},
+    )
+
+    prepared = asyncio.run(inbound_tasks._prepare_media_inbound_for_runtime(message))
+
+    assert getattr(prepared["task"], "value", None) == "pdf"
+    assert prepared["processing"]["status"] == "ok"
+    assert prepared["processing"]["pages_read"] == 2
+    assert "User attached a PDF document." in prepared["user_message"]
+
+
+def test_prepare_media_inbound_for_runtime_image(monkeypatch):
+    message = type(
+        "Msg",
+        (),
+        {
+            "message_type": "image",
+            "text_content": "what is this?",
+            "media_url": "https://cdn.example.com/photo.jpg",
+            "raw_payload": {
+                "message": {
+                    "imageMessage": {
+                        "mimetype": "image/jpeg",
+                        "fileName": "photo.jpg",
+                    }
+                }
+            },
+        },
+    )()
+
+    async def _fake_download(_url):
+        return b"image-bytes"
+
+    monkeypatch.setattr(inbound_tasks, "_download_image_bytes", _fake_download)
+
+    prepared = asyncio.run(inbound_tasks._prepare_media_inbound_for_runtime(message))
+
+    assert getattr(prepared["task"], "value", None) == "images"
+    assert prepared["processing"]["status"] == "ok"
+    assert prepared["processing"]["bytes"] == len(b"image-bytes")
+    assert prepared["llm_extra_params"]["image_content"] == b"image-bytes"
+    assert prepared["llm_extra_params"]["image_mime_type"] == "image/jpeg"
+    assert "User attached an image." in prepared["user_message"]
+
+
 def test_agent_runtime_run_turn_blocks_before_llm_call():
     session = _FakeSession()
     router = _FakeRouter(content="should-not-be-used")
@@ -369,3 +440,59 @@ def test_agent_runtime_run_turn_sent_path_with_history_override():
     assert len(router.calls) == 1
     assert router.calls[0]["model"] == "override-model"
     assert len(runtime.policy.recorded) == 2
+
+
+def test_agent_runtime_run_turn_uses_task_override():
+    Workspace = type("WorkspaceModel", (), {})
+    Agent = type("AgentModel", (), {})
+    workspace_obj = SimpleNamespace(agent_id=77)
+    agent_obj = SimpleNamespace(model="override-model")
+
+    class _Task:
+        def __init__(self, value):
+            self.value = value
+
+    class _TaskEnum:
+        CONVERSATION = _Task("conversation")
+        PDF = _Task("pdf")
+
+        def __call__(self, value):
+            if value == "pdf":
+                return self.PDF
+            return self.CONVERSATION
+
+    class _Session:
+        def get(self, model, _id):
+            if model is Workspace:
+                return workspace_obj
+            if model is Agent:
+                return agent_obj
+            return None
+
+    session = _Session()
+    router = _FakeRouter(content="assistant reply")
+    runtime = agent_runtime_mod.ConversationAgentRuntime(session, router)
+    runtime.policy = _FakePolicy(pre_allow=True, pre_reason="POLICY_PASSED", risk_allow=True)
+    runtime.builder = _FakeBuilder()
+    runtime._crm_models = lambda: (object, Workspace, object, object, object)
+    runtime._agent_model = lambda: Agent
+    runtime._llm_task = lambda: _TaskEnum()
+    runtime._estimate_llm_cost = lambda: (lambda *_args: 0.123)
+    runtime._get_bool_system_setting = lambda: (lambda *_args, **_kwargs: False)
+
+    result = asyncio.run(
+        runtime.run_turn(
+            lead_id=10,
+            workspace_id=20,
+            user_message="hello",
+            history_override=[],
+            task_override="pdf",
+            llm_extra_params={"image_content": b"img", "image_mime_type": "image/jpeg"},
+        )
+    )
+
+    assert result["status"] == "sent"
+    assert result["ai_trace"]["task"] == "pdf"
+    assert router.calls[0]["task"].value == "pdf"
+    assert router.calls[0]["image_content"] == b"img"
+    assert router.calls[0]["image_mime_type"] == "image/jpeg"

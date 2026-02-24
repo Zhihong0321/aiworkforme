@@ -29,6 +29,7 @@ class InboundCreateRequest(SQLModel):
     external_message_id: str
     text_content: Optional[str] = None
     message_type: str = "text"
+    media_url: Optional[str] = None
     channel_session_id: Optional[int] = None
     raw_payload: Dict[str, Any] = {}
 
