@@ -191,7 +191,7 @@ const sendVoiceNoteTest = async (lead) => {
       body: JSON.stringify({
         lead_id: Number(lead.id),
         voice: 'kiki',
-        text_content: `Hey ${lead.name || 'there'}, this is a quick voice note follow-up from me.`
+        text_content: 'Hi, quick follow-up.'
       })
     })
     actionMessage.value = `Voice note sent to ${lead.external_id}. Provider message: ${result.provider_message_id || 'n/a'}.`

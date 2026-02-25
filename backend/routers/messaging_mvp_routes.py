@@ -421,8 +421,8 @@ def test_voice_note_delivery(
             detail="UniAPI key is missing. Set /api/v1/settings/uniapi-key or OPENAI_API_KEY.",
         )
 
-    text_content = (payload.text_content or "").strip()
-    if not text_content:
+    requested_text = (payload.text_content or "").strip()
+    if not requested_text:
         raise HTTPException(status_code=400, detail="text_content is required")
 
     model = (payload.model or "").strip() or "qwen3-tts-flash"
@@ -430,38 +430,65 @@ def test_voice_note_delivery(
     instructions = (payload.instructions or "").strip() or None
     uniapi_base = (os.getenv("UNIAPI_OPENAI_BASE_URL") or "https://api.uniapi.io/v1").rstrip("/")
 
-    tts_payload: Dict[str, Any] = {
-        "model": model,
-        "voice": voice,
-        "input": text_content,
-    }
-    if instructions:
-        tts_payload["instructions"] = instructions
-
     tts_url = f"{uniapi_base}/audio/speech"
-    try:
-        with httpx.Client(timeout=60.0) as client:
-            tts_resp = client.post(
-                tts_url,
-                headers={
-                    "Authorization": f"Bearer {uniapi_key}",
-                    "Content-Type": "application/json",
-                },
-                json=tts_payload,
-            )
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"TTS request failed: {str(exc)}") from exc
+    short_fallback_text = "Hi, quick follow-up."
+    max_inline_audio_bytes = 72 * 1024
 
-    if tts_resp.status_code >= 400:
-        detail = tts_resp.text[:400]
-        raise HTTPException(status_code=502, detail=f"TTS failed ({tts_resp.status_code}): {detail}")
+    def _generate_tts_audio(input_text: str) -> Tuple[bytes, str]:
+        tts_payload: Dict[str, Any] = {
+            "model": model,
+            "voice": voice,
+            "input": input_text,
+        }
+        if instructions:
+            tts_payload["instructions"] = instructions
 
-    audio_bytes = tts_resp.content or b""
-    if not audio_bytes:
-        raise HTTPException(status_code=502, detail="TTS returned empty audio content")
-    tts_content_type = (tts_resp.headers.get("content-type") or "audio/wav").split(";")[0].strip() or "audio/wav"
+        try:
+            with httpx.Client(timeout=60.0) as client:
+                tts_resp = client.post(
+                    tts_url,
+                    headers={
+                        "Authorization": f"Bearer {uniapi_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=tts_payload,
+                )
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"TTS request failed: {str(exc)}") from exc
+
+        if tts_resp.status_code >= 400:
+            detail = tts_resp.text[:400]
+            raise HTTPException(status_code=502, detail=f"TTS failed ({tts_resp.status_code}): {detail}")
+
+        body = tts_resp.content or b""
+        if not body:
+            raise HTTPException(status_code=502, detail="TTS returned empty audio content")
+        content_type = (tts_resp.headers.get("content-type") or "audio/wav").split(";")[0].strip() or "audio/wav"
+        return body, content_type
+
+    text_content_used = requested_text
+    audio_bytes, tts_content_type = _generate_tts_audio(text_content_used)
+    if len(audio_bytes) > max_inline_audio_bytes:
+        text_content_used = short_fallback_text
+        audio_bytes, tts_content_type = _generate_tts_audio(text_content_used)
+    if len(audio_bytes) > max_inline_audio_bytes:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Generated voice note is too large for current Baileys payload limit. "
+                "Increase Baileys JSON body limit or use hosted media_url send."
+            ),
+        )
 
     audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+    if len(audio_b64) > 98_000:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Generated base64 audio exceeds safe inline payload size. "
+                "Increase Baileys request body limit (express json limit) or support media_url."
+            ),
+        )
     data_uri = f"data:{tts_content_type};base64,{audio_b64}"
 
     base_url = _resolve_whatsapp_base_url(channel_session)
@@ -492,14 +519,6 @@ def test_voice_note_delivery(
                 "mediaUrl": data_uri,
                 "media_url": data_uri,
                 "mimetype": tts_content_type,
-                "ptt": True,
-            },
-        ),
-        (
-            "audio_object_payload",
-            {
-                **base_send_payload,
-                "audio": {"data": audio_b64, "mimetype": tts_content_type, "ptt": True},
                 "ptt": True,
             },
         ),
@@ -563,11 +582,13 @@ def test_voice_note_delivery(
         external_message_id=provider_message_id,
         direction="outbound",
         message_type="audio",
-        text_content=text_content,
+        text_content=text_content_used,
         raw_payload={
             "source": "mvp_voice_note_test",
             "tts_model": model,
             "tts_voice": voice,
+            "tts_requested_text": requested_text,
+            "tts_text_used": text_content_used,
             "tts_content_type": tts_content_type,
             "send_variant_used": send_variant_used,
             "send_attempts": attempts,

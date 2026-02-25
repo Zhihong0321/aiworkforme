@@ -131,7 +131,7 @@ class SimulateInboundResponse(SQLModel):
 class VoiceNoteTestRequest(SQLModel):
     lead_id: int
     channel_session_id: Optional[int] = None
-    text_content: str = "Hey, quick voice note follow-up from me. Let me know if you'd like details."
+    text_content: str = "Hi, quick follow-up."
     instructions: str = "Speak in a warm, natural, and persuasive sales tone."
     model: str = "qwen3-tts-flash"
     voice: str = "kiki"
