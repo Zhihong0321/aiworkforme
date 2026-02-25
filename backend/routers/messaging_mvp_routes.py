@@ -19,6 +19,7 @@ from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from src.adapters.api.dependencies import AuthContext, llm_router, require_tenant_access
@@ -679,35 +680,78 @@ def test_voice_note_delivery(
 
     thread = _get_or_create_thread(session, auth.tenant.id, lead.id, "whatsapp")
     now = datetime.utcnow()
-    outbound = UnifiedMessage(
-        tenant_id=auth.tenant.id,
-        lead_id=lead.id,
-        thread_id=thread.id,
-        channel_session_id=channel_session.id,
-        channel="whatsapp",
-        external_message_id=provider_message_id,
-        direction="outbound",
-        message_type="audio",
-        text_content=text_content_used,
-        raw_payload={
-            "source": "mvp_voice_note_test",
-            "tts_model": model,
-            "tts_voice": voice,
-            "tts_requested_text": requested_text,
-            "tts_text_used": text_content_used,
-            "tts_content_type": tts_content_type,
-            "tts_transcode_note": transcode_note,
-            "temp_media_url": media_url,
-            "send_variant_used": send_variant_used,
-            "send_attempts": attempts,
-        },
-        delivery_status="provider_accepted",
-        created_at=now,
-        updated_at=now,
-    )
-    session.add(outbound)
-    session.commit()
-    session.refresh(outbound)
+    raw_payload = {
+        "source": "mvp_voice_note_test",
+        "tts_model": model,
+        "tts_voice": voice,
+        "tts_requested_text": requested_text,
+        "tts_text_used": text_content_used,
+        "tts_content_type": tts_content_type,
+        "tts_transcode_note": transcode_note,
+        "temp_media_url": media_url,
+        "send_variant_used": send_variant_used,
+        "send_attempts": attempts,
+    }
+
+    existing = session.exec(
+        select(UnifiedMessage).where(
+            UnifiedMessage.tenant_id == auth.tenant.id,
+            UnifiedMessage.channel == "whatsapp",
+            UnifiedMessage.external_message_id == provider_message_id,
+        )
+    ).first()
+    if existing:
+        merged = dict(existing.raw_payload or {})
+        merged.update(raw_payload)
+        existing.raw_payload = merged
+        existing.delivery_status = "provider_accepted"
+        existing.updated_at = now
+        session.add(existing)
+        session.commit()
+        session.refresh(existing)
+        outbound = existing
+    else:
+        outbound = UnifiedMessage(
+            tenant_id=auth.tenant.id,
+            lead_id=lead.id,
+            thread_id=thread.id,
+            channel_session_id=channel_session.id,
+            channel="whatsapp",
+            external_message_id=provider_message_id,
+            direction="outbound",
+            message_type="audio",
+            text_content=text_content_used,
+            raw_payload=raw_payload,
+            delivery_status="provider_accepted",
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(outbound)
+        try:
+            session.commit()
+            session.refresh(outbound)
+        except IntegrityError:
+            # Race-safe fallback when same provider_message_id is inserted concurrently.
+            session.rollback()
+            fallback = session.exec(
+                select(UnifiedMessage).where(
+                    UnifiedMessage.tenant_id == auth.tenant.id,
+                    UnifiedMessage.channel == "whatsapp",
+                    UnifiedMessage.external_message_id == provider_message_id,
+                )
+            ).first()
+            if fallback:
+                merged = dict(fallback.raw_payload or {})
+                merged.update(raw_payload)
+                fallback.raw_payload = merged
+                fallback.delivery_status = "provider_accepted"
+                fallback.updated_at = datetime.utcnow()
+                session.add(fallback)
+                session.commit()
+                session.refresh(fallback)
+                outbound = fallback
+            else:
+                raise
 
     return VoiceNoteTestResponse(
         success=True,
