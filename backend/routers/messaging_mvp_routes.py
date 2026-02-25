@@ -9,8 +9,13 @@ SAFE CHANGE: Preserve non-blocking diagnostic semantics.
 
 from datetime import datetime, timedelta
 import os
+import shutil
+import subprocess
+import tempfile
+import time
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
+from urllib.parse import quote
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -474,6 +479,50 @@ def test_voice_note_delivery(
     if len(audio_bytes) > 300_000:
         raise HTTPException(status_code=502, detail="Generated voice note is too large for this test flow.")
 
+    transcode_note: Optional[str] = None
+    if "ogg" not in tts_content_type.lower() or "opus" not in tts_content_type.lower():
+        ffmpeg_bin = shutil.which("ffmpeg")
+        if ffmpeg_bin:
+            in_suffix = ".wav" if "wav" in tts_content_type.lower() else ".audio"
+            with tempfile.NamedTemporaryFile(suffix=in_suffix, delete=False) as tmp_in:
+                tmp_in.write(audio_bytes)
+                in_path = tmp_in.name
+            out_path = f"{in_path}.ogg"
+            try:
+                cmd = [
+                    ffmpeg_bin,
+                    "-y",
+                    "-i",
+                    in_path,
+                    "-c:a",
+                    "libopus",
+                    "-b:a",
+                    "24k",
+                    "-vbr",
+                    "on",
+                    "-application",
+                    "voip",
+                    out_path,
+                ]
+                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+                if proc.returncode == 0 and os.path.exists(out_path):
+                    audio_bytes = open(out_path, "rb").read()
+                    tts_content_type = "audio/ogg; codecs=opus"
+                    transcode_note = "transcoded_to_ogg_opus"
+                else:
+                    transcode_note = "ffmpeg_transcode_failed_using_original_audio"
+            finally:
+                try:
+                    os.remove(in_path)
+                except Exception:
+                    pass
+                try:
+                    os.remove(out_path)
+                except Exception:
+                    pass
+        else:
+            transcode_note = "ffmpeg_not_found_using_original_audio"
+
     suffix = ".ogg" if "ogg" in tts_content_type else ".wav"
     temp_token = create_temp_media(
         content=audio_bytes,
@@ -512,6 +561,7 @@ def test_voice_note_delivery(
     ]
 
     provider_message_id: Optional[str] = None
+    provider_remote_jid: Optional[str] = None
     send_variant_used: Optional[str] = None
     attempts: List[Dict[str, Any]] = []
     last_error_detail = "Unknown send error"
@@ -537,15 +587,30 @@ def test_voice_note_delivery(
                     last_error_detail = f"Variant {variant_name} failed ({send_resp.status_code}): {str(body)[:300]}"
                     continue
 
-                attempts.append(attempt_record)
                 result = body.get("result") if isinstance(body, dict) else {}
                 key = result.get("key") if isinstance(result, dict) else {}
-                provider_message_id = (
+                status_text = str(body.get("status") if isinstance(body, dict) else "").strip().lower()
+                msg_id = (
                     (body.get("provider_message_id") if isinstance(body, dict) else None)
                     or (body.get("message_id") if isinstance(body, dict) else None)
                     or (key.get("id") if isinstance(key, dict) else None)
-                    or f"voice_{uuid4().hex}"
                 )
+                remote_jid = key.get("remoteJid") if isinstance(key, dict) else None
+                attempt_record["provider_status"] = status_text or None
+                attempt_record["provider_message_id"] = msg_id
+                attempt_record["remote_jid"] = remote_jid
+                attempts.append(attempt_record)
+
+                # Accept only explicit success contract from Baileys docs.
+                if status_text != "sent" or not msg_id:
+                    last_error_detail = (
+                        f"Variant {variant_name} returned non-sent status or missing message id: "
+                        f"{str(body)[:300]}"
+                    )
+                    continue
+
+                provider_message_id = str(msg_id)
+                provider_remote_jid = str(remote_jid) if remote_jid else None
                 send_variant_used = variant_name
                 break
             except Exception as exc:
@@ -558,6 +623,59 @@ def test_voice_note_delivery(
             status_code=502,
             detail=f"Voice note send failed on all variants. Last error: {last_error_detail}",
         )
+
+    # Verify message is visible in provider chat history to avoid false positives.
+    if provider_remote_jid:
+        verified = False
+        verify_error: Optional[str] = None
+        verify_endpoint = f"{base_url}/chats/{quote(provider_remote_jid, safe='')}/messages"
+        with httpx.Client(timeout=20.0) as client:
+            for _ in range(3):
+                try:
+                    verify_resp = client.get(
+                        verify_endpoint,
+                        headers=_provider_headers(),
+                        params={"sessionId": channel_session.session_identifier, "limit": 30},
+                    )
+                    if verify_resp.status_code < 400:
+                        payload = verify_resp.json() if verify_resp.content else {}
+                        messages = []
+                        if isinstance(payload, dict):
+                            if isinstance(payload.get("messages"), list):
+                                messages = payload.get("messages") or []
+                            elif isinstance(payload.get("result"), list):
+                                messages = payload.get("result") or []
+                            elif isinstance(payload.get("result"), dict) and isinstance(payload["result"].get("messages"), list):
+                                messages = payload["result"].get("messages") or []
+
+                        for msg in messages:
+                            if not isinstance(msg, dict):
+                                continue
+                            key = msg.get("key") if isinstance(msg.get("key"), dict) else {}
+                            msg_id = (
+                                key.get("id")
+                                or msg.get("id")
+                                or msg.get("messageId")
+                            )
+                            if str(msg_id or "") == provider_message_id:
+                                verified = True
+                                break
+                        if verified:
+                            break
+                except Exception as exc:
+                    verify_error = str(exc)
+                time.sleep(1.0)
+
+        if not verified:
+            delete_temp_media(temp_token)
+            raise HTTPException(
+                status_code=502,
+                detail=(
+                    "Provider returned sent but message was not found in recent chat history. "
+                    f"message_id={provider_message_id}"
+                    + (f", verify_error={verify_error}" if verify_error else "")
+                ),
+            )
 
     thread = _get_or_create_thread(session, auth.tenant.id, lead.id, "whatsapp")
     now = datetime.utcnow()
@@ -578,6 +696,7 @@ def test_voice_note_delivery(
             "tts_requested_text": requested_text,
             "tts_text_used": text_content_used,
             "tts_content_type": tts_content_type,
+            "tts_transcode_note": transcode_note,
             "temp_media_url": media_url,
             "send_variant_used": send_variant_used,
             "send_attempts": attempts,
