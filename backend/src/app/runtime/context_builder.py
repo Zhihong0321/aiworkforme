@@ -110,6 +110,69 @@ class ContextBuilder:
             generation_config = {"max_tokens": 2048, "temperature": 0.7}
             tools_enabled = True
 
+        # --- SYSTEM BEHAVIOUR INJECTIONS (always appended) ---
+
+        # 1. SEGMENTED MESSAGES — applies to ALL agents globally
+        final_system_instruction += (
+            "\n\n--- MESSAGE SEGMENTATION RULES ---\n"
+            "When your response is long or contains distinct meaningful ideas, "
+            "chunk it into separate logical parts using the delimiter ||| between each segment.\n"
+            "Example of a segmented reply:\n"
+            "  Hey! Got your question 😊|||Let me check that for you real quick...|||"
+            "  Okay so here's what I found:\n\n1. Point A\n2. Point B\n\n"
+            "Rules:\n"
+            "- Each segment will be delivered as a separate WhatsApp message in turn.\n"
+            "- Chunk long messages into meaningful, digestible parts (e.g., greeting -> context -> main answer).\n"
+            "- MAXIMUM 3 SEGMENTS PER REPLY. Never split into more than 3 parts.\n"
+            "- Animated / sticker-style emoji are ONLY permitted inside segmented messages.\n"
+            "- Do NOT use ||| if a single short message is sufficient.\n"
+        )
+
+        # 2. MIMIC HUMAN TYPING — injected only when flag is set on agent
+        agent_obj = None
+        if agent_id:
+            Agent = importlib.import_module("src.adapters.db.agent_models").Agent
+            agent_obj = self.session.get(Agent, agent_id)
+
+        if agent_obj and getattr(agent_obj, "mimic_human_typing", False):
+            final_system_instruction += (
+                "\n\n--- HUMAN TYPING STYLE (WhatsApp) ---\n"
+                "You MUST write exactly like a real human typing on WhatsApp. Strict rules:\n"
+                "- Keep replies SHORT. 1–3 sentences max per segment.\n"
+                "- Use casual short-forms: 'u', 'r', 'lah', 'la', 'k', 'ok', 'ya', 'yep', 'nope', 'tbh', 'btw', 'omg', 'nvm'.\n"
+                "- NO formal punctuation. Avoid full stops at end of sentence. Use lowercase mostly.\n"
+                "- Occasionally leave out articles (a, the) like humans do when typing fast.\n"
+                "- Sound warm and friendly, NOT robotic or corporate.\n"
+                "- Never write long formal paragraphs. Break long answers into segments with |||.\n"
+                "- Mirror the user's energy: if they're casual, be casual. If they're urgent, be quick.\n"
+            )
+
+        # 3. EMOJI FREQUENCY (Google NOTO style) — injected based on emoji_level
+        emoji_level = getattr(agent_obj, "emoji_level", "none") if agent_obj else "none"
+        if emoji_level == "low":
+            final_system_instruction += (
+                "\n\n--- EMOJI USAGE (Low Frequency) ---\n"
+                "Use Google NOTO emoji occasionally to feel friendly and human.\n"
+                "Guidelines:\n"
+                "- Use 1 emoji every 2–4 messages, not in every reply.\n"
+                "- Place emoji naturally (end of sentence, or as emphasis).\n"
+                "- Prefer common ones: 😊 👍 🙏 ✅ 🔥 💪 😅.\n"
+                "- Animated/special emoji (like 🎉 🎊 ✨) only in segmented multi-part messages.\n"
+                "- NEVER use more than 1 emoji per reply.\n"
+            )
+        elif emoji_level == "high":
+            final_system_instruction += (
+                "\n\n--- EMOJI USAGE (High Frequency) ---\n"
+                "Use Google NOTO emoji to feel lively, warm and very human.\n"
+                "Guidelines:\n"
+                "- Use 1 emoji every 2 messages.\n"
+                "- Place emoji naturally inline or at the end of sentences.\n"
+                "- Mix a variety: 😊 😄 🙌 👏 💯 🔥 🙏 😅 😂 ✅ ❤️.\n"
+                "- Animated/celebratory emoji (🎉 🎊 ✨ 🥳) only in segmented multi-part messages.\n"
+                "- NEVER use more than 1 emoji per reply to avoid visual pollution.\n"
+            )
+
+
         return {
             "system_instruction": final_system_instruction,
             "budget_tier": workspace.budget_tier if workspace else BudgetTier.GREEN,

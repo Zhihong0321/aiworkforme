@@ -23,6 +23,13 @@ class Agent(SQLModel, table=True):
         default_factory=datetime.utcnow,
         sa_column_kwargs={"onupdate": datetime.utcnow},
     )
+    # --- Optional behaviour settings ---
+    # Mimic casual WhatsApp human typing style
+    mimic_human_typing: bool = Field(default=False)
+    # Emoji frequency: 'none' | 'low' | 'high'
+    emoji_level: str = Field(default="none")
+    # Delay (ms) between each segmented message burst
+    segment_delay_ms: int = Field(default=800)
     
     chat_sessions: List["ChatSession"] = Relationship(
         back_populates="agent",
@@ -58,9 +65,15 @@ class AgentRead(SQLModel):
     system_prompt: str
     linked_mcp_ids: List[int] = Field(default_factory=list)
     linked_mcp_count: int = 0
+    mimic_human_typing: bool = False
+    emoji_level: str = "none"
+    segment_delay_ms: int = 800
     class Config:
         from_attributes = True
 
 class AgentUpdate(SQLModel):
     name: Optional[str] = None
     system_prompt: Optional[str] = None
+    mimic_human_typing: Optional[bool] = None
+    emoji_level: Optional[str] = None
+    segment_delay_ms: Optional[int] = None

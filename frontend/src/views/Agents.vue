@@ -22,6 +22,9 @@ const form = reactive({
   name: '',
   system_prompt: '',
   linkedMcpId: '',
+  mimic_human_typing: false,
+  emoji_level: 'none',
+  segment_delay_ms: 800,
 })
 
 const statusVariant = (status) => {
@@ -71,6 +74,9 @@ const resetForm = (agent) => {
   form.name = agent?.name ?? ''
   form.system_prompt = agent?.system_prompt ?? agent?.systemPrompt ?? ''
   form.linkedMcpId = linkedIds[0] ?? ''
+  form.mimic_human_typing = agent?.mimic_human_typing ?? false
+  form.emoji_level = agent?.emoji_level ?? 'none'
+  form.segment_delay_ms = agent?.segment_delay_ms ?? 800
   
   console.log('Form ID set to:', form.id)
   if (form.id) {
@@ -98,6 +104,9 @@ const loadAgents = async () => {
             linkedMcpId: linkedIds[0] ?? '',
             linkedMcpCount: agent.linked_mcp_count ?? agent.linkedMcpCount ?? linkedIds.length,
             system_prompt: agent.system_prompt ?? '',
+            mimic_human_typing: agent.mimic_human_typing ?? false,
+            emoji_level: agent.emoji_level ?? 'none',
+            segment_delay_ms: agent.segment_delay_ms ?? 800,
           }
       })
       : []
@@ -139,6 +148,9 @@ const saveAgent = async () => {
     const payload = {
       name: form.name,
       system_prompt: form.system_prompt,
+      mimic_human_typing: form.mimic_human_typing,
+      emoji_level: form.emoji_level,
+      segment_delay_ms: form.segment_delay_ms,
     }
 
     const savedData = await request(path, {
@@ -388,6 +400,76 @@ onMounted(() => {
             </div>
           </div>
 
+          <!-- Optional Behaviour Settings -->
+          <div class="space-y-4 border border-slate-200 rounded-2xl p-4 bg-slate-50">
+            <div class="flex items-center gap-2 mb-1">
+              <svg class="w-4 h-4 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+              <span class="text-[11px] font-bold uppercase tracking-wider text-slate-600">Optional Behaviour</span>
+            </div>
+
+            <!-- Toggle: Mimic Human Typing -->
+            <div class="flex items-center justify-between py-2">
+              <div class="flex flex-col">
+                <span class="text-sm font-semibold text-slate-800">💬 Mimic Human Typing</span>
+                <span class="text-[11px] text-slate-500 mt-0.5">Short replies · casual tone · WhatsApp style</span>
+              </div>
+              <button
+                type="button"
+                @click="form.mimic_human_typing = !form.mimic_human_typing"
+                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none"
+                :class="form.mimic_human_typing ? 'bg-purple-500' : 'bg-slate-300'"
+              >
+                <span
+                  class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200"
+                  :class="form.mimic_human_typing ? 'translate-x-6' : 'translate-x-1'"
+                />
+              </button>
+            </div>
+
+            <!-- Emoji Level: 3-pill selector -->
+            <div class="space-y-2">
+              <div class="flex items-center gap-2">
+                <span class="text-sm font-semibold text-slate-800">😊 Emoji Frequency</span>
+                <span class="text-[10px] text-slate-500">(Google NOTO)</span>
+              </div>
+              <div class="flex gap-2">
+                <button
+                  v-for="opt in [{ val: 'none', label: '🚫 None' }, { val: 'low', label: '🙂 Low' }, { val: 'high', label: '🎉 High' }]"
+                  :key="opt.val"
+                  type="button"
+                  @click="form.emoji_level = opt.val"
+                  class="flex-1 py-2 px-3 rounded-xl text-xs font-bold border transition-all active:scale-95"
+                  :class="form.emoji_level === opt.val
+                    ? 'bg-purple-500 text-white border-purple-500 shadow-md shadow-purple-500/25'
+                    : 'bg-white text-slate-600 border-slate-200 hover:border-purple-300'"
+                >
+                  {{ opt.label }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Segment Delay slider -->
+            <div class="space-y-2">
+              <div class="flex justify-between items-center">
+                <span class="text-sm font-semibold text-slate-800">⏱ Segment Delay</span>
+                <span class="text-xs font-mono text-purple-500 font-bold">{{ form.segment_delay_ms }}ms</span>
+              </div>
+              <input
+                type="range"
+                min="200"
+                max="3000"
+                step="100"
+                v-model.number="form.segment_delay_ms"
+                class="w-full h-1.5 rounded-full appearance-none cursor-pointer"
+                style="accent-color: #a855f7"
+              />
+              <div class="flex justify-between text-[10px] text-slate-400 font-mono">
+                <span>200ms fast</span>
+                <span>3000ms slow</span>
+              </div>
+            </div>
+          </div>
+
           <!-- Skills Selection -->
           <div class="space-y-1.5">
              <label class="text-[11px] font-bold uppercase tracking-wider text-slate-600 ml-1">Active Skills (MCP)</label>
@@ -490,4 +572,5 @@ onMounted(() => {
 ::-webkit-scrollbar {
   display: none;
 }
-</style>
+</style>T r i g g e r i n g   H M R   v i a   e c h o  
+ 

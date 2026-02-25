@@ -199,6 +199,56 @@ def _enqueue_outbound_reply(
     return outbound
 
 
+async def _enqueue_segmented_reply(
+    session: Session,
+    inbound_message: Any,
+    agent_id: int,
+    full_text: str,
+    delay_ms: int = 800,
+    ai_trace: Optional[Dict[str, Any]] = None,
+    llm_provider: Optional[str] = None,
+    llm_model: Optional[str] = None,
+    llm_prompt_tokens: Optional[int] = None,
+    llm_completion_tokens: Optional[int] = None,
+    llm_total_tokens: Optional[int] = None,
+    llm_estimated_cost_usd: Optional[float] = None,
+) -> List[Any]:
+    """
+    Splits full_text on '|||', enqueues each non-empty segment as a separate
+    outbound message, with asyncio.sleep(delay_ms/1000) between segments to
+    simulate natural human typing pacing on WhatsApp.
+    """
+    segments = [s.strip() for s in full_text.split("|||") if s.strip()]
+    if not segments:
+        segments = [full_text.strip()]
+
+    enqueued = []
+    for idx, segment in enumerate(segments):
+        if idx > 0 and delay_ms > 0:
+            await asyncio.sleep(delay_ms / 1000.0)
+        outbound = _enqueue_outbound_reply(
+            session=session,
+            inbound_message=inbound_message,
+            agent_id=agent_id,
+            text=segment,
+            ai_trace={**(ai_trace or {}), "segment_index": idx, "segment_total": len(segments)},
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            # Only attribute token costs to the first segment to avoid double-counting
+            llm_prompt_tokens=llm_prompt_tokens if idx == 0 else None,
+            llm_completion_tokens=llm_completion_tokens if idx == 0 else None,
+            llm_total_tokens=llm_total_tokens if idx == 0 else None,
+            llm_estimated_cost_usd=llm_estimated_cost_usd if idx == 0 else None,
+        )
+        enqueued.append(outbound)
+        logger.info(
+            "Segment %d/%d enqueued (message_id=%s): %.60s…",
+            idx + 1, len(segments), outbound.id, segment,
+        )
+    return enqueued
+
+
+
 def _message_type(message: Any) -> str:
     return str(getattr(message, "message_type", "") or "").strip().lower()
 
@@ -779,11 +829,14 @@ async def _process_one_inbound(session: Session, message: Any):
 
     if status == "sent":
         reply_text = result["content"]
-        _enqueue_outbound_reply(
+        # Resolve segment delay from the agent's setting (default 800 ms)
+        delay_ms = int(getattr(agent, "segment_delay_ms", 800) or 800)
+        await _enqueue_segmented_reply(
             session,
             message,
             agent.id,
             reply_text,
+            delay_ms=delay_ms,
             ai_trace=result.get("ai_trace"),
             llm_provider=result.get("llm_provider"),
             llm_model=result.get("llm_model"),

@@ -21,6 +21,9 @@ router = APIRouter(prefix="/api/v1/agents", tags=["Agent Management"])
 class AgentCreate(BaseModel):
     name: Optional[str] = None
     system_prompt: Optional[str] = None
+    mimic_human_typing: Optional[bool] = False
+    emoji_level: Optional[str] = "none"
+    segment_delay_ms: Optional[int] = 800
 
 @router.get("/", response_model=List[AgentRead])
 def list_agents(
@@ -72,7 +75,10 @@ def create_agent(
         name=name,
         system_prompt=system_prompt,
         tenant_id=auth.tenant.id,
-        created_at=datetime.utcnow()
+        created_at=datetime.utcnow(),
+        mimic_human_typing=bool(agent_in.mimic_human_typing or False),
+        emoji_level=str(agent_in.emoji_level or "none"),
+        segment_delay_ms=int(agent_in.segment_delay_ms or 800),
     )
     
     session.add(new_agent)
@@ -93,6 +99,9 @@ def create_agent(
         system_prompt=new_agent.system_prompt,
         linked_mcp_ids=[],
         linked_mcp_count=0,
+        mimic_human_typing=new_agent.mimic_human_typing,
+        emoji_level=new_agent.emoji_level,
+        segment_delay_ms=new_agent.segment_delay_ms,
     )
 
 @router.put("/{agent_id}", response_model=AgentRead)
@@ -110,14 +119,25 @@ def update_agent(
         agent.name = payload.name
     if payload.system_prompt is not None:
         agent.system_prompt = payload.system_prompt
+    if payload.mimic_human_typing is not None:
+        agent.mimic_human_typing = payload.mimic_human_typing
+    if payload.emoji_level is not None:
+        agent.emoji_level = payload.emoji_level
+    if payload.segment_delay_ms is not None:
+        agent.segment_delay_ms = payload.segment_delay_ms
 
     session.add(agent)
     session.commit()
     session.refresh(agent)
+    linked_ids = session.exec(
+        select(AgentMCPServer.mcp_server_id).where(AgentMCPServer.agent_id == agent.id)
+    ).all()
     return AgentRead(
         **agent.model_dump(
             exclude={"chat_sessions", "mcp_servers", "knowledge_files", "model", "reasoning_enabled"}
-        )
+        ),
+        linked_mcp_ids=list(linked_ids),
+        linked_mcp_count=len(linked_ids),
     )
 
 @router.get("/{agent_id}", response_model=AgentRead)
