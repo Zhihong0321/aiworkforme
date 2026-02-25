@@ -8,13 +8,12 @@ SAFE CHANGE: Preserve non-blocking diagnostic semantics.
 """
 
 from datetime import datetime, timedelta
-import base64
 import os
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlmodel import Session, select
 
 from src.adapters.api.dependencies import AuthContext, llm_router, require_tenant_access
@@ -23,6 +22,7 @@ from src.adapters.db.channel_models import ChannelSession, ChannelType, SessionS
 from src.adapters.db.crm_models import Lead, Workspace
 from src.adapters.db.messaging_models import OutboundQueue, UnifiedMessage
 from src.adapters.db.tenant_models import SystemSetting
+from src.app.runtime.temp_media_store import create_temp_media, delete_temp_media
 from src.infra.database import get_session
 
 from .messaging_helpers import (
@@ -396,6 +396,7 @@ async def simulate_inbound_message(
 @router.post("/mvp/test-voice-note", response_model=VoiceNoteTestResponse)
 def test_voice_note_delivery(
     payload: VoiceNoteTestRequest,
+    request: Request,
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access),
 ):
@@ -432,7 +433,6 @@ def test_voice_note_delivery(
 
     tts_url = f"{uniapi_base}/audio/speech"
     short_fallback_text = "Hi, quick follow-up."
-    max_inline_audio_bytes = 72 * 1024
 
     def _generate_tts_audio(input_text: str) -> Tuple[bytes, str]:
         tts_payload: Dict[str, Any] = {
@@ -468,28 +468,27 @@ def test_voice_note_delivery(
 
     text_content_used = requested_text
     audio_bytes, tts_content_type = _generate_tts_audio(text_content_used)
-    if len(audio_bytes) > max_inline_audio_bytes:
+    if len(audio_bytes) > 300_000:
         text_content_used = short_fallback_text
         audio_bytes, tts_content_type = _generate_tts_audio(text_content_used)
-    if len(audio_bytes) > max_inline_audio_bytes:
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                "Generated voice note is too large for current Baileys payload limit. "
-                "Increase Baileys JSON body limit or use hosted media_url send."
-            ),
-        )
+    if len(audio_bytes) > 300_000:
+        raise HTTPException(status_code=502, detail="Generated voice note is too large for this test flow.")
 
-    audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
-    if len(audio_b64) > 98_000:
+    suffix = ".ogg" if "ogg" in tts_content_type else ".wav"
+    temp_token = create_temp_media(
+        content=audio_bytes,
+        mime_type=tts_content_type,
+        suffix=suffix,
+        ttl_seconds=300,
+    )
+    public_base_url = (os.getenv("APP_PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
+    if "localhost" in public_base_url or "127.0.0.1" in public_base_url:
+        delete_temp_media(temp_token)
         raise HTTPException(
-            status_code=502,
-            detail=(
-                "Generated base64 audio exceeds safe inline payload size. "
-                "Increase Baileys request body limit (express json limit) or support media_url."
-            ),
+            status_code=400,
+            detail="APP_PUBLIC_BASE_URL must be a public URL reachable by Baileys.",
         )
-    data_uri = f"data:{tts_content_type};base64,{audio_b64}"
+    media_url = f"{public_base_url}/api/v1/public/temp-media/{temp_token}"
 
     base_url = _resolve_whatsapp_base_url(channel_session)
     send_url = f"{base_url}/messages/send"
@@ -500,24 +499,36 @@ def test_voice_note_delivery(
 
     send_variants: List[Tuple[str, Dict[str, Any]]] = [
         (
-            "audio_b64_inline",
+            "media_url_audio",
             {
                 **base_send_payload,
                 "type": "audio",
                 "messageType": "audio",
-                "audio": audio_b64,
+                "mediaUrl": media_url,
+                "media_url": media_url,
                 "mimetype": tts_content_type,
                 "ptt": True,
             },
         ),
         (
-            "audio_data_uri",
+            "audio_url_field",
             {
                 **base_send_payload,
                 "type": "audio",
                 "messageType": "audio",
-                "mediaUrl": data_uri,
-                "media_url": data_uri,
+                "audioUrl": media_url,
+                "url": media_url,
+                "mimetype": tts_content_type,
+                "ptt": True,
+            },
+        ),
+        (
+            "voice_note_media_url",
+            {
+                **base_send_payload,
+                "type": "voice",
+                "voiceNote": True,
+                "mediaUrl": media_url,
                 "mimetype": tts_content_type,
                 "ptt": True,
             },
@@ -566,6 +577,7 @@ def test_voice_note_delivery(
                 last_error_detail = f"Variant {variant_name} exception: {str(exc)}"
 
     if not provider_message_id:
+        delete_temp_media(temp_token)
         raise HTTPException(
             status_code=502,
             detail=f"Voice note send failed on all variants. Last error: {last_error_detail}",
@@ -590,6 +602,7 @@ def test_voice_note_delivery(
             "tts_requested_text": requested_text,
             "tts_text_used": text_content_used,
             "tts_content_type": tts_content_type,
+            "temp_media_url": media_url,
             "send_variant_used": send_variant_used,
             "send_attempts": attempts,
         },

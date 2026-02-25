@@ -23,6 +23,7 @@ from routers import (
     mcp,
     messaging,
     platform,
+    public_media,
     playground,
     policy,
     settings,
@@ -53,3 +54,4 @@ def register_api_routers(app: FastAPI) -> None:
 
     app.include_router(settings.router, dependencies=[Depends(require_platform_admin)])
     app.include_router(debug.router)
+    app.include_router(public_media.router)
