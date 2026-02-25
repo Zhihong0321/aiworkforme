@@ -19,6 +19,7 @@ from src.adapters.db.agent_models import Agent
 from src.adapters.db.channel_models import ChannelSession, ChannelType, SessionStatus
 from src.adapters.db.crm_models import Lead, Workspace
 from src.adapters.db.messaging_models import OutboundQueue, UnifiedMessage, UnifiedThread
+from src.app.runtime.leads_service import get_or_create_default_workspace
 
 
 def validate_lead_tenant(session: Session, lead_id: int, tenant_id: int) -> Lead:
@@ -301,3 +302,186 @@ def resolve_whatsapp_channel_session_for_tenant(
     if not any_session:
         raise HTTPException(status_code=400, detail="No WhatsApp session found. Connect channel first.")
     return any_session
+
+
+def _digits_only(value: Optional[str]) -> str:
+    return re.sub(r"\D+", "", str(value or ""))
+
+
+def _phone_lookup_keys(value: Optional[str]) -> List[str]:
+    digits = _digits_only(value)
+    if not digits:
+        return []
+
+    keys: List[str] = []
+    seen: set[str] = set()
+
+    def add(v: Optional[str]) -> None:
+        if not v:
+            return
+        key = str(v).strip()
+        if not key or key in seen:
+            return
+        seen.add(key)
+        keys.append(key)
+
+    add(digits)
+    add(f"+{digits}")
+    add(f"whatsapp:{digits}")
+    add(f"whatsapp:+{digits}")
+    if digits.startswith("0") and len(digits) >= 9:
+        add("6" + digits)
+        add("+6" + digits)
+    if digits.startswith("60") and len(digits) >= 10:
+        local = "0" + digits[2:]
+        add(local)
+        add("+" + local)
+    return keys
+
+
+def _channel_session_matches_phone(channel_session: ChannelSession, phone: Optional[str]) -> bool:
+    if not phone:
+        return True
+    phone_digits = _digits_only(phone)
+    if not phone_digits:
+        return True
+
+    candidates: List[str] = [channel_session.session_identifier, channel_session.display_name or ""]
+    metadata = channel_session.session_metadata if isinstance(channel_session.session_metadata, dict) else {}
+    for key in (
+        "phone",
+        "phone_number",
+        "whatsapp_number",
+        "wa_phone",
+        "wid",
+        "jid",
+        "session_phone",
+        "connected_number",
+    ):
+        value = metadata.get(key)
+        if isinstance(value, str):
+            candidates.append(value)
+
+    me_obj = metadata.get("me")
+    if isinstance(me_obj, dict):
+        for key in ("id", "jid", "phone", "number"):
+            value = me_obj.get(key)
+            if isinstance(value, str):
+                candidates.append(value)
+
+    for raw in candidates:
+        raw_digits = _digits_only(raw)
+        if not raw_digits:
+            continue
+        if raw_digits.endswith(phone_digits) or phone_digits.endswith(raw_digits):
+            return True
+    return False
+
+
+def resolve_whatsapp_channel_session_by_phone(
+    session: Session,
+    tenant_id: int,
+    channel_session_id: Optional[int],
+    tenant_whatsapp_phone: Optional[str],
+) -> Optional[ChannelSession]:
+    if channel_session_id is not None:
+        channel_session = validate_channel_session(session, tenant_id, "whatsapp", channel_session_id)
+        if channel_session and tenant_whatsapp_phone and not _channel_session_matches_phone(
+            channel_session, tenant_whatsapp_phone
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="channel_session_id does not match recipient/sender WhatsApp phone",
+            )
+        return channel_session
+
+    sessions = session.exec(
+        select(ChannelSession).where(
+            ChannelSession.tenant_id == tenant_id,
+            ChannelSession.channel_type == ChannelType.WHATSAPP,
+        )
+    ).all()
+    if not sessions:
+        return None
+
+    if not tenant_whatsapp_phone:
+        active = [s for s in sessions if s.status == SessionStatus.ACTIVE]
+        if len(active) == 1:
+            return active[0]
+        if len(sessions) == 1:
+            return sessions[0]
+        return None
+
+    matching = [s for s in sessions if _channel_session_matches_phone(s, tenant_whatsapp_phone)]
+    if len(matching) == 1:
+        return matching[0]
+    if len(matching) > 1:
+        active = [s for s in matching if s.status == SessionStatus.ACTIVE]
+        if len(active) == 1:
+            return active[0]
+        return None
+
+    active = [s for s in sessions if s.status == SessionStatus.ACTIVE]
+    if len(active) == 1:
+        return active[0]
+    if len(sessions) == 1:
+        return sessions[0]
+    return None
+
+
+def resolve_or_create_whatsapp_lead_by_phone(
+    session: Session,
+    tenant_id: int,
+    lead_phone: str,
+) -> Lead:
+    phone_keys = _phone_lookup_keys(lead_phone)
+    if not phone_keys:
+        raise HTTPException(status_code=400, detail="Lead phone number is required for WhatsApp mapping")
+
+    candidates = session.exec(
+        select(Lead).where(
+            Lead.tenant_id == tenant_id,
+        )
+    ).all()
+    by_id: Dict[int, Lead] = {}
+    for lead in candidates:
+        lead_keys = _phone_lookup_keys(lead.external_id)
+        if lead.whatsapp_lid:
+            lead_keys.extend(_phone_lookup_keys(lead.whatsapp_lid))
+        if any(k in lead_keys for k in phone_keys):
+            if lead.id is not None:
+                by_id[lead.id] = lead
+
+    if by_id:
+        if len(by_id) == 1:
+            return next(iter(by_id.values()))
+
+        recent = session.exec(
+            select(UnifiedMessage.lead_id)
+            .where(
+                UnifiedMessage.tenant_id == tenant_id,
+                UnifiedMessage.channel == "whatsapp",
+                UnifiedMessage.lead_id.in_(list(by_id.keys())),
+            )
+            .order_by(UnifiedMessage.created_at.desc(), UnifiedMessage.id.desc())
+        ).first()
+        if recent in by_id:
+            return by_id[recent]
+        return sorted(by_id.values(), key=lambda item: int(item.id or 0))[0]
+
+    primary = _digits_only(lead_phone)
+    workspace = get_or_create_default_workspace(session, tenant_id)
+    new_lead = Lead(
+        tenant_id=tenant_id,
+        workspace_id=workspace.id,
+        external_id=primary,
+        name=None,
+        stage="CONTACTED",
+        tags=[],
+        is_whatsapp_valid=bool(8 <= len(primary) <= 15),
+        created_at=datetime.utcnow(),
+    )
+    session.add(new_lead)
+    session.commit()
+    session.refresh(new_lead)
+    return new_lead

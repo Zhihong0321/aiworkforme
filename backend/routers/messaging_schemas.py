@@ -24,9 +24,12 @@ class OutboundCreateRequest(SQLModel):
 
 
 class InboundCreateRequest(SQLModel):
-    lead_id: int
+    lead_id: Optional[int] = None
     channel: str
     external_message_id: str
+    direction: str = "inbound"
+    sender_phone: Optional[str] = None
+    recipient_phone: Optional[str] = None
     text_content: Optional[str] = None
     message_type: str = "text"
     media_url: Optional[str] = None

@@ -28,6 +28,8 @@ from src.infra.llm.router import LLMRouter
 from .messaging_helpers import (
     extract_whatsapp_recipient as _extract_whatsapp_recipient,
     get_or_create_thread as _get_or_create_thread,
+    resolve_or_create_whatsapp_lead_by_phone as _resolve_or_create_whatsapp_lead_by_phone,
+    resolve_whatsapp_channel_session_by_phone as _resolve_whatsapp_channel_session_by_phone,
     resolve_whatsapp_channel_session_for_tenant as _resolve_whatsapp_channel_session_for_tenant,
     stage_value as _stage_value,
     validate_channel_session as _validate_channel_session,
@@ -259,15 +261,54 @@ def create_inbound_message(
     if channel not in {"whatsapp", "email", "telegram"}:
         raise HTTPException(status_code=400, detail="Unsupported channel")
 
-    lead = _validate_lead_tenant(session, payload.lead_id, auth.tenant.id)
-    _validate_channel_session(session, auth.tenant.id, channel, payload.channel_session_id)
+    direction_hint = (payload.direction or "inbound").strip().lower()
+    if direction_hint not in {"inbound", "outbound"}:
+        raise HTTPException(status_code=400, detail="direction must be inbound or outbound")
+
+    channel_session = _validate_channel_session(session, auth.tenant.id, channel, payload.channel_session_id)
+    lead: Lead
+    if payload.lead_id is not None:
+        lead = _validate_lead_tenant(session, payload.lead_id, auth.tenant.id)
+    elif channel == "whatsapp":
+        sender_phone = (payload.sender_phone or "").strip()
+        recipient_phone = (payload.recipient_phone or "").strip()
+        if not sender_phone or not recipient_phone:
+            raise HTTPException(
+                status_code=400,
+                detail="lead_id is required unless sender_phone and recipient_phone are provided",
+            )
+
+        lead_phone = sender_phone if direction_hint == "inbound" else recipient_phone
+        tenant_whatsapp_phone = recipient_phone if direction_hint == "inbound" else sender_phone
+
+        inferred_session = _resolve_whatsapp_channel_session_by_phone(
+            session=session,
+            tenant_id=auth.tenant.id,
+            channel_session_id=payload.channel_session_id,
+            tenant_whatsapp_phone=tenant_whatsapp_phone,
+        )
+        if payload.channel_session_id is None and inferred_session is not None:
+            channel_session = inferred_session
+        if payload.channel_session_id is None and inferred_session is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot resolve WhatsApp channel session from recipient/sender phone; pass channel_session_id",
+            )
+
+        lead = _resolve_or_create_whatsapp_lead_by_phone(
+            session=session,
+            tenant_id=auth.tenant.id,
+            lead_phone=lead_phone,
+        )
+    else:
+        raise HTTPException(status_code=400, detail="lead_id is required for non-whatsapp inbound")
 
     now = datetime.utcnow()
     message = UnifiedMessage(
         tenant_id=auth.tenant.id,
         lead_id=lead.id,
         thread_id=None,  # expected to be assigned by DB trigger on PostgreSQL
-        channel_session_id=payload.channel_session_id,
+        channel_session_id=channel_session.id if channel_session else payload.channel_session_id,
         channel=channel,
         external_message_id=payload.external_message_id,
         direction="inbound",
