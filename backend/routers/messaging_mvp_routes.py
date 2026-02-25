@@ -499,38 +499,14 @@ def test_voice_note_delivery(
 
     send_variants: List[Tuple[str, Dict[str, Any]]] = [
         (
-            "media_url_audio",
+            "audio_url_ptt",
             {
                 **base_send_payload,
-                "type": "audio",
-                "messageType": "audio",
-                "mediaUrl": media_url,
-                "media_url": media_url,
-                "mimetype": tts_content_type,
-                "ptt": True,
-            },
-        ),
-        (
-            "audio_url_field",
-            {
-                **base_send_payload,
-                "type": "audio",
-                "messageType": "audio",
                 "audioUrl": media_url,
-                "url": media_url,
                 "mimetype": tts_content_type,
                 "ptt": True,
-            },
-        ),
-        (
-            "voice_note_media_url",
-            {
-                **base_send_payload,
-                "type": "voice",
-                "voiceNote": True,
-                "mediaUrl": media_url,
-                "mimetype": tts_content_type,
-                "ptt": True,
+                # Optional caption is accepted by this server for media sends.
+                "text": text_content_used,
             },
         ),
     ]
