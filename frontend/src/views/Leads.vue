@@ -13,6 +13,7 @@ const createError = ref('')
 const actionError = ref('')
 const actionMessage = ref('')
 const actionLoadingLeadId = ref(null)
+const voiceTestLoadingLeadId = ref(null)
 const newLeadName = ref('')
 const newLeadExternalId = ref('')
 const chatOpen = ref(false)
@@ -177,6 +178,30 @@ const reviewLeadChat = async (lead) => {
     chatError.value = e.message || 'Failed to load conversation'
   } finally {
     chatLoading.value = false
+  }
+}
+
+const sendVoiceNoteTest = async (lead) => {
+  actionError.value = ''
+  actionMessage.value = ''
+  voiceTestLoadingLeadId.value = lead.id
+  try {
+    const result = await request('/messaging/mvp/test-voice-note', {
+      method: 'POST',
+      body: JSON.stringify({
+        lead_id: Number(lead.id),
+        voice: 'kiki',
+        text_content: `Hey ${lead.name || 'there'}, this is a quick voice note follow-up from me.`
+      })
+    })
+    actionMessage.value = `Voice note sent to ${lead.external_id}. Provider message: ${result.provider_message_id || 'n/a'}.`
+    if (chatOpen.value && chatLead.value?.id === lead.id) {
+      await reviewLeadChat(lead)
+    }
+  } catch (e) {
+    actionError.value = e.message || 'Failed to send voice note test'
+  } finally {
+    voiceTestLoadingLeadId.value = null
   }
 }
 
@@ -477,6 +502,14 @@ onBeforeUnmount(() => {
            </div>
            
            <div class="flex gap-2">
+             <button
+               @click="sendVoiceNoteTest(lead)"
+               :disabled="voiceTestLoadingLeadId === lead.id"
+               class="h-9 w-9 rounded-full bg-emerald-500/15 text-emerald-300 flex items-center justify-center border border-emerald-500/30 hover:bg-emerald-500/25 shrink-0 disabled:opacity-50"
+               title="Send voice note test"
+             >
+               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3zM5 10a7 7 0 0014 0M12 17v4m-3 0h6" /></svg>
+             </button>
              <!-- Review Chat Button -->
              <button @click="reviewLeadChat(lead)" class="h-9 w-9 rounded-full bg-slate-100 text-purple-300 flex items-center justify-center border border-slate-200 hover:bg-slate-200 shrink-0">
                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>

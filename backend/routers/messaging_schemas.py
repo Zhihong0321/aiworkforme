@@ -128,6 +128,29 @@ class SimulateInboundResponse(SQLModel):
     detail: Optional[str] = None
 
 
+class VoiceNoteTestRequest(SQLModel):
+    lead_id: int
+    channel_session_id: Optional[int] = None
+    text_content: str = "Hey, quick voice note follow-up from me. Let me know if you'd like details."
+    instructions: str = "Speak in a warm, natural, and persuasive sales tone."
+    model: str = "qwen3-tts-flash"
+    voice: str = "kiki"
+
+
+class VoiceNoteTestResponse(SQLModel):
+    success: bool
+    lead_id: int
+    channel_session_id: int
+    recipient: str
+    provider_message_id: Optional[str] = None
+    local_message_id: Optional[int] = None
+    tts_audio_bytes: int = 0
+    tts_content_type: Optional[str] = None
+    send_variant_used: Optional[str] = None
+    detail: Optional[str] = None
+    send_attempts: List[Dict[str, Any]] = []
+
+
 class WhatsAppConversationImportRequest(SQLModel):
     channel_session_id: Optional[int] = None
     chat_limit: int = 200

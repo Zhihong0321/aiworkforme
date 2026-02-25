@@ -8,9 +8,12 @@ SAFE CHANGE: Preserve non-blocking diagnostic semantics.
 """
 
 from datetime import datetime, timedelta
+import base64
+import os
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
@@ -19,9 +22,13 @@ from src.adapters.db.agent_models import Agent
 from src.adapters.db.channel_models import ChannelSession, ChannelType, SessionStatus
 from src.adapters.db.crm_models import Lead, Workspace
 from src.adapters.db.messaging_models import OutboundQueue, UnifiedMessage
+from src.adapters.db.tenant_models import SystemSetting
 from src.infra.database import get_session
 
 from .messaging_helpers import (
+    extract_whatsapp_recipient as _extract_whatsapp_recipient,
+    provider_headers as _provider_headers,
+    resolve_whatsapp_base_url as _resolve_whatsapp_base_url,
     get_or_create_thread as _get_or_create_thread,
     resolve_whatsapp_channel_session_for_tenant as _resolve_whatsapp_channel_session_for_tenant,
     validate_lead_number_for_whatsapp as _validate_lead_number_for_whatsapp,
@@ -34,6 +41,8 @@ from .messaging_schemas import (
     MVPOperationalCheckResponse,
     SimulateInboundRequest,
     SimulateInboundResponse,
+    VoiceNoteTestRequest,
+    VoiceNoteTestResponse,
 )
 
 router = APIRouter()
@@ -381,4 +390,206 @@ async def simulate_inbound_message(
         queued_reply_message_id=queued_reply.id if queued_reply else None,
         queued_reply_queue_id=queued_reply_queue_id,
         detail=detail,
+    )
+
+
+@router.post("/mvp/test-voice-note", response_model=VoiceNoteTestResponse)
+def test_voice_note_delivery(
+    payload: VoiceNoteTestRequest,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    lead = _validate_lead_tenant(session, payload.lead_id, auth.tenant.id)
+    recipient = _validate_lead_number_for_whatsapp(lead)
+    channel_session = _resolve_whatsapp_channel_session_for_tenant(
+        session=session,
+        tenant_id=auth.tenant.id,
+        channel_session_id=payload.channel_session_id,
+    )
+    if channel_session.status != SessionStatus.ACTIVE:
+        raise HTTPException(status_code=400, detail="WhatsApp session is not active. Reconnect QR first.")
+
+    uniapi_setting = session.get(SystemSetting, "uniapi_key")
+    uniapi_key = (
+        (uniapi_setting.value if uniapi_setting and uniapi_setting.value else "")
+        or os.getenv("OPENAI_API_KEY")
+        or os.getenv("UNIAPI_API_KEY")
+    )
+    if not uniapi_key:
+        raise HTTPException(
+            status_code=400,
+            detail="UniAPI key is missing. Set /api/v1/settings/uniapi-key or OPENAI_API_KEY.",
+        )
+
+    text_content = (payload.text_content or "").strip()
+    if not text_content:
+        raise HTTPException(status_code=400, detail="text_content is required")
+
+    model = (payload.model or "").strip() or "qwen3-tts-flash"
+    voice = (payload.voice or "").strip() or "kiki"
+    instructions = (payload.instructions or "").strip() or None
+    uniapi_base = (os.getenv("UNIAPI_OPENAI_BASE_URL") or "https://api.uniapi.io/v1").rstrip("/")
+
+    tts_payload: Dict[str, Any] = {
+        "model": model,
+        "voice": voice,
+        "input": text_content,
+    }
+    if instructions:
+        tts_payload["instructions"] = instructions
+
+    tts_url = f"{uniapi_base}/audio/speech"
+    try:
+        with httpx.Client(timeout=60.0) as client:
+            tts_resp = client.post(
+                tts_url,
+                headers={
+                    "Authorization": f"Bearer {uniapi_key}",
+                    "Content-Type": "application/json",
+                },
+                json=tts_payload,
+            )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"TTS request failed: {str(exc)}") from exc
+
+    if tts_resp.status_code >= 400:
+        detail = tts_resp.text[:400]
+        raise HTTPException(status_code=502, detail=f"TTS failed ({tts_resp.status_code}): {detail}")
+
+    audio_bytes = tts_resp.content or b""
+    if not audio_bytes:
+        raise HTTPException(status_code=502, detail="TTS returned empty audio content")
+    tts_content_type = (tts_resp.headers.get("content-type") or "audio/wav").split(";")[0].strip() or "audio/wav"
+
+    audio_b64 = base64.b64encode(audio_bytes).decode("ascii")
+    data_uri = f"data:{tts_content_type};base64,{audio_b64}"
+
+    base_url = _resolve_whatsapp_base_url(channel_session)
+    send_url = f"{base_url}/messages/send"
+    base_send_payload = {
+        "sessionId": channel_session.session_identifier,
+        "to": _extract_whatsapp_recipient(lead.external_id),
+    }
+
+    send_variants: List[Tuple[str, Dict[str, Any]]] = [
+        (
+            "audio_b64_inline",
+            {
+                **base_send_payload,
+                "type": "audio",
+                "messageType": "audio",
+                "audio": audio_b64,
+                "mimetype": tts_content_type,
+                "ptt": True,
+            },
+        ),
+        (
+            "audio_data_uri",
+            {
+                **base_send_payload,
+                "type": "audio",
+                "messageType": "audio",
+                "mediaUrl": data_uri,
+                "media_url": data_uri,
+                "mimetype": tts_content_type,
+                "ptt": True,
+            },
+        ),
+        (
+            "audio_object_payload",
+            {
+                **base_send_payload,
+                "audio": {"data": audio_b64, "mimetype": tts_content_type, "ptt": True},
+                "ptt": True,
+            },
+        ),
+    ]
+
+    provider_message_id: Optional[str] = None
+    send_variant_used: Optional[str] = None
+    attempts: List[Dict[str, Any]] = []
+    last_error_detail = "Unknown send error"
+
+    with httpx.Client(timeout=45.0) as client:
+        for variant_name, send_payload in send_variants:
+            try:
+                send_resp = client.post(
+                    send_url,
+                    headers=_provider_headers(),
+                    json=send_payload,
+                )
+                body: Dict[str, Any] = {}
+                if send_resp.content:
+                    try:
+                        body = send_resp.json()
+                    except Exception:
+                        body = {"raw": send_resp.text[:400]}
+                attempt_record = {"variant": variant_name, "status_code": send_resp.status_code}
+                if send_resp.status_code >= 400:
+                    attempt_record["error"] = str(body)[:300]
+                    attempts.append(attempt_record)
+                    last_error_detail = f"Variant {variant_name} failed ({send_resp.status_code}): {str(body)[:300]}"
+                    continue
+
+                attempts.append(attempt_record)
+                result = body.get("result") if isinstance(body, dict) else {}
+                key = result.get("key") if isinstance(result, dict) else {}
+                provider_message_id = (
+                    (body.get("provider_message_id") if isinstance(body, dict) else None)
+                    or (body.get("message_id") if isinstance(body, dict) else None)
+                    or (key.get("id") if isinstance(key, dict) else None)
+                    or f"voice_{uuid4().hex}"
+                )
+                send_variant_used = variant_name
+                break
+            except Exception as exc:
+                attempts.append({"variant": variant_name, "error": str(exc)[:300]})
+                last_error_detail = f"Variant {variant_name} exception: {str(exc)}"
+
+    if not provider_message_id:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Voice note send failed on all variants. Last error: {last_error_detail}",
+        )
+
+    thread = _get_or_create_thread(session, auth.tenant.id, lead.id, "whatsapp")
+    now = datetime.utcnow()
+    outbound = UnifiedMessage(
+        tenant_id=auth.tenant.id,
+        lead_id=lead.id,
+        thread_id=thread.id,
+        channel_session_id=channel_session.id,
+        channel="whatsapp",
+        external_message_id=provider_message_id,
+        direction="outbound",
+        message_type="audio",
+        text_content=text_content,
+        raw_payload={
+            "source": "mvp_voice_note_test",
+            "tts_model": model,
+            "tts_voice": voice,
+            "tts_content_type": tts_content_type,
+            "send_variant_used": send_variant_used,
+            "send_attempts": attempts,
+        },
+        delivery_status="provider_accepted",
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(outbound)
+    session.commit()
+    session.refresh(outbound)
+
+    return VoiceNoteTestResponse(
+        success=True,
+        lead_id=lead.id,
+        channel_session_id=channel_session.id,
+        recipient=recipient,
+        provider_message_id=provider_message_id,
+        local_message_id=outbound.id,
+        tts_audio_bytes=len(audio_bytes),
+        tts_content_type=tts_content_type,
+        send_variant_used=send_variant_used,
+        detail="Voice note generated and sent to WhatsApp lead.",
+        send_attempts=attempts,
     )
