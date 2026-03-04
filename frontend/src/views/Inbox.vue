@@ -1,194 +1,337 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue'
+import { ref, onMounted, watch, computed } from 'vue'
 import { store } from '../store'
-import TuiBadge from '../components/ui/TuiBadge.vue'
-import TuiButton from '../components/ui/TuiButton.vue'
+import { request } from '../services/api'
 
-const API_BASE = `${window.location.origin}/api/v1`
-const conversations = ref([])
+// State
+const threads = ref([])
 const messages = ref([])
-const selectedId = ref(null)
-const isLoading = ref(false)
-const isSending = ref(false)
+const activeThread = ref(null) // Holds selected thread object
+const isLoadingList = ref(false)
+const isLoadingChat = ref(false)
 const composer = ref('')
+const activeTab = ref('all') // 'all', 'unread', 'archived'
 
-const fetchConversations = async () => {
-  isLoading.value = true
+// Fetch List
+const fetchThreads = async () => {
+  if (!store.activeAgentId) {
+    threads.value = []
+    return
+  }
+  isLoadingList.value = true
   try {
-    const res = await fetch(`${API_BASE}/chat/conversations`)
-    if (res.ok) {
-      conversations.value = await res.json()
+    const data = await request(`/agents/${store.activeAgentId}/ai-crm/threads`)
+    if (Array.isArray(data)) {
+        threads.value = data
     }
   } catch (e) {
-    console.error('Failed to fetch conversations', e)
+    console.error('Failed to fetch threads:', e)
   } finally {
-    isLoading.value = false
+    isLoadingList.value = false
   }
 }
 
-const fetchMessages = async (id) => {
-  selectedId.value = id
+// Derived Filters
+const filteredThreads = computed(() => {
+    if (activeTab.value === 'all') return threads.value
+    if (activeTab.value === 'unread') return threads.value.filter(t => t.pending_scan || t.status === 'NEEDS_REVIEW')
+    if (activeTab.value === 'archived') return threads.value.filter(t => t.status === 'ARCHIVED')
+    return threads.value
+})
+
+// Avatar text helper
+const getAvatarText = (name) => {
+    if (!name) return '?'
+    return name.substring(0, 2).toUpperCase()
+}
+
+// Fetch Messages
+const openChat = async (thread) => {
+  activeThread.value = thread
+  isLoadingChat.value = true
+  messages.value = []
+  
   try {
-    const res = await fetch(`${API_BASE}/chat/${id}/messages`)
-    if (res.ok) {
-      messages.value = await res.json()
-    }
+    // Reusing the same endpoint used in Leads.vue for WhatsApp threads
+    const data = await request(`/messaging/leads/${thread.lead_id}/thread?channel=whatsapp`)
+    messages.value = Array.isArray(data?.messages) ? data.messages : []
   } catch (e) {
-    console.error('Failed to fetch messages', e)
+    console.error('Failed to load conversation transcript:', e)
+  } finally {
+    isLoadingChat.value = false
   }
 }
 
+// Send Message
 const sendMessage = async () => {
-  if (!composer.value.trim() || !selectedId.value) return
-  
-  const conversation = conversations.value.find(c => c.id === selectedId.value)
-  if (!conversation) return
-
-  isSending.value = true
-  const text = composer.value
-  composer.value = ''
-  
-  try {
-    const res = await fetch(`${API_BASE}/chat/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        agent_id: conversation.agent_id, 
-        message: text 
-      })
+    // This serves as a conceptual UI placeholder based on designs since human takeover logic might need specific backend hookups
+    if (!composer.value.trim() || !activeThread.value) return
+    console.warn(`Dispatching manual message to Lead ${activeThread.value.lead_id}: ${composer.value}`)
+    
+    // Simulate optimistic UI update
+    messages.value.push({
+        id: Date.now(),
+        direction: 'outbound',
+        text_content: composer.value,
+        created_at: new Date().toISOString()
     })
-    if (res.ok) {
-      await fetchMessages(selectedId.value)
-    }
-  } catch (e) {
-    console.error('Send failed', e)
-  } finally {
-    isSending.value = false
-  }
+    
+    composer.value = ''
+    setTimeout(() => {
+        const d = document.getElementById('chat-scroll-container')
+        if (d) d.scrollTop = d.scrollHeight
+    }, 50)
 }
 
-onMounted(fetchConversations)
+onMounted(() => {
+  if (store.activeAgentId) fetchThreads()
+})
+
+watch(() => store.activeAgentId, () => {
+    activeThread.value = null
+    fetchThreads()
+})
 </script>
 
 <template>
-  <div class="flex flex-col h-[calc(100vh-64px)] w-full overflow-hidden bg-white font-inter text-slate-700">
+  <div class="flex flex-col h-[calc(100vh-64px)] w-full max-w-md mx-auto relative text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900 overflow-hidden">
     
     <!-- ==================== LEAD LIST VIEW ==================== -->
-    <div v-if="!selectedId" class="flex flex-col h-full w-full">
-      <!-- Header & Filters -->
-      <div class="p-5 border-b border-slate-200 z-10 bg-white border border-slate-200 shadow-sm rounded-b-3xl mb-2">
-        <h2 class="text-3xl font-semibold text-slate-900 tracking-tight mb-5 mt-2">Inbox</h2>
-        <div class="flex gap-3 overflow-x-auto pb-2 -mx-2 px-2 scrollbar-none [scrollbar-width:none]">
-          <button class="px-5 py-2 rounded-full text-sm font-medium bg-blue-600 text-white shadow-sm hover:bg-blue-700 shadow-lg shadow-purple-500/25 shrink-0">All Chats</button>
-          <button class="px-5 py-2 rounded-full text-sm font-medium bg-white border border-slate-200 shadow-sm text-slate-700 hover:text-slate-900 shrink-0">Unread</button>
-          <button class="px-5 py-2 rounded-full text-sm font-medium bg-white border border-slate-200 shadow-sm text-slate-700 hover:text-slate-900 shrink-0">Needs Attention</button>
-        </div>
-      </div>
+    <div v-if="!activeThread" class="flex flex-col h-full w-full animate-in fade-in duration-200">
       
-      <!-- Loading State -->
-      <div v-if="isLoading && conversations.length === 0" class="flex-grow flex items-center justify-center text-slate-600 animate-pulse">
-        <div class="flex flex-col items-center gap-3">
-          <div class="w-8 h-8 rounded-full border-t-2 border-r-2 border-purple-500 animate-spin"></div>
-          <p class="text-sm">Syncing latest messages...</p>
-        </div>
-      </div>
-      
-      <!-- Empty State -->
-      <div v-else-if="conversations.length === 0" class="flex-grow flex items-center justify-center p-8 text-center text-slate-600 italic text-sm">
-        No active conversations right now.
+      <!-- Missing Agent Fallback -->
+      <div v-if="!store.activeAgentId" class="flex flex-col items-center justify-center flex-1 p-6 text-center">
+        <span class="material-symbols-outlined text-6xl text-slate-300 dark:text-slate-700 mb-4">forum</span>
+        <h3 class="text-lg font-bold">No Agent Connected</h3>
+        <p class="text-sm text-slate-500 mt-2">Connect an agent to view active inbound conversations and AI CRM threads.</p>
       </div>
 
-      <!-- List -->
-      <div class="flex-grow overflow-y-auto px-4 pb-20 space-y-3 scrollbar-none [scrollbar-width:none]">
-        <div 
-          v-for="c in conversations" 
-          :key="c.id"
-          @click="fetchMessages(c.id)"
-          class="p-4 rounded-2xl cursor-pointer bg-white border border-slate-200 shadow-sm hover:bg-white transition-all active:scale-[0.98] border border-slate-200"
-        >
-          <div class="flex justify-between items-start mb-2">
-            <span class="font-semibold text-base text-slate-900">Session #{{ c.id }}</span>
-            <span class="text-[11px] text-slate-600 font-medium">{{ new Date(c.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
-          </div>
-          <div class="text-sm text-slate-600 line-clamp-2 leading-relaxed">{{ c.last_message || 'No messages yet' }}</div>
-          <div class="mt-3 flex gap-2">
-            <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded bg-purple-500/20 text-purple-300 border border-purple-500/20">Agent #{{ c.agent_id }}</span>
-          </div>
-        </div>
-      </div>
+      <template v-else>
+          <!-- Navigation Tabs -->
+          <nav class="flex border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md sticky top-0 z-10 shrink-0">
+              <button 
+                  v-for="tab in [{id: 'all', label: 'All'}, {id: 'unread', label: 'Unread'}, {id: 'archived', label: 'Archived'}]" 
+                  :key="tab.id"
+                  @click="activeTab = tab.id"
+                  class="flex-1 flex flex-col items-center justify-center pt-3 pb-2 border-b-2 transition-colors"
+                  :class="activeTab === tab.id ? 'border-primary text-primary' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700'"
+              >
+                  <span class="text-sm font-semibold uppercase tracking-wider">{{ tab.label }}</span>
+              </button>
+          </nav>
+
+          <!-- Main Conversation List -->
+          <main class="flex-1 overflow-y-auto scrollbar-none pb-24">
+              
+              <div v-if="isLoadingList" class="flex justify-center p-8">
+                  <span class="material-symbols-outlined animate-spin text-primary">sync</span>
+              </div>
+              
+              <div v-else-if="filteredThreads.length === 0" class="flex flex-col items-center justify-center h-full p-8 text-center text-slate-500">
+                  <span class="material-symbols-outlined text-4xl mb-2 opacity-50">chat_bubble</span>
+                  <p class="text-sm font-medium">No conversations found.</p>
+              </div>
+
+              <!-- List Items -->
+              <div 
+                  v-else 
+                  v-for="thread in filteredThreads" 
+                  :key="thread.thread_id"
+                  @click="openChat(thread)"
+                  class="flex items-center gap-4 px-4 py-4 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer border-b border-slate-100 dark:border-slate-800/50"
+              >
+                  <!-- Avatar -->
+                  <div class="relative shrink-0">
+                      <div class="size-14 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-lg border-2 border-primary/20">
+                          {{ getAvatarText(thread.lead_name) }}
+                      </div>
+                      <div v-if="thread.pending_scan || thread.status === 'NEEDS_REVIEW'" class="absolute bottom-0 right-0 size-3.5 bg-green-500 border-2 border-white dark:border-slate-900 rounded-full"></div>
+                  </div>
+                  
+                  <div class="flex-1 min-w-0">
+                      <div class="flex justify-between items-baseline mb-0.5">
+                          <h3 class="text-base font-bold text-slate-900 dark:text-slate-100 truncate">{{ thread.lead_name || thread.lead_external_id || 'Unknown' }}</h3>
+                          <span class="text-xs font-semibold" :class="thread.pending_scan ? 'text-primary' : 'text-slate-500'">
+                              {{ thread.last_message_at ? new Date(thread.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'No Activity' }}
+                          </span>
+                      </div>
+                      
+                      <div class="flex justify-between items-start">
+                          <p class="text-sm font-medium text-slate-600 dark:text-slate-400 line-clamp-1">
+                              {{ thread.last_message_preview || 'New thread initiated.' }}
+                          </p>
+                          <!-- Notification Badge -->
+                          <span v-if="thread.pending_scan" class="ml-2 flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-primary text-white text-[10px] font-bold">New</span>
+                          <span v-else-if="thread.status === 'ARCHIVED'" class="ml-2 material-symbols-outlined text-sm text-slate-400">inventory_2</span>
+                          <span v-else class="ml-2 material-symbols-outlined text-sm text-slate-400">done_all</span>
+                      </div>
+                  </div>
+              </div>
+          </main>
+
+          <!-- Floating Action Button -->
+          <button class="absolute bottom-6 right-6 size-14 bg-primary text-white rounded-full shadow-lg shadow-primary/30 flex items-center justify-center hover:scale-105 active:scale-95 transition-transform z-20">
+              <span class="material-symbols-outlined text-2xl">add_comment</span>
+          </button>
+      </template>
     </div>
 
-    <!-- ==================== CHAT VIEW ==================== -->
-    <div v-else class="flex flex-col h-full w-full hidden">
-      <!-- Chat Header -->
-      <div class="p-4 border-b border-slate-200 bg-white border border-slate-200 shadow-sm z-20 flex justify-between items-center rounded-b-[32px] shadow-lg">
-        <div class="flex items-center gap-3">
-          <button @click="selectedId = null" class="p-2 -ml-2 text-slate-600 hover:text-slate-900 rounded-full bg-white active:scale-95 transition-all">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15 19l-7-7 7-7" /></svg>
+    <!-- ==================== CHAT VIEW (SLIDING OVERLAY) ==================== -->
+    <div 
+        v-if="activeThread" 
+        class="absolute inset-0 z-30 flex flex-col bg-background-light dark:bg-background-dark animate-in slide-in-from-right duration-200"
+    >
+      <!-- TopAppBar -->
+      <header class="flex items-center justify-between bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 shrink-0 shadow-sm z-10">
+          <button @click="activeThread = null" class="flex size-10 items-center justify-center rounded-full text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors active:scale-95">
+              <span class="material-symbols-outlined">arrow_back</span>
           </button>
-          <div class="flex flex-col">
-            <h3 class="font-semibold text-slate-900 text-lg leading-tight">Session #{{ selectedId }}</h3>
-            <p class="text-[10px] text-blue-600 font-bold uppercase tracking-wider">AI Handling</p>
-          </div>
-        </div>
-        
-        <!-- AI vs Human Toggle -->
-        <div class="flex items-center gap-2">
-          <span class="text-[10px] text-slate-600 font-bold uppercase">Human</span>
-          <button class="relative inline-flex items-center h-7 rounded-full w-12 transition-colors focus:outline-none bg-blue-600 text-white shadow-sm hover:bg-blue-700 shadow-lg shadow-purple-500/30 ring-2 ring-purple-500/20">
-            <span class="inline-block w-5 h-5 transform translate-x-6 bg-white rounded-full transition-transform shadow-sm"></span>
-          </button>
-          <span class="text-[10px] text-purple-300 font-bold uppercase">AI</span>
-        </div>
-      </div>
-
-      <!-- Messages Area -->
-      <div class="flex-grow p-4 overflow-y-auto space-y-5 flex flex-col scrollbar-none [scrollbar-width:none] pb-6">
-        <div 
-          v-for="msg in messages" 
-          :key="msg.id" 
-          :class="[
-            'max-w-[85%] p-4 rounded-3xl shadow-sm text-[15px] leading-relaxed relative',
-            msg.role === 'user' ? 'bg-white border border-slate-200 shadow-sm text-slate-700 self-start rounded-tl-sm' : 'bg-blue-600 text-white shadow-sm hover:bg-blue-700 self-end rounded-tr-sm shadow-lg shadow-purple-500/20'
-          ]"
-        >
-          <p class="whitespace-pre-wrap">{{ msg.content }}</p>
-          <div class="mt-1 flex justify-end">
-            <span class="text-[10px] opacity-70 font-medium" :class="msg.role === 'user' ? 'text-slate-600' : 'text-slate-900/80'">{{ new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
+          
+          <div class="flex flex-col items-center text-center max-w-[60%]">
+              <h2 class="text-slate-900 dark:text-slate-100 text-base font-bold leading-tight truncate w-full">{{ activeThread.lead_name || activeThread.lead_external_id }}</h2>
+              <div class="flex items-center gap-1.5 mt-0.5">
+                  <span class="size-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                  <span class="text-slate-500 dark:text-slate-400 text-[10px] font-medium uppercase tracking-wider">
+                      {{ activeThread.status === 'ARCHIVED' ? 'Archived' : 'Active Channel' }}
+                  </span>
+              </div>
           </div>
           
-          <!-- Tool Calls Indicator -->
-          <div v-if="msg.tool_calls && msg.role !== 'user'" class="mt-3 pt-3 border-t border-white/20 flex items-center gap-2">
-             <div class="w-4 h-4 rounded-full bg-white/20 flex items-center justify-center animate-pulse">
-               <div class="w-1.5 h-1.5 bg-white rounded-full"></div>
-             </div>
-             <span class="text-[10px] font-bold uppercase tracking-wider text-slate-900">Action Executed</span>
-          </div>
-        </div>
-        <!-- Spacer for composer -->
-        <div class="h-4 shrink-0"></div>
-      </div>
-
-      <!-- Composer Area -->
-      <div class="p-3 bg-white border border-slate-200 shadow-sm border-t border-slate-200 rounded-t-[32px] z-20 pb-safe">
-        <div class="flex items-end gap-2 bg-slate-50 rounded-3xl border border-slate-200 p-2 focus-within:ring-1 focus-within:ring-purple-500/50 transition-all">
-          <textarea 
-            v-model="composer"
-            class="flex-grow bg-transparent p-2 text-sm text-slate-900 placeholder-slate-500 outline-none resize-none max-h-32 min-h-[40px] scrollbar-none [scrollbar-width:none]"
-            placeholder="Message..."
-            rows="1"
-            @keyup.enter.ctrl="sendMessage"
-          ></textarea>
-          <button 
-            @click="sendMessage"
-            :disabled="isSending || !composer.trim()"
-            class="h-10 w-10 shrink-0 rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700 flex items-center justify-center text-slate-900 shadow-lg shadow-purple-500/20 disabled:opacity-50 disabled:grayscale transition-all active:scale-95"
-          >
-            <svg v-if="!isSending" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 ml-1"><path d="M3.478 2.404a.75.75 0 00-.926.941l2.432 7.905H13.5a.75.75 0 010 1.5H4.984l-2.432 7.905a.75.75 0 00.926.94 60.519 60.519 0 0018.445-8.986.75.75 0 000-1.218A60.517 60.517 0 003.478 2.404z" /></svg>
-            <div v-else class="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin"></div>
+          <button class="flex items-center justify-center rounded-full size-10 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+              <span class="material-symbols-outlined">more_vert</span>
           </button>
-        </div>
-      </div>
+      </header>
+      
+      <!-- Chat Content -->
+      <main id="chat-scroll-container" class="flex-1 overflow-y-auto p-4 space-y-6 bg-slate-50 dark:bg-slate-900/50">
+          
+          <div v-if="isLoadingChat" class="flex flex-col items-center justify-center py-10 opacity-70">
+              <span class="material-symbols-outlined animate-spin text-primary text-3xl mb-2">sync</span>
+              <span class="text-xs uppercase tracking-widest font-bold">Syncing Transcript...</span>
+          </div>
+          
+          <div v-else-if="messages.length === 0" class="flex flex-col items-center justify-center h-full text-center p-6 text-slate-500">
+              <span class="material-symbols-outlined text-4xl mb-3 opacity-30">history</span>
+              <p class="text-sm font-medium">No conversational history downloaded yet.</p>
+          </div>
+          
+          <template v-else>
+              <!-- Timeline Marker -->
+              <div class="flex flex-col items-center py-2">
+                  <span class="text-slate-400 dark:text-slate-500 text-[10px] font-semibold uppercase tracking-widest px-3 py-1 bg-slate-200/50 dark:bg-slate-800 rounded-full">Transcript History</span>
+              </div>
+
+              <!-- Messages List -->
+              <div 
+                  v-for="(msg, index) in messages" 
+                  :key="msg.id || index"
+                  class="flex items-end gap-3 max-w-[85%]"
+                  :class="msg.direction === 'outbound' ? 'justify-end ml-auto' : 'justify-start mr-auto'"
+              >
+                  <!-- Inbound Avatar -->
+                  <div v-if="msg.direction === 'inbound'" class="bg-primary/10 flex items-center justify-center rounded-full size-8 shrink-0 border border-primary/20 text-primary text-xs font-bold">
+                      {{ getAvatarText(activeThread.lead_name) }}
+                  </div>
+                  
+                  <!-- Bubble Stack -->
+                  <div class="flex flex-col gap-1" :class="msg.direction === 'outbound' ? 'items-end' : 'items-start'">
+                      
+                      <!-- AI Sender Tag (Outbound) -->
+                      <div v-if="msg.direction === 'outbound'" class="flex items-center gap-1 mb-0.5 mr-1 text-primary opacity-80">
+                          <span class="material-symbols-outlined text-[12px]">smart_toy</span>
+                          <p class="text-[9px] font-bold uppercase tracking-widest">Agent System</p>
+                      </div>
+                      
+                      <!-- Main Label (Inbound) -->
+                      <p v-if="msg.direction === 'inbound'" class="text-slate-500 dark:text-slate-400 text-[10px] font-medium ml-1">
+                          {{ activeThread.lead_name || 'Customer' }}
+                      </p>
+
+                      <!-- Bubble payload -->
+                      <div 
+                          class="text-sm font-normal leading-relaxed rounded-2xl px-4 py-2.5 shadow-sm break-words relative"
+                          :class="[
+                              msg.direction === 'outbound' 
+                                  ? 'rounded-br-none bg-primary text-white shadow-primary/20 border border-primary/50' 
+                                  : 'rounded-bl-none bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
+                          ]"
+                      >
+                          <p class="whitespace-pre-wrap">{{ msg.text_content || msg.content || '(Attachment Layout TBD)' }}</p>
+                          <div 
+                              class="text-[9px] mt-1 text-right block" 
+                              :class="msg.direction === 'outbound' ? 'text-white/70' : 'text-slate-400'"
+                          >
+                              {{ new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
+                          </div>
+                      </div>
+                  </div>
+
+                  <!-- Outbound Avatar / Bolt -->
+                  <div v-if="msg.direction === 'outbound'" class="bg-primary flex items-center justify-center rounded-full size-8 shrink-0 border-2 border-primary/20 shadow-sm">
+                      <span class="material-symbols-outlined text-white text-sm">bolt</span>
+                  </div>
+              </div>
+          </template>
+      </main>
+
+      <!-- Bottom Action & Input -->
+      <footer class="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 p-4 space-y-3 shrink-0 pb-safe">
+          
+          <!-- Take Over Prompt Context (Mockup visual) -->
+          <div v-if="activeThread.status !== 'ARCHIVED'" class="flex items-center justify-between bg-primary/5 dark:bg-primary/10 rounded-xl px-4 py-2 border border-primary/10">
+              <div class="flex items-center gap-2">
+                  <span class="material-symbols-outlined text-primary text-sm animate-pulse">auto_awesome</span>
+                  <span class="text-xs font-semibold text-primary">AI is handling this lead</span>
+              </div>
+              <button class="text-[10px] font-bold text-white bg-primary px-3 py-1.5 rounded-lg shadow-sm hover:bg-primary/90 transition-all active:scale-95 uppercase tracking-wider">
+                  Take Over
+              </button>
+          </div>
+          
+          <!-- Input Bar -->
+          <div class="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 rounded-full p-1 focus-within:ring-2 focus-within:ring-primary/50 transition-shadow transition-all">
+              <button class="flex items-center justify-center size-10 shrink-0 rounded-full text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">
+                  <span class="material-symbols-outlined">add_circle</span>
+              </button>
+              
+              <div class="flex-1 relative">
+                  <input 
+                      v-model="composer"
+                      @keyup.enter="sendMessage"
+                      class="w-full bg-transparent border-none py-2 px-2 text-sm focus:ring-0 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none" 
+                      placeholder="Type a message..." 
+                      type="text"
+                  />
+              </div>
+              
+              <button 
+                  @click="sendMessage"
+                  :disabled="!composer.trim()"
+                  class="flex items-center justify-center size-10 shrink-0 rounded-full text-white shadow-sm transition-transform bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:grayscale"
+                  :class="{'active:scale-90': composer.trim()}"
+              >
+                  <span class="material-symbols-outlined text-sm">send</span>
+              </button>
+          </div>
+      </footer>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Optional: Make specific thread transition slightly smoother */
+.slide-in-from-right {
+  animation: slideInFromRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes slideInFromRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0.5;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+</style>

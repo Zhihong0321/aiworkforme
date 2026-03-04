@@ -11,15 +11,9 @@ const isMobileMenuOpen = ref(false)
 const isPlatformAdmin = computed(() => localStorage.getItem('is_platform_admin') === 'true')
 
 const navItems = computed(() => getNavItems(isPlatformAdmin.value))
-const showBackHome = computed(() => route.path !== '/home')
 
 const toggleMobileMenu = () => {
   isMobileMenuOpen.value = !isMobileMenuOpen.value
-}
-
-const goHome = () => {
-  isMobileMenuOpen.value = false
-  router.push('/home')
 }
 
 const handleLogout = () => {
@@ -41,119 +35,115 @@ watch(
 
 onMounted(() => {
   if (!isPlatformAdmin.value) {
-    store.fetchWorkspaces()
+    store.fetchAgents()
   }
+})
+
+// Quick compute of the active agent initial
+const activeAgentName = computed(() => {
+    return store.activeAgent?.name || 'Aiworkfor.me'
+})
+const pageTitle = computed(() => {
+    const matched = navItems.value.find(item => isActive(item.path))
+    return matched ? matched.label : route.name || 'Overview'
 })
 </script>
 
 <template>
-  <header class="topnav sticky top-0 z-50 border-b border-[var(--border)] bg-[rgba(255,255,255,0.92)] backdrop-blur">
-    <div class="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6">
-      <div class="flex items-center gap-2">
-        <button
-          v-if="showBackHome"
-          type="button"
-          class="inline-flex h-9 items-center rounded-lg border border-[var(--border)] px-2 text-xs font-semibold text-[var(--text)] transition hover:border-[var(--border-strong)] hover:bg-white sm:px-3"
-          @click="goHome"
-        >
-          <span class="sm:hidden">←</span>
-          <span class="hidden sm:inline">← Home</span>
-        </button>
-        <span class="select-none text-sm font-semibold uppercase tracking-[0.17em] text-[var(--text)]">
-          Aiworkfor.me
-        </span>
-      </div>
-
-      <nav class="hidden lg:flex lg:flex-1 lg:items-center lg:justify-center lg:gap-1 lg:overflow-x-auto">
-        <router-link
-          v-for="item in navItems"
-          :key="item.path"
-          :to="item.path"
-          :class="[
-            'rounded-md px-3 py-2 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors whitespace-nowrap',
-            isActive(item.path)
-              ? 'bg-[var(--text)] text-white'
-              : 'text-[var(--muted)] hover:bg-white hover:text-[var(--text)]'
-          ]"
-        >
-          {{ item.label }}
-        </router-link>
-      </nav>
-
-      <div class="hidden items-center gap-3 lg:flex">
-        <span
-          v-if="!isPlatformAdmin"
-          class="rounded-md border border-[var(--border)] px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-          :class="store.activeWorkspace?.budget_tier === 'RED' ? 'text-red-600' : 'text-emerald-600'"
-        >
-          {{ store.activeWorkspace?.budget_tier || 'GREEN' }} Tier
-        </span>
-        <button
-          type="button"
-          class="h-9 rounded-lg border border-red-200 px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-red-600 transition hover:bg-red-50"
-          @click="handleLogout"
-        >
-          Logout
-        </button>
-      </div>
-
-      <button
-        type="button"
-        class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-[var(--border)] text-[var(--muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--text)] lg:hidden"
-        @click="toggleMobileMenu"
+  <div>
+    <!-- Navigation Drawer Overlay -->
+    <div 
+        v-show="isMobileMenuOpen" 
+        class="fixed inset-0 z-50 overflow-hidden" 
+        id="sidebar-drawer"
+    >
+      <div 
+          class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm transition-opacity"
+          @click="toggleMobileMenu"
+      ></div>
+      <div 
+          class="absolute inset-y-0 left-0 w-full max-w-xs bg-white dark:bg-slate-950 shadow-2xl flex flex-col transform transition-transform duration-300"
+          :class="isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'"
       >
-        <span class="sr-only">Toggle menu</span>
-        <svg v-if="!isMobileMenuOpen" class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
-        </svg>
-        <svg v-else class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-      </button>
-    </div>
+        <!-- Drawer Header / Agent Switcher -->
+        <div class="p-6 border-b border-slate-100 dark:border-slate-800">
+          <div class="flex items-center justify-between mb-4">
+            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Active Agent</span>
+            <button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" @click="toggleMobileMenu">
+              <span class="material-symbols-outlined">close</span>
+            </button>
+          </div>
+          <div class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 cursor-pointer transition-colors relative group">
+            <div class="size-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">
+                {{ activeAgentName.charAt(0).toUpperCase() }}
+            </div>
+            <div class="flex-1 overflow-hidden" v-if="!isPlatformAdmin">
+              <p class="font-bold text-slate-900 dark:text-slate-100 truncate">{{ activeAgentName }}</p>
+              <p class="text-xs text-slate-500">Active Now</p>
+            </div>
+            <div class="flex-1 overflow-hidden" v-else>
+               <p class="font-bold text-slate-900 dark:text-slate-100 truncate">Platform Admin</p>
+            </div>
+            <span class="material-symbols-outlined text-slate-400">unfold_more</span>
+            
+            <!-- Minimal dropdown for agent switching -->
+            <div class="absolute top-[110%] left-0 w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl hidden group-hover:block z-50" v-if="!isPlatformAdmin && store.agents.length > 1">
+                <div 
+                    v-for="agent in store.agents" 
+                    :key="agent.id"
+                    @click="store.setActiveAgent(agent.id)"
+                    class="px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm truncate"
+                    :class="{'font-bold text-primary': store.activeAgentId == agent.id}"
+                >
+                    {{ agent.name }}
+                </div>
+            </div>
+          </div>
+        </div>
 
-    <div v-show="isMobileMenuOpen" class="border-t border-[var(--border)] bg-white lg:hidden">
-      <div class="space-y-1 px-3 pb-4 pt-3">
-        <button
-          v-if="showBackHome"
-          type="button"
-          class="flex w-full items-center rounded-md border border-[var(--border)] px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.12em] text-[var(--text)]"
-          @click="goHome"
-        >
-          ← Back to Home
-        </button>
-
-        <router-link
-          v-for="item in navItems"
-          :key="item.path"
-          :to="item.path"
-          :class="[
-            'block rounded-md px-3 py-2 text-xs font-medium uppercase tracking-[0.12em] transition-colors',
-            isActive(item.path)
-              ? 'bg-[var(--text)] text-white'
-              : 'text-[var(--muted)] hover:bg-[var(--accent-soft)] hover:text-[var(--text)]'
-          ]"
-        >
-          {{ item.label }}
-        </router-link>
-
-        <div class="mt-2 border-t border-[var(--border)] pt-3">
-          <span
-            v-if="!isPlatformAdmin"
-            class="mb-2 block text-[10px] font-semibold uppercase tracking-[0.12em]"
-            :class="store.activeWorkspace?.budget_tier === 'RED' ? 'text-red-600' : 'text-emerald-600'"
+        <!-- Drawer Links -->
+        <nav class="flex-1 overflow-y-auto p-4 space-y-1">
+          <router-link
+            v-for="item in navItems"
+            :key="item.path"
+            :to="item.path"
+            class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors"
+            :class="isActive(item.path) ? 'bg-primary/10 text-primary font-bold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'"
           >
-            {{ store.activeWorkspace?.budget_tier || 'GREEN' }} Tier
-          </span>
-          <button
-            type="button"
-            class="w-full rounded-md border border-red-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-red-600"
-            @click="handleLogout"
-          >
-            Logout
+            <span class="material-symbols-outlined" :class="{'font-fill': isActive(item.path)}">{{ item.icon }}</span>
+            <span class="font-medium">{{ item.label }}</span>
+          </router-link>
+        </nav>
+
+        <!-- Drawer Bottom Actions -->
+        <div class="p-4 mt-auto border-t border-slate-100 dark:border-slate-800 space-y-1">
+          <button @click="handleLogout" class="flex w-full items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+            <span class="material-symbols-outlined">logout</span>
+            <span class="font-medium">Logout</span>
           </button>
         </div>
       </div>
     </div>
-  </header>
+
+    <!-- Top App Bar -->
+    <header class="sticky top-0 z-40 flex items-center bg-white/80 dark:bg-slate-950/80 backdrop-blur-md p-4 justify-between border-b border-slate-200 dark:border-slate-800 max-w-4xl mx-auto">
+      <div class="flex items-center gap-4">
+        <button 
+            @click="toggleMobileMenu" 
+            class="text-slate-900 dark:text-slate-100 flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+        >
+          <span class="material-symbols-outlined">menu</span>
+        </button>
+      </div>
+      <h2 class="text-slate-900 dark:text-slate-100 text-lg font-bold leading-tight tracking-[-0.015em] flex-1 text-center truncate px-4">
+        {{ pageTitle }}
+      </h2>
+      <div class="flex items-center justify-end w-10">
+        <button class="text-slate-900 dark:text-slate-100 flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer relative">
+          <span class="material-symbols-outlined">notifications</span>
+          <span class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-slate-950"></span>
+        </button>
+      </div>
+    </header>
+  </div>
 </template>

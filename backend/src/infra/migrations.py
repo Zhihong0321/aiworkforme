@@ -234,12 +234,17 @@ def apply_ai_crm_additive_migration(engine: Engine):
                     "ON et_ai_crm_thread_states(tenant_id, workspace_id, next_followup_at)"
                 )
             )
-            conn.execute(
-                text(
-                    "CREATE INDEX IF NOT EXISTS idx_ai_crm_workspace_controls_tenant_workspace "
-                    "ON et_ai_crm_workspace_controls(tenant_id, workspace_id)"
+            # Backward compatibility check for deprecated table
+            old_table_exists = conn.execute(
+                text("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'et_ai_crm_workspace_controls')")
+            ).scalar()
+            if old_table_exists:
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_ai_crm_workspace_controls_tenant_workspace "
+                        "ON et_ai_crm_workspace_controls(tenant_id, workspace_id)"
+                    )
                 )
-            )
         logger.info("AI CRM additive migration applied for PostgreSQL.")
         return
 
@@ -290,3 +295,26 @@ def apply_workspace_decoupling_migration(engine: Engine):
         return
 
     logger.warning("Skipping workspace decoupling migration for unsupported dialect: %s", dialect)
+
+
+def apply_lead_agent_id_additive_migration(engine: Engine):
+    """
+    Ensures agent_id column exists on et_leads.
+    Safe to run repeatedly.
+    """
+    dialect = engine.dialect.name
+    if dialect == "postgresql":
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE et_leads ADD COLUMN IF NOT EXISTS agent_id INTEGER REFERENCES zairag_agents(id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_et_leads_agent_id ON et_leads(agent_id)"))
+        logger.info("Lead agent_id additive migration applied for PostgreSQL.")
+    elif dialect == "sqlite":
+        insp = inspect(engine)
+        tables = set(insp.get_table_names())
+        if "et_leads" in tables:
+            existing_cols = {col["name"] for col in insp.get_columns("et_leads")}
+            with engine.begin() as conn:
+                if "agent_id" not in existing_cols:
+                    conn.execute(text("ALTER TABLE et_leads ADD COLUMN agent_id INTEGER REFERENCES zairag_agents(id)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_et_leads_agent_id ON et_leads(agent_id)"))
+            logger.info("Lead agent_id additive migration applied for SQLite.")

@@ -16,11 +16,12 @@ from sqlmodel import Session, select
 
 from src.adapters.db.channel_models import ChannelSession, ChannelType, SessionStatus
 from src.adapters.db.crm_models import (
+    AgentCRMProfile,
     AICRMAggressiveness,
     AICRMFollowupStrategy,
     AICRMLeadStatus,
     AICRMThreadState,
-    AICRMWorkspaceControl,
+    AgentCRMProfile,
     Lead,
     Workspace,
 )
@@ -29,11 +30,11 @@ from src.adapters.db.messaging_models import UnifiedThread
 from .ai_crm_schemas import AICRMControlResponse
 
 
-def validate_workspace(session: Session, tenant_id: int, workspace_id: int) -> Workspace:
-    workspace = session.get(Workspace, workspace_id)
-    if not workspace or workspace.tenant_id != tenant_id:
+def validate_agent(session: Session, tenant_id: int, agent_id: int) -> Workspace:
+    agent = session.get(Workspace, agent_id)
+    if not agent or agent.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Workspace not found")
-    return workspace
+    return agent
 
 
 def normalize_aggressiveness(value: str) -> AICRMAggressiveness:
@@ -56,19 +57,19 @@ def normalize_strategy(value: str) -> AICRMFollowupStrategy:
     return AICRMFollowupStrategy(raw)
 
 
-def ensure_control(session: Session, tenant_id: int, workspace_id: int) -> AICRMWorkspaceControl:
+def ensure_control(session: Session, tenant_id: int, agent_id: int) -> AgentCRMProfile:
     control = session.exec(
-        select(AICRMWorkspaceControl).where(
-            AICRMWorkspaceControl.tenant_id == tenant_id,
-            AICRMWorkspaceControl.workspace_id == workspace_id,
+        select(AgentCRMProfile).where(
+            AgentCRMProfile.tenant_id == tenant_id,
+            AgentCRMProfile.agent_id == agent_id,
         )
     ).first()
     if control:
         return control
 
-    control = AICRMWorkspaceControl(
+    control = AgentCRMProfile(
         tenant_id=tenant_id,
-        workspace_id=workspace_id,
+        agent_id=agent_id,
         enabled=True,
         scan_frequency_messages=4,
         aggressiveness=AICRMAggressiveness.BALANCED,
@@ -84,7 +85,7 @@ def ensure_control(session: Session, tenant_id: int, workspace_id: int) -> AICRM
     return control
 
 
-def as_control_response(control: AICRMWorkspaceControl) -> AICRMControlResponse:
+def as_control_response(control: AgentCRMProfile) -> AICRMControlResponse:
     return AICRMControlResponse(
         enabled=bool(control.enabled),
         scan_frequency_messages=int(control.scan_frequency_messages),
@@ -135,7 +136,7 @@ def safe_status(raw_status: Any) -> AICRMLeadStatus:
     return mapping.get(value, AICRMLeadStatus.NO_RESPONSE)
 
 
-def strategy_for_status(control: AICRMWorkspaceControl, status: AICRMLeadStatus) -> AICRMFollowupStrategy:
+def strategy_for_status(control: AgentCRMProfile, status: AICRMLeadStatus) -> AICRMFollowupStrategy:
     if status == AICRMLeadStatus.NOT_INTERESTED:
         return control.not_interested_strategy
     if status == AICRMLeadStatus.REJECTED:
@@ -214,7 +215,7 @@ def parse_json_from_llm(content: str) -> Dict[str, Any]:
 
 async def analyze_thread_with_ai(
     router,
-    control: AICRMWorkspaceControl,
+    control: AgentCRMProfile,
     messages,
 ) -> Dict[str, Any]:
     history_lines: List[str] = []
@@ -335,14 +336,14 @@ async def generate_followup_text(
 def upsert_thread_state(
     session: Session,
     tenant_id: int,
-    workspace_id: int,
+    agent_id: int,
     thread_id: int,
     lead_id: int,
 ) -> AICRMThreadState:
     state = session.exec(
         select(AICRMThreadState).where(
             AICRMThreadState.tenant_id == tenant_id,
-            AICRMThreadState.workspace_id == workspace_id,
+            AICRMThreadState.agent_id == agent_id,
             AICRMThreadState.thread_id == thread_id,
         )
     ).first()
@@ -351,7 +352,7 @@ def upsert_thread_state(
 
     state = AICRMThreadState(
         tenant_id=tenant_id,
-        workspace_id=workspace_id,
+        agent_id=agent_id,
         thread_id=thread_id,
         lead_id=lead_id,
         status=AICRMLeadStatus.NO_RESPONSE,

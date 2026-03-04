@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Agent Dashboard - AIworkfor.me</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#3c83f6",
+                        "background-light": "#f5f7f8",
+                        "background-dark": "#101722",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display">
+<div class="relative flex min-h-screen flex-col overflow-x-hidden max-w-md mx-auto bg-white dark:bg-slate-900 shadow-xl">
+<!-- Top App Bar -->
+<header class="sticky top-0 z-50 flex items-center justify-between bg-white/80 dark:bg-slate-900/80 backdrop-blur-md px-4 py-3 border-b border-slate-200 dark:border-slate-800">
+<div class="flex items-center gap-3">
+<button class="flex h-10 w-10 items-center justify-center rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+<span class="material-symbols-outlined text-slate-700 dark:text-slate-200">menu</span>
+</button>
+<h1 class="text-lg font-bold tracking-tight text-slate-900 dark:text-white">Agent Dashboard</h1>
+</div>
+<div class="flex items-center">
+<button class="h-10 w-10 rounded-full overflow-hidden border-2 border-primary/20">
+<img alt="Profile" class="h-full w-full object-cover" data-alt="User profile avatar close up" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBEV_1gZVRwq4Pyes5OILJ9ciD0xdg4UrgwmQCH4kzpyCOcGIutVED9ZZG7TLSmA9b42B1DETd2VqRUgF7KlCHdNb2DI8i5kLF6q3801WVjXrIx7IV3cnkeTlSrEbFoL80rgohgURWirUA067ye7NXL1R9TJ7lnLLUxY1_oT0abAz2_lZFTr2FS_bjERfqV_wZVDEVhI7zQFmK8v4MoFU3Llx4zVZ09alMNNM21HayQhZrrCss25C_XHZuSzvLKOH-wSqaY-FcK6w"/>
+</button>
+</div>
+</header>
+<main class="flex-1 pb-24">
+<!-- Status Cards -->
+<section class="p-4 grid grid-cols-1 gap-3">
+<div class="flex flex-col gap-4 rounded-xl p-5 bg-primary/10 border border-primary/20">
+<div class="flex items-center justify-between border-b border-primary/10 pb-3">
+<div class="flex flex-col">
+<p class="text-xs font-semibold uppercase tracking-wider text-primary/70">System Health</p>
+<p class="text-xl font-bold text-slate-900 dark:text-white">Optimal</p>
+</div>
+<span class="material-symbols-outlined text-primary text-3xl">verified_user</span>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="flex flex-col">
+<p class="text-xs font-medium text-slate-500 dark:text-slate-400">Active Agents</p>
+<p class="text-2xl font-bold text-slate-900 dark:text-white">1</p>
+</div>
+<div class="flex flex-col border-l border-slate-200 dark:border-slate-700 pl-4">
+<p class="text-xs font-medium text-slate-500 dark:text-slate-400">Total Leads</p>
+<p class="text-2xl font-bold text-slate-900 dark:text-white">124</p>
+</div>
+</div>
+</div>
+</section>
+<!-- 2x2 Grid of Buttons -->
+<section class="p-4">
+<h2 class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 px-1">Quick Actions</h2>
+<div class="grid grid-cols-2 gap-3">
+<button class="flex flex-col items-center justify-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 p-6 shadow-sm active:scale-95 transition-all">
+<div class="flex h-12 w-12 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-900/30 text-primary">
+<span class="material-symbols-outlined text-2xl">inbox</span>
+</div>
+<span class="text-sm font-bold text-slate-700 dark:text-slate-200">Inbox</span>
+</button>
+<button class="flex flex-col items-center justify-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 p-6 shadow-sm active:scale-95 transition-all">
+<div class="flex h-12 w-12 items-center justify-center rounded-full bg-green-50 dark:bg-green-900/30 text-green-600">
+<span class="material-symbols-outlined text-2xl">person_add</span>
+</div>
+<span class="text-sm font-bold text-slate-700 dark:text-slate-200">Add Lead</span>
+</button>
+<button class="flex flex-col items-center justify-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 p-6 shadow-sm active:scale-95 transition-all">
+<div class="flex h-12 w-12 items-center justify-center rounded-full bg-purple-50 dark:bg-purple-900/30 text-purple-600">
+<span class="material-symbols-outlined text-2xl">psychology</span>
+</div>
+<span class="text-sm font-bold text-slate-700 dark:text-slate-200">Train Brain</span>
+</button>
+<button class="flex flex-col items-center justify-center gap-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 p-6 shadow-sm active:scale-95 transition-all">
+<div class="flex h-12 w-12 items-center justify-center rounded-full bg-orange-50 dark:bg-orange-900/30 text-orange-600">
+<span class="material-symbols-outlined text-2xl">play_circle</span>
+</div>
+<span class="text-sm font-bold text-slate-700 dark:text-slate-200">Playground</span>
+</button>
+</div>
+</section>
+<!-- Recent Activity -->
+<section class="p-4">
+<div class="flex items-center justify-between mb-4 px-1">
+<h2 class="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Recent Activity</h2>
+<button class="text-primary text-xs font-semibold">View All</button>
+</div>
+<div class="space-y-1">
+<div class="flex items-center gap-4 p-4 rounded-lg bg-white dark:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
+<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-600">
+<span class="material-symbols-outlined text-lg">mail</span>
+</div>
+<div class="flex-1 min-w-0">
+<p class="text-sm font-bold text-slate-900 dark:text-white truncate">New inquiry from Sarah J.</p>
+<p class="text-xs text-slate-500 dark:text-slate-400">Agent responded automatically</p>
+</div>
+<p class="text-[10px] font-medium text-slate-400">2m ago</p>
+</div>
+<div class="flex items-center gap-4 p-4 rounded-lg bg-white dark:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
+<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/40 text-green-600">
+<span class="material-symbols-outlined text-lg">check_circle</span>
+</div>
+<div class="flex-1 min-w-0">
+<p class="text-sm font-bold text-slate-900 dark:text-white truncate">Lead Qualified: Michael Chen</p>
+<p class="text-xs text-slate-500 dark:text-slate-400">Moved to "Hot Leads" pipeline</p>
+</div>
+<p class="text-[10px] font-medium text-slate-400">1h ago</p>
+</div>
+<div class="flex items-center gap-4 p-4 rounded-lg bg-white dark:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
+<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900/40 text-purple-600">
+<span class="material-symbols-outlined text-lg">school</span>
+</div>
+<div class="flex-1 min-w-0">
+<p class="text-sm font-bold text-slate-900 dark:text-white truncate">Training session complete</p>
+<p class="text-xs text-slate-500 dark:text-slate-400">Brain updated with 24 new Q&amp;As</p>
+</div>
+<p class="text-[10px] font-medium text-slate-400">4h ago</p>
+</div>
+<div class="flex items-center gap-4 p-4 rounded-lg bg-white dark:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700">
+<div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-400">
+<span class="material-symbols-outlined text-lg">settings</span>
+</div>
+<div class="flex-1 min-w-0">
+<p class="text-sm font-bold text-slate-900 dark:text-white truncate">System health check</p>
+<p class="text-xs text-slate-500 dark:text-slate-400">All modules functioning normally</p>
+</div>
+<p class="text-[10px] font-medium text-slate-400">6h ago</p>
+</div>
+</div>
+</section>
+</main>
+<!-- Bottom Navigation Bar -->
+<nav class="fixed bottom-0 left-0 right-0 z-50 flex items-center justify-around bg-white dark:bg-slate-900 px-4 pb-6 pt-3 border-t border-slate-200 dark:border-slate-800 max-w-md mx-auto">
+<a class="flex flex-col items-center gap-1 text-primary" href="#">
+<span class="material-symbols-outlined text-2xl font-fill">dashboard</span>
+<p class="text-[10px] font-bold uppercase tracking-wider">Dashboard</p>
+</a>
+<a class="flex flex-col items-center gap-1 text-slate-400 dark:text-slate-500" href="#">
+<span class="material-symbols-outlined text-2xl">groups</span>
+<p class="text-[10px] font-bold uppercase tracking-wider">Leads</p>
+</a>
+<a class="flex flex-col items-center gap-1 text-slate-400 dark:text-slate-500" href="#">
+<span class="material-symbols-outlined text-2xl">smart_toy</span>
+<p class="text-[10px] font-bold uppercase tracking-wider">Agents</p>
+</a>
+<a class="flex flex-col items-center gap-1 text-slate-400 dark:text-slate-500" href="#">
+<span class="material-symbols-outlined text-2xl">settings</span>
+<p class="text-[10px] font-bold uppercase tracking-wider">Settings</p>
+</a>
+</nav>
+</div>
+</body></html>

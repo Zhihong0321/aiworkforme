@@ -25,9 +25,9 @@ from .ai_crm_helpers import (
     normalize_aggressiveness,
     normalize_strategy,
     upsert_thread_state,
-    validate_workspace,
+    validate_agent,
 )
-from .ai_crm_runtime import fast_forward_followups, scan_workspace_threads, trigger_due_followups
+from .ai_crm_runtime import fast_forward_followups, scan_agent_threads, trigger_due_followups
 from .ai_crm_schemas import (
     AICRMControlResponse,
     AICRMControlUpdateRequest,
@@ -42,29 +42,29 @@ from .ai_crm_schemas import (
 router = APIRouter()
 
 
-@router.get("/{workspace_id}/ai-crm/control", response_model=AICRMControlResponse)
+@router.get("/{agent_id}/ai-crm/control", response_model=AICRMControlResponse)
 def get_ai_crm_control(
-    workspace_id: int,
+    agent_id: int,
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access),
 ):
-    validate_workspace(session, auth.tenant.id, workspace_id)
-    control = ensure_control(session, auth.tenant.id, workspace_id)
+    validate_agent(session, auth.tenant.id, agent_id)
+    control = ensure_control(session, auth.tenant.id, agent_id)
     return as_control_response(control)
 
 
-@router.put("/{workspace_id}/ai-crm/control", response_model=AICRMControlResponse)
+@router.put("/{agent_id}/ai-crm/control", response_model=AICRMControlResponse)
 def update_ai_crm_control(
-    workspace_id: int,
+    agent_id: int,
     payload: AICRMControlUpdateRequest,
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access),
 ):
-    validate_workspace(session, auth.tenant.id, workspace_id)
+    validate_agent(session, auth.tenant.id, agent_id)
     if payload.scan_frequency_messages < 3 or payload.scan_frequency_messages > 10:
         raise HTTPException(status_code=400, detail="scan_frequency_messages must be between 3 and 10")
 
-    control = ensure_control(session, auth.tenant.id, workspace_id)
+    control = ensure_control(session, auth.tenant.id, agent_id)
     control.enabled = bool(payload.enabled)
     control.scan_frequency_messages = int(payload.scan_frequency_messages)
     control.aggressiveness = normalize_aggressiveness(payload.aggressiveness)
@@ -79,14 +79,14 @@ def update_ai_crm_control(
     return as_control_response(control)
 
 
-@router.get("/{workspace_id}/ai-crm/threads", response_model=List[AICRMThreadRow])
+@router.get("/{agent_id}/ai-crm/threads", response_model=List[AICRMThreadRow])
 def list_ai_crm_threads(
-    workspace_id: int,
+    agent_id: int,
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access),
 ):
-    validate_workspace(session, auth.tenant.id, workspace_id)
-    control = ensure_control(session, auth.tenant.id, workspace_id)
+    validate_agent(session, auth.tenant.id, agent_id)
+    control = ensure_control(session, auth.tenant.id, agent_id)
     threshold = max(3, min(10, int(control.scan_frequency_messages or 4)))
 
     rows = session.exec(
@@ -95,14 +95,14 @@ def list_ai_crm_threads(
         .where(
             UnifiedThread.tenant_id == auth.tenant.id,
             Lead.tenant_id == auth.tenant.id,
-            Lead.workspace_id == workspace_id,
+            Lead.agent_id == agent_id,
         )
         .order_by(UnifiedThread.updated_at.desc())
     ).all()
 
     results: List[AICRMThreadRow] = []
     for thread, lead in rows:
-        state = upsert_thread_state(session, auth.tenant.id, workspace_id, thread.id, lead.id)
+        state = upsert_thread_state(session, auth.tenant.id, agent_id, thread.id, lead.id)
         total_messages = int(
             session.exec(
                 select(func.count(UnifiedMessage.id)).where(
@@ -148,57 +148,57 @@ def list_ai_crm_threads(
     return results
 
 
-@router.post("/{workspace_id}/ai-crm/scan", response_model=AICRMScanResponse)
+@router.post("/{agent_id}/ai-crm/scan", response_model=AICRMScanResponse)
 async def scan_ai_crm_threads(
-    workspace_id: int,
+    agent_id: int,
     payload: AICRMScanRequest,
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access),
     llm_router: LLMRouter = Depends(get_llm_router),
 ):
-    validate_workspace(session, auth.tenant.id, workspace_id)
-    return await scan_workspace_threads(
+    validate_agent(session, auth.tenant.id, agent_id)
+    return await scan_agent_threads(
         session=session,
         router=llm_router,
         tenant_id=auth.tenant.id,
-        workspace_id=workspace_id,
+        agent_id=agent_id,
         force_all=bool(payload.force_all),
     )
 
 
-@router.post("/{workspace_id}/ai-crm/trigger-due", response_model=AICRMTriggerResponse)
+@router.post("/{agent_id}/ai-crm/trigger-due", response_model=AICRMTriggerResponse)
 async def trigger_ai_crm_due_followups(
-    workspace_id: int,
+    agent_id: int,
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access),
     llm_router: LLMRouter = Depends(get_llm_router),
 ):
-    validate_workspace(session, auth.tenant.id, workspace_id)
+    validate_agent(session, auth.tenant.id, agent_id)
     return await trigger_due_followups(
         session=session,
         router=llm_router,
         tenant_id=auth.tenant.id,
-        workspace_id=workspace_id,
+        agent_id=agent_id,
     )
 
 
-@router.post("/{workspace_id}/ai-crm/fast-forward", response_model=AICRMFastForwardResponse)
+@router.post("/{agent_id}/ai-crm/fast-forward", response_model=AICRMFastForwardResponse)
 def fast_forward_ai_crm_followups(
-    workspace_id: int,
+    agent_id: int,
     payload: AICRMFastForwardRequest,
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access),
 ):
-    validate_workspace(session, auth.tenant.id, workspace_id)
+    validate_agent(session, auth.tenant.id, agent_id)
     target_followup_at, updated_states = fast_forward_followups(
         session=session,
         tenant_id=auth.tenant.id,
-        workspace_id=workspace_id,
+        agent_id=agent_id,
         seconds=payload.seconds,
         include_overdue=bool(payload.include_overdue),
     )
     return AICRMFastForwardResponse(
-        workspace_id=workspace_id,
+        agent_id=agent_id,
         seconds=max(1, min(120, int(payload.seconds or 5))),
         target_followup_at=target_followup_at,
         updated_states=updated_states,

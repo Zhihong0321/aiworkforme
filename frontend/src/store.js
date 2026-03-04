@@ -2,31 +2,31 @@ import { reactive, watch } from 'vue'
 import { request } from './services/api'
 
 export const store = reactive({
-    workspaces: [],
-    activeWorkspaceId: localStorage.getItem('activeWorkspaceId') || null,
-    activeWorkspace: null,
+    agents: [],
+    activeAgentId: localStorage.getItem('activeAgentId') || null,
+    activeAgent: null,
     isLoading: false,
 
-    async fetchWorkspaces() {
+    async fetchAgents() {
         this.isLoading = true
         try {
-            const data = await request('/workspaces/')
-            this.workspaces = Array.isArray(data) ? data : []
-            if (this.workspaces.length > 0 && !this.activeWorkspaceId) {
-                this.setActiveWorkspace(this.workspaces[0].id)
-            } else if (this.activeWorkspaceId) {
-                this.activeWorkspace = this.workspaces.find(w => w.id == this.activeWorkspaceId)
+            const data = await request('/agents/')
+            this.agents = Array.isArray(data) ? data : []
+            if (this.agents.length > 0 && !this.activeAgentId) {
+                this.setActiveAgent(this.agents[0].id)
+            } else if (this.activeAgentId) {
+                this.activeAgent = this.agents.find(a => a.id == this.activeAgentId)
             }
         } catch (e) {
-            console.error('Failed to fetch workspaces', e)
+            console.error('Failed to fetch agents', e)
         } finally {
             this.isLoading = false
         }
     },
 
-    setActiveWorkspace(id) {
-        this.activeWorkspaceId = id
-        this.activeWorkspace = this.workspaces.find(w => w.id == id)
-        localStorage.setItem('activeWorkspaceId', id)
+    setActiveAgent(id) {
+        this.activeAgentId = id
+        this.activeAgent = this.agents.find(a => a.id == id)
+        localStorage.setItem('activeAgentId', id)
     }
 })

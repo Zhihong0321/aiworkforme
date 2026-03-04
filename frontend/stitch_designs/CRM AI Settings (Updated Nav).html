@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>AI Follow-up Strategy - AIworkfor.me</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#3c83f6",
+                        "background-light": "#f5f7f8",
+                        "background-dark": "#101722",
+                    },
+                    fontFamily: {
+                        "display": ["Inter"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .active-icon {
+            font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 antialiased">
+<!-- Header -->
+<header class="sticky top-0 z-50 bg-white/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 px-4 py-4">
+<div class="flex items-center justify-between max-w-md mx-auto">
+<div class="flex items-center gap-3">
+<button class="p-2 -ml-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800" onclick="toggleSidebar()">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<h1 class="text-lg font-bold tracking-tight">CRM AI Settings</h1>
+</div>
+<button class="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+</div>
+</header>
+<!-- Sidebar Drawer -->
+<div class="fixed inset-0 bg-slate-900/50 z-[60] hidden backdrop-blur-sm transition-opacity" id="sidebar-overlay" onclick="toggleSidebar()"></div>
+<aside class="fixed top-0 left-0 bottom-0 w-[280px] bg-white dark:bg-slate-900 z-[70] shadow-2xl transform -translate-x-full transition-transform duration-300 ease-in-out flex flex-col" id="sidebar">
+<!-- Drawer Header: Switch Agent -->
+<div class="p-4 border-b border-slate-100 dark:border-slate-800">
+<div class="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 cursor-pointer">
+<div class="flex items-center gap-3">
+<div class="size-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold overflow-hidden">
+<img alt="Jasper AI" src="https://placeholder.pics/svg/300"/>
+</div>
+<div>
+<p class="text-xs font-bold text-slate-400 uppercase tracking-tighter">Active Agent</p>
+<p class="text-sm font-bold">Jasper AI</p>
+</div>
+</div>
+<span class="material-symbols-outlined text-slate-400">unfold_more</span>
+</div>
+</div>
+<!-- Drawer Links -->
+<nav class="flex-1 overflow-y-auto py-4 px-2 space-y-1">
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800" href="#">
+<span class="material-symbols-outlined">tune</span>
+<span class="font-medium">Configuration</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800" href="#">
+<span class="material-symbols-outlined">auto_stories</span>
+<span class="font-medium">Knowledge Base</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800" href="#">
+<span class="material-symbols-outlined">sports_esports</span>
+<span class="font-medium">Playground</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800" href="#">
+<span class="material-symbols-outlined">contact_page</span>
+<span class="font-medium">Contact Book</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg bg-primary/10 text-primary" href="#">
+<span class="material-symbols-outlined">smart_toy</span>
+<span class="font-medium">CRM AI</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800" href="#">
+<span class="material-symbols-outlined">inbox</span>
+<span class="font-medium">Inbox</span>
+</a>
+</nav>
+<!-- Drawer Bottom -->
+<div class="p-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
+<button class="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-medium">Global Settings</span>
+</button>
+<button class="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold text-sm">
+<span class="material-symbols-outlined">add_circle</span>
+            Create New Agent
+        </button>
+</div>
+</aside>
+<main class="max-w-md mx-auto pb-32 px-4 pt-6 space-y-6">
+<!-- Global Settings Card -->
+<section class="bg-white dark:bg-slate-900 rounded-xl p-5 shadow-sm border border-slate-200 dark:border-slate-800">
+<div class="flex items-center gap-2 mb-4">
+<span class="material-symbols-outlined text-primary">settings</span>
+<h2 class="font-bold text-lg">Global Settings</h2>
+</div>
+<div class="space-y-4">
+<!-- Time Zone -->
+<div>
+<label class="block text-sm font-medium mb-1.5 text-slate-600 dark:text-slate-400">Time Zone</label>
+<div class="relative">
+<select class="w-full appearance-none rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-3 text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none">
+<option>Eastern Time (ET) - New York</option>
+<option>Pacific Time (PT) - Los Angeles</option>
+<option>Central Time (CT) - Chicago</option>
+<option>Greenwich Mean Time (GMT)</option>
+</select>
+<span class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">expand_more</span>
+</div>
+</div>
+<!-- Working Hours -->
+<div>
+<label class="block text-sm font-medium mb-1.5 text-slate-600 dark:text-slate-400">Working Hours</label>
+<div class="grid grid-cols-2 gap-3">
+<div class="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3">
+<span class="text-sm font-semibold">09:00 AM</span>
+<span class="material-symbols-outlined text-xs text-slate-400">schedule</span>
+</div>
+<div class="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-3">
+<span class="text-sm font-semibold">06:00 PM</span>
+<span class="material-symbols-outlined text-xs text-slate-400">schedule</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Qualification Criteria -->
+<section class="bg-white dark:bg-slate-900 rounded-xl p-5 shadow-sm border border-slate-200 dark:border-slate-800">
+<div class="flex items-center gap-2 mb-4">
+<span class="material-symbols-outlined text-primary">verified</span>
+<h2 class="font-bold text-lg">Qualification Criteria</h2>
+</div>
+<textarea class="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4 text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none min-h-[120px] placeholder:text-slate-400" placeholder="Describe the ideal lead profile. e.g. 'Must have a budget over $5k and be looking for immediate implementation...'"></textarea>
+<p class="mt-2 text-xs text-slate-500 dark:text-slate-400 italic">AI will use this to prioritize leads automatically.</p>
+</section>
+<!-- Follow-up Rules Timeline -->
+<section class="space-y-4">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">alt_route</span>
+<h2 class="font-bold text-lg">Follow-up Rules</h2>
+</div>
+<button class="text-primary text-sm font-bold flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">add</span> Add Step
+                </button>
+</div>
+<div class="relative ml-4 space-y-6 before:absolute before:left-[11px] before:top-2 before:h-[calc(100%-16px)] before:w-0.5 before:bg-slate-200 dark:before:bg-slate-800">
+<!-- Rule 1 -->
+<div class="relative pl-10">
+<div class="absolute left-0 top-1 size-6 rounded-full border-4 border-white dark:border-slate-900 bg-primary z-10"></div>
+<div class="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
+<div class="flex justify-between items-start mb-2">
+<span class="text-xs font-bold text-primary uppercase tracking-wider">Step 1</span>
+<span class="material-symbols-outlined text-slate-400 text-sm">close</span>
+</div>
+<h3 class="font-bold text-sm mb-1">Wait 24 Hours</h3>
+<p class="text-sm text-slate-600 dark:text-slate-400">If no response, send "Friendly Nudge" email template.</p>
+<div class="mt-3 flex gap-2">
+<span class="px-2 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded uppercase">Email</span>
+<span class="px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] font-bold rounded uppercase">Template: Nudge_1</span>
+</div>
+</div>
+</div>
+<!-- Rule 2 -->
+<div class="relative pl-10">
+<div class="absolute left-0 top-1 size-6 rounded-full border-4 border-white dark:border-slate-900 bg-primary z-10"></div>
+<div class="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
+<div class="flex justify-between items-start mb-2">
+<span class="text-xs font-bold text-primary uppercase tracking-wider">Step 2</span>
+<span class="material-symbols-outlined text-slate-400 text-sm">close</span>
+</div>
+<h3 class="font-bold text-sm mb-1">Wait 3 Days</h3>
+<p class="text-sm text-slate-600 dark:text-slate-400">Send LinkedIn connect &amp; message with "Value Proposition".</p>
+<div class="mt-3 flex gap-2">
+<span class="px-2 py-1 bg-blue-100 text-blue-600 text-[10px] font-bold rounded uppercase">Social</span>
+<span class="px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] font-bold rounded uppercase">Manual Task</span>
+</div>
+</div>
+</div>
+<!-- Rule 3 -->
+<div class="relative pl-10">
+<div class="absolute left-0 top-1 size-6 rounded-full border-4 border-white dark:border-slate-900 bg-primary z-10"></div>
+<div class="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
+<div class="flex justify-between items-start mb-2">
+<span class="text-xs font-bold text-primary uppercase tracking-wider">Step 3</span>
+<span class="material-symbols-outlined text-slate-400 text-sm">close</span>
+</div>
+<h3 class="font-bold text-sm mb-1">Wait 7 Days</h3>
+<p class="text-sm text-slate-600 dark:text-slate-400">Final follow-up: "Break-up" email template.</p>
+<div class="mt-3 flex gap-2">
+<span class="px-2 py-1 bg-primary/10 text-primary text-[10px] font-bold rounded uppercase">Email</span>
+<span class="px-2 py-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[10px] font-bold rounded uppercase">Template: Breakup</span>
+</div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Bottom Navigation Bar -->
+<!-- Action Button (Mobile-friendly) -->
+<div class="fixed bottom-24 right-4 z-40">
+<button class="bg-primary text-white size-14 rounded-full shadow-lg shadow-primary/40 flex items-center justify-center">
+<span class="material-symbols-outlined">save</span>
+</button>
+</div>
+<script>
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        if (sidebar.classList.contains('-translate-x-full')) {
+            sidebar.classList.remove('-translate-x-full');
+            overlay.classList.remove('hidden');
+        } else {
+            sidebar.classList.add('-translate-x-full');
+            overlay.classList.add('hidden');
+        }
+    }
+</script>
+</body></html>

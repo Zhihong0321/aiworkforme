@@ -15,10 +15,11 @@ import logging
 from sqlmodel import Session, func, select
 
 from src.adapters.db.crm_models import (
+    AgentCRMProfile,
     AICRMFollowupStrategy,
     AICRMLeadStatus,
     AICRMThreadState,
-    AICRMWorkspaceControl,
+    AgentCRMProfile,
     Lead,
 )
 from src.adapters.db.messaging_models import OutboundQueue, UnifiedMessage, UnifiedThread
@@ -44,7 +45,7 @@ logger = logging.getLogger(__name__)
 def fast_forward_followups(
     session: Session,
     tenant_id: int,
-    workspace_id: int,
+    agent_id: int,
     seconds: int = 5,
     include_overdue: bool = True,
 ):
@@ -54,7 +55,7 @@ def fast_forward_followups(
 
     filters = [
         AICRMThreadState.tenant_id == tenant_id,
-        AICRMThreadState.workspace_id == workspace_id,
+        AICRMThreadState.agent_id == agent_id,
         AICRMThreadState.next_followup_at.is_not(None),
         AICRMThreadState.followup_strategy != AICRMFollowupStrategy.STOP,
     ]
@@ -85,21 +86,21 @@ def fast_forward_followups(
     return target_followup_at, updated_states
 
 
-async def scan_workspace_threads(
+async def scan_agent_threads(
     session: Session,
     router: LLMRouter,
     tenant_id: int,
-    workspace_id: int,
+    agent_id: int,
     force_all: bool,
 ) -> AICRMScanResponse:
-    control = ensure_control(session, tenant_id, workspace_id)
+    control = ensure_control(session, tenant_id, agent_id)
     rows = session.exec(
         select(UnifiedThread, Lead)
         .join(Lead, Lead.id == UnifiedThread.lead_id)
         .where(
             UnifiedThread.tenant_id == tenant_id,
             Lead.tenant_id == tenant_id,
-            Lead.workspace_id == workspace_id,
+            Lead.agent_id == agent_id,
         )
         .order_by(UnifiedThread.updated_at.desc())
     ).all()
@@ -111,7 +112,7 @@ async def scan_workspace_threads(
 
     for thread, lead in rows:
         try:
-            state = upsert_thread_state(session, tenant_id, workspace_id, thread.id, lead.id)
+            state = upsert_thread_state(session, tenant_id, agent_id, thread.id, lead.id)
             total_messages = int(
                 session.exec(
                     select(func.count(UnifiedMessage.id)).where(
@@ -223,7 +224,7 @@ async def scan_workspace_threads(
             errors.append(f"Thread {thread.id}: {str(exc)}")
 
     return AICRMScanResponse(
-        workspace_id=workspace_id,
+        agent_id=agent_id,
         scanned_threads=scanned_threads,
         skipped_threads=skipped_threads,
         next_followups_set=next_followups_set,
@@ -235,18 +236,18 @@ async def trigger_due_followups(
     session: Session,
     router: LLMRouter,
     tenant_id: int,
-    workspace_id: int,
+    agent_id: int,
 ) -> AICRMTriggerResponse:
-    control = ensure_control(session, tenant_id, workspace_id)
+    control = ensure_control(session, tenant_id, agent_id)
     if not control.enabled:
-        return AICRMTriggerResponse(workspace_id=workspace_id, triggered=0, skipped=0, errors=[])
+        return AICRMTriggerResponse(agent_id=agent_id, triggered=0, skipped=0, errors=[])
 
     now = datetime.utcnow()
     due_states = session.exec(
         select(AICRMThreadState)
         .where(
             AICRMThreadState.tenant_id == tenant_id,
-            AICRMThreadState.workspace_id == workspace_id,
+            AICRMThreadState.agent_id == agent_id,
             AICRMThreadState.next_followup_at.is_not(None),
             AICRMThreadState.next_followup_at <= now,
         )
@@ -384,7 +385,7 @@ async def trigger_due_followups(
             errors.append(f"State {state.id}: {str(exc)}")
 
     return AICRMTriggerResponse(
-        workspace_id=workspace_id,
+        agent_id=agent_id,
         triggered=triggered,
         skipped=skipped,
         errors=errors,
@@ -392,26 +393,26 @@ async def trigger_due_followups(
 
 
 async def run_ai_crm_background_cycle(session: Session, router: LLMRouter) -> Dict[str, int]:
-    tenant_workspace_rows = session.exec(
-        select(AICRMWorkspaceControl.tenant_id, AICRMWorkspaceControl.workspace_id)
-        .where(AICRMWorkspaceControl.enabled == True)  # noqa: E712
+    tenant_agent_rows = session.exec(
+        select(AgentCRMProfile.tenant_id, AgentCRMProfile.agent_id)
+        .where(AgentCRMProfile.enabled == True)  # noqa: E712
     ).all()
 
     total_scanned = 0
     total_triggered = 0
-    for tenant_id, workspace_id in tenant_workspace_rows:
-        scan_result = await scan_workspace_threads(
+    for tenant_id, agent_id in tenant_agent_rows:
+        scan_result = await scan_agent_threads(
             session=session,
             router=router,
             tenant_id=int(tenant_id),
-            workspace_id=int(workspace_id),
+            agent_id=int(agent_id),
             force_all=False,
         )
         trigger_result = await trigger_due_followups(
             session=session,
             router=router,
             tenant_id=int(tenant_id),
-            workspace_id=int(workspace_id),
+            agent_id=int(agent_id),
         )
         total_scanned += int(scan_result.scanned_threads)
         total_triggered += int(trigger_result.triggered)

@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from sqlmodel import Session, select
 
 from src.adapters.db.calendar_models import CalendarEvent
-from src.adapters.db.crm_models import ChatMessageNew, ConversationThread, Lead, LeadMemory, Workspace
+from src.adapters.db.crm_models import ChatMessageNew, ConversationThread, Lead, LeadMemory, Workspace, AICRMThreadState
 from src.adapters.db.crm_models import PolicyDecision
 from src.adapters.db.messaging_models import OutboundQueue, ThreadInsight, UnifiedMessage, UnifiedThread
 
@@ -139,6 +139,15 @@ def delete_lead_and_children(session: Session, tenant_id: int, lead: Lead) -> No
     ).first()
     if memory_row:
         session.delete(memory_row)
+
+    aicrm_state_rows = session.exec(
+        select(AICRMThreadState).where(
+            AICRMThreadState.tenant_id == tenant_id,
+            AICRMThreadState.lead_id == lead.id,
+        )
+    ).all()
+    for row in aicrm_state_rows:
+        session.delete(row)
 
     calendar_rows = session.exec(
         select(CalendarEvent).where(

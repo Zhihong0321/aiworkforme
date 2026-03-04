@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#3c83f6",
+                        "background-light": "#f5f7f8",
+                        "background-dark": "#101722",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.5rem",
+                        "lg": "1rem",
+                        "xl": "1.5rem",
+                        "full": "9999px"
+                    },
+                },
+            },
+        }
+    </script>
+<title>AIworkfor.me Inbox</title>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 antialiased">
+<div class="relative flex h-screen w-full flex-col overflow-hidden max-w-md mx-auto bg-white dark:bg-slate-900 shadow-2xl">
+<!-- TopAppBar -->
+<header class="flex items-center bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 p-4 shrink-0">
+<div class="text-slate-900 dark:text-slate-100 flex size-10 shrink-0 items-center justify-center cursor-pointer">
+<span class="material-symbols-outlined">arrow_back</span>
+</div>
+<div class="flex flex-col flex-1 px-3">
+<h2 class="text-slate-900 dark:text-slate-100 text-base font-bold leading-tight">Sarah Jenkins</h2>
+<div class="flex items-center gap-1">
+<span class="size-2 bg-emerald-500 rounded-full"></span>
+<span class="text-slate-500 dark:text-slate-400 text-xs">Active 5m ago</span>
+</div>
+</div>
+<div class="flex items-center justify-end">
+<button class="flex items-center justify-center rounded-xl size-10 text-slate-900 dark:text-slate-100 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</div>
+</header>
+<!-- Chat Content -->
+<main class="flex-1 overflow-y-auto p-4 space-y-6">
+<div class="flex flex-col items-center py-2">
+<span class="text-slate-400 dark:text-slate-500 text-xs font-semibold uppercase tracking-widest">Today</span>
+</div>
+<!-- Lead Message (Left) -->
+<div class="flex items-end gap-3 max-w-[85%]">
+<div class="bg-primary/10 dark:bg-primary/20 flex items-center justify-center rounded-full size-10 shrink-0 overflow-hidden border border-primary/20">
+<img class="w-full h-full object-cover" data-alt="Portrait of a female business professional" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBmm0HOFPDgIN7Kxr7689Bx6KoM2N1eEEcLAcn6pNuyoQf85yDHMUHyyPj3X8JyqNbhvl-7nF4r3W7zrBhzOIynLRxuSJjbacSnPoHZro4diGLj3lM-hyBc9rCLf8w8x5RvC2jSQsZqRUkiFF7y_fB7xvVlAqL7LCCTfhRGAZoOIdJ1wzJ3AMBATyT7-xGc-Wj1FyCpRO6gL72NKSNt00xYndW7YE13-2hRxLwAsvm9Pv3V_rsQhHnBNEkzO3aAb4JcUxWK2tem9A"/>
+</div>
+<div class="flex flex-col gap-1 items-start">
+<p class="text-slate-500 dark:text-slate-400 text-[11px] font-medium ml-1">Sarah Jenkins</p>
+<div class="text-sm font-normal leading-relaxed rounded-2xl rounded-bl-none px-4 py-3 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm">
+                        Hi! I was looking at your Enterprise options. Do you offer volume discounts for teams over 100 people?
+                    </div>
+</div>
+</div>
+<!-- AI Message (Right) -->
+<div class="flex items-end gap-3 justify-end ml-auto max-w-[85%]">
+<div class="flex flex-col gap-1 items-end">
+<div class="flex items-center gap-1.5 mb-0.5 mr-1">
+<span class="material-symbols-outlined text-[14px] text-primary">smart_toy</span>
+<p class="text-primary text-[11px] font-bold uppercase tracking-tight">AI Assistant</p>
+</div>
+<div class="text-sm font-normal leading-relaxed rounded-2xl rounded-br-none px-4 py-3 bg-primary text-white shadow-md shadow-primary/20">
+                        Hello Sarah! Absolutely. For teams over 100, we provide custom tiered pricing. Would you like me to send over our volume pricing sheet or schedule a call with an account manager?
+                    </div>
+</div>
+<div class="bg-primary flex items-center justify-center rounded-full size-10 shrink-0 border-2 border-primary/20">
+<span class="material-symbols-outlined text-white text-xl">bolt</span>
+</div>
+</div>
+<!-- Lead Message (Left) -->
+<div class="flex items-end gap-3 max-w-[85%]">
+<div class="bg-primary/10 dark:bg-primary/20 flex items-center justify-center rounded-full size-10 shrink-0 overflow-hidden border border-primary/20">
+<img class="w-full h-full object-cover" data-alt="Portrait of a female business professional" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDriYJHIjJozJ85QzqU70ZA-4uu1Y9LMzvzjF3gynzB_VltCHka_EqJ7wWxRnYhdfzhd_zEGqvFYU-2wFPP2g_nRY4_XtAdHSpzX7BZ1qPVWa52W5ZNA8GvTnL9RpJ3HgMhOPQgXf6zxcZB3jIX0AetUQNLGzQIxLi60wihJZGHdbzvE7BxI_95kSDkNzQpr-crSASZmXyMmhT3qbUgOKa4U6J5qMwNv6dgTLuFA6swOn5tjOU3DSFb4r7IWAEfNnfT2KoI9E3a-Q"/>
+</div>
+<div class="flex flex-col gap-1 items-start">
+<p class="text-slate-500 dark:text-slate-400 text-[11px] font-medium ml-1">Sarah Jenkins</p>
+<div class="text-sm font-normal leading-relaxed rounded-2xl rounded-bl-none px-4 py-3 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-sm">
+                        The pricing sheet would be great for now. Also, do you integrate with Salesforce?
+                    </div>
+</div>
+</div>
+<!-- Human Takeover (Right) -->
+<div class="flex items-end gap-3 justify-end ml-auto max-w-[85%]">
+<div class="flex flex-col gap-1 items-end">
+<p class="text-slate-500 dark:text-slate-400 text-[11px] font-medium mr-1">Alex (Human)</p>
+<div class="text-sm font-normal leading-relaxed rounded-2xl rounded-br-none px-4 py-3 bg-slate-800 dark:bg-primary/30 border border-slate-700 dark:border-primary/50 text-white shadow-lg">
+                        Hey Sarah, jumping in here! Yes, we have a native Salesforce integration that syncs all lead data in real-time. I'm attaching the PDF for the enterprise tiers now.
+                    </div>
+<div class="mt-2 flex items-center gap-2 bg-white dark:bg-slate-800 p-2 rounded-lg border border-slate-200 dark:border-slate-700 w-full max-w-xs">
+<span class="material-symbols-outlined text-red-500">picture_as_pdf</span>
+<span class="text-xs font-medium truncate">Enterprise_Pricing_2024.pdf</span>
+<span class="material-symbols-outlined text-slate-400 text-sm ml-auto">download</span>
+</div>
+</div>
+<div class="bg-slate-800 dark:bg-slate-700 flex items-center justify-center rounded-full size-10 shrink-0 border-2 border-slate-600">
+<img class="w-full h-full object-cover rounded-full" data-alt="Portrait of a male sales representative" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBBuI-WCyO9wtsmYSrQZ-FX16Bur7D2f3FDV8RMeLfinhRjlT8ujBbrHK7GY2bopzdNmBvC2WGwzqNcMLQJI0RhT1qTrI9F94WSwFC-syfBwZB6uCCD_b96nGiBgxxKOKXDvu945YHgTbjtyKBQAi2F3FQGSipzqmIr1xjh3YGHH9rGTnKBY0C2LMu0mHpcqpTbDiXmVwIY4AbKzi1dXfUNpHmHotI1XooalY4-1Mrll41ooj6U3e6FisM_RqZt7y08x1BQf-tIzQ"/>
+</div>
+</div>
+</main>
+<!-- Bottom Action & Input -->
+<footer class="bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 p-4 space-y-3">
+<!-- Take Over Prompt -->
+<div class="flex items-center justify-between bg-primary/5 dark:bg-primary/10 rounded-xl px-4 py-2 border border-primary/10">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary text-sm">auto_awesome</span>
+<span class="text-xs font-semibold text-primary">AI is currently responding</span>
+</div>
+<button class="text-xs font-bold text-white bg-primary px-3 py-1.5 rounded-lg shadow-sm hover:bg-primary/90 transition-all active:scale-95">
+                    TAKE OVER
+                </button>
+</div>
+<!-- Input Bar -->
+<div class="flex items-center gap-2">
+<button class="flex items-center justify-center size-10 rounded-full text-slate-400 dark:text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
+<span class="material-symbols-outlined">add_circle</span>
+</button>
+<div class="flex-1 relative">
+<input class="w-full bg-slate-100 dark:bg-slate-800 border-none rounded-full py-2.5 px-4 text-sm focus:ring-2 focus:ring-primary dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500" placeholder="Type a message..." type="text"/>
+</div>
+<button class="flex items-center justify-center size-10 rounded-full bg-primary text-white shadow-lg shadow-primary/30 active:scale-90 transition-transform">
+<span class="material-symbols-outlined">send</span>
+</button>
+</div>
+<!-- Home Indicator (Mobile Styling) -->
+<div class="w-32 h-1 bg-slate-200 dark:bg-slate-800 mx-auto mt-2 rounded-full"></div>
+</footer>
+</div>
+</body></html>

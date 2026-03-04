@@ -18,6 +18,9 @@ router = APIRouter(prefix="/api/v1/workspaces", tags=["Workspace Management"])
 class LeadModeRequest(SQLModel):
     mode: str  # on_hold | working
 
+class LeadAgentRequest(SQLModel):
+    agent_id: Optional[int] = None
+
 
 class LeadCsvImportResponse(SQLModel):
     workspace_id: int
@@ -320,6 +323,33 @@ def set_lead_mode(
         raise HTTPException(status_code=404, detail="Lead not found")
 
     lead = set_lead_mode_value(lead, payload.mode)
+    session.add(lead)
+    session.commit()
+    session.refresh(lead)
+    return lead
+
+@router.put("/{workspace_id}/leads/{lead_id}/agent", response_model=Lead)
+def set_lead_agent(
+    workspace_id: int,
+    lead_id: int,
+    payload: LeadAgentRequest,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    ws = session.get(Workspace, workspace_id)
+    if not ws or ws.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    lead = session.get(Lead, lead_id)
+    if not lead or lead.tenant_id != auth.tenant.id or lead.workspace_id != workspace_id:
+        raise HTTPException(status_code=404, detail="Lead not found")
+        
+    if payload.agent_id is not None:
+        agent = session.get(Agent, payload.agent_id)
+        if not agent or agent.tenant_id != auth.tenant.id:
+            raise HTTPException(status_code=404, detail="Agent not found")
+
+    lead.agent_id = payload.agent_id
     session.add(lead)
     session.commit()
     session.refresh(lead)

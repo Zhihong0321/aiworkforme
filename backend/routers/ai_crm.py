@@ -12,7 +12,7 @@ from fastapi import APIRouter
 from . import ai_crm_routes
 from .ai_crm_runtime import run_ai_crm_background_cycle
 
-router = APIRouter(prefix="/api/v1/workspaces", tags=["AI CRM"])
+router = APIRouter(prefix="/api/v1/agents", tags=["AI CRM"])
 router.include_router(ai_crm_routes.router)
 
 

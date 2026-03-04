@@ -1,18 +1,8 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { CatalogService } from '../services/catalog'
-import TuiButton from '../components/ui/TuiButton.vue'
-import TuiCard from '../components/ui/TuiCard.vue'
-import TuiInput from '../components/ui/TuiInput.vue'
-import TuiSelect from '../components/ui/TuiSelect.vue'
-import TuiBadge from '../components/ui/TuiBadge.vue'
-import TuiLoader from '../components/ui/TuiLoader.vue'
-import TuiScrambleTitle from '../components/ui/TuiScrambleTitle.vue'
-import { useTheme } from '../composables/theme'
 
-const { theme } = useTheme()
-const isDark = computed(() => theme.value === 'dark')
-
+// State
 const categories = ref([])
 const products = ref([])
 const isLoading = ref(true)
@@ -37,7 +27,7 @@ const currentCategory = ref({
 })
 
 const fetchAll = async () => {
-  isLoading.ref = true
+  isLoading.value = true
   try {
     const [catData, prodData] = await Promise.all([
       CatalogService.getCategories(),
@@ -135,223 +125,216 @@ const getCategoryName = (id) => {
     const cat = categories.value.find(c => c.id === id)
     return cat ? cat.name : 'Uncategorized'
 }
-
-// Hierarchy helper
-const rootCategories = computed(() => categories.value.filter(c => !c.parent_id))
-const subCategories = (parentId) => categories.value.filter(c => c.parent_id === parentId)
-
 </script>
 
 <template>
-  <div class="min-h-[calc(100vh-64px)] w-full bg-white font-inter text-slate-700 pb-20 relative overflow-hidden flex flex-col">
-    <!-- Aurora Background Effect -->
-    <div class="absolute inset-0 hidden z-0 pointer-events-none opacity-10"></div>
-
-    <!-- Header Section -->
-    <div class="p-5 border-b border-slate-200 bg-white border border-slate-200 shadow-sm rounded-b-[2rem] sticky top-0 z-30 mb-2 relative">
-       <div class="flex justify-between items-end">
-         <div>
-           <h1 class="text-3xl font-semibold text-slate-900 tracking-tight mb-1">Catalog</h1>
-           <p class="text-[10px] text-blue-600 font-bold uppercase tracking-widest mt-1">Manage Sales Inventory</p>
-         </div>
-         <div class="flex gap-2">
-            <button @click="showCategoryModal = true" class="h-10 w-10 shrink-0 rounded-full bg-slate-100 flex items-center justify-center text-slate-700 border border-slate-200 shadow-lg active:scale-95 transition-all">
-               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-               <span class="absolute top-0 right-0 w-3 h-3 bg-indigo-500 rounded-full border-2 border-slate-300 text-[8px] flex items-center justify-center text-slate-900">+</span>
-            </button>
-            <button @click="openProductModal()" class="h-10 w-10 shrink-0 rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700 flex items-center justify-center text-slate-900 shadow-lg shadow-purple-500/20 active:scale-95 transition-all">
-               <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-            </button>
-         </div>
-       </div>
-
-       <!-- Mobile-First Horizontal Category Scroller -->
-       <div class="mt-6 -mx-5 px-5 overflow-x-auto scrollbar-none pb-2 flex items-center gap-2 snap-x">
-          <button 
-            @click="selectCategory(null)"
-            class="snap-start shrink-0 px-4 py-2 rounded-full text-xs font-bold transition-all border"
-            :class="selectedCategory === null ? 'bg-white text-slate-900 border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'"
-          >
-            All Products
-          </button>
-          
-          <template v-for="cat in categories" :key="cat.id">
+  <div class="flex flex-col h-[calc(100vh-64px)] w-full max-w-5xl mx-auto overflow-hidden bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 relative">
+    
+    <!-- TopAppBar & Header Area -->
+    <header class="p-6 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md sticky top-0 z-30 shrink-0">
+        <div class="flex justify-between items-end mb-4">
+            <div class="flex items-center gap-4">
+                <div class="size-12 rounded-2xl bg-primary/20 flex items-center justify-center text-primary border border-primary/20 shadow-sm relative overflow-hidden">
+                    <span class="absolute inset-0 bg-primary/10 blur-xl"></span>
+                    <span class="material-symbols-outlined relative z-10 text-2xl">category</span>
+                </div>
+                
+                <div>
+                    <h1 class="text-2xl font-bold text-slate-900 dark:text-white tracking-tight">Sales Catalog</h1>
+                    <p class="text-[11px] text-primary font-bold uppercase tracking-widest mt-1">Products & Services Knowledge</p>
+                </div>
+            </div>
+            
+            <div class="flex gap-2">
+                <button @click="showCategoryModal = true" class="h-10 w-10 shrink-0 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shadow-sm hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 transition-all relative">
+                    <span class="material-symbols-outlined">folder</span>
+                    <span class="absolute top-0 right-0 w-3.5 h-3.5 bg-primary rounded-full border-2 border-white dark:border-slate-900 text-[10px] font-black flex items-center justify-center text-white">+</span>
+                </button>
+                <button @click="openProductModal()" class="h-10 w-10 shrink-0 rounded-full bg-primary text-white shadow-lg shadow-primary/30 hover:bg-primary/90 active:scale-95 transition-all flex items-center justify-center">
+                    <span class="material-symbols-outlined">add</span>
+                </button>
+            </div>
+        </div>
+        
+        <!-- Mobile-First Horizontal Category Scroller -->
+        <div class="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 -mx-2 px-2 snap-x">
             <button 
-              @click="selectCategory(cat.id)"
-              class="snap-start shrink-0 px-4 py-2 rounded-full text-xs font-bold transition-all border flex items-center gap-2 group"
-              :class="selectedCategory === cat.id ? 'bg-white text-slate-900 border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'"
+                @click="selectCategory(null)"
+                class="snap-start shrink-0 px-4 py-2 rounded-full text-xs font-bold transition-all border"
+                :class="selectedCategory === null 
+                    ? 'bg-primary text-white border-primary shadow-md shadow-primary/20' 
+                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'"
             >
-              {{ cat.name }}
-              <span v-if="selectedCategory === cat.id" @click.stop="deleteCategory(cat.id)" class="text-red-500 hover:scale-110 ml-1">
-                <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-              </span>
+                All Products
             </button>
-          </template>
-       </div>
-    </div>
+            <template v-for="cat in categories" :key="cat.id">
+                <button 
+                @click="selectCategory(cat.id)"
+                class="snap-start shrink-0 px-4 py-2 rounded-full text-xs font-bold transition-all border flex items-center gap-2 group"
+                :class="selectedCategory === cat.id 
+                    ? 'bg-primary text-white border-primary shadow-md shadow-primary/20' 
+                    : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700'"
+                >
+                {{ cat.name }}
+                <span v-if="selectedCategory === cat.id" @click.stop="deleteCategory(cat.id)" class="text-white/80 hover:text-white hover:scale-110 ml-1 transition-transform">
+                    <span class="material-symbols-outlined text-[14px]">cancel</span>
+                </span>
+                </button>
+            </template>
+        </div>
+    </header>
 
     <!-- Main Content Area -->
-    <div class="flex-grow px-4 pb-10 relative z-10 w-full max-w-5xl mx-auto">
-      
-      <!-- Loading State -->
-      <div v-if="isLoading" class="flex justify-center items-center py-20">
-         <div class="w-8 h-8 border-4 border-purple-500/30 border-t-purple-500 rounded-full animate-spin"></div>
-      </div>
+    <main class="flex-1 overflow-y-auto p-4 md:p-6 pb-24 scrollbar-none relative">
+        <div v-if="isLoading" class="flex justify-center items-center py-20">
+            <span class="material-symbols-outlined animate-spin text-4xl text-primary">sync</span>
+        </div>
 
-      <!-- Empty State -->
-      <div v-else-if="products.length === 0" class="mt-10 bg-white border border-slate-200 shadow-sm border-dashed border-slate-300 rounded-[2rem] p-8 text-center flex flex-col items-center justify-center">
-         <div class="w-16 h-16 rounded-full bg-white flex items-center justify-center mb-4 border border-slate-200">
-             <svg class="w-8 h-8 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
-         </div>
-         <h4 class="text-slate-900 font-bold tracking-tight mb-2">No Products Configured</h4>
-         <p class="text-xs text-slate-600 max-w-xs leading-relaxed mb-6">Add products or services here so your AI Agents can reference them when talking to customers.</p>
-         <button @click="openProductModal()" class="bg-white text-slate-900 font-bold text-sm px-6 py-3 rounded-xl shadow-lg active:scale-95 transition-transform">
-            Add First Product
-         </button>
-      </div>
-
-      <!-- Product List (Mobile: Stacked, Desktop: Grid) -->
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 mt-4">
-         <div v-for="product in products" :key="product.id" class="bg-white border border-slate-200 shadow-sm rounded-3xl overflow-hidden border border-slate-200 flex flex-col group relative">
-            
-            <!-- Image Area -->
-            <div class="h-44 bg-slate-50 relative overflow-hidden shrink-0">
-               <img v-if="product.image_url" :src="product.image_url" class="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500" />
-               <div v-else class="w-full h-full flex items-center justify-center text-slate-700 bg-white">
-                   <svg class="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-               </div>
-               
-               <!-- Price Tag -->
-               <div class="absolute top-3 right-3 bg-emerald-500/90 backdrop-blur-md text-slate-900 font-black text-sm px-3 py-1 rounded-full shadow-lg border border-emerald-400/50">
-                 ${{ product.price }}
-               </div>
-
-               <!-- Quick Actions (Edit/Delete) overlayed on image top left -->
-               <div class="absolute top-3 left-3 flex gap-2">
-                 <button @click="openProductModal(product)" class="w-8 h-8 rounded-full bg-slate-50 backdrop-blur-md border border-slate-300/50 flex items-center justify-center text-slate-900 active:scale-95 transition-transform">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                 </button>
-                 <button @click="deleteProduct(product.id)" class="w-8 h-8 rounded-full bg-red-500/20 backdrop-blur-md border border-red-500/30 flex items-center justify-center text-red-400 active:scale-95 transition-transform">
-                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                 </button>
-               </div>
+        <div v-else-if="products.length === 0" class="flex flex-col items-center justify-center h-full min-h-[400px] text-center bg-white dark:bg-slate-800 rounded-[2rem] border border-dashed border-slate-300 dark:border-slate-700">
+            <div class="size-20 rounded-full bg-slate-50 dark:bg-slate-900 flex items-center justify-center mb-6">
+                <span class="material-symbols-outlined text-4xl text-slate-400 dark:text-slate-500">inventory_2</span>
             </div>
-            
-            <!-- Details Area -->
-            <div class="p-5 flex-1 flex flex-col">
-               <div class="flex items-center gap-2 mb-2">
-                  <span class="text-[9px] font-bold uppercase tracking-widest text-indigo-400">
-                    {{ getCategoryName(product.category_id) }}
-                  </span>
-               </div>
-               <h3 class="font-bold text-slate-900 text-lg tracking-tight leading-snug mb-2">{{ product.title }}</h3>
-               <p class="text-sm text-slate-600 line-clamp-2 leading-relaxed flex-grow">{{ product.description || 'No description provided.' }}</p>
-               
-               <div v-if="product.attachment_url" class="mt-4 pt-4 border-t border-slate-200">
-                  <a :href="product.attachment_url" target="_blank" class="flex items-center justify-center gap-2 w-full bg-white rounded-xl py-2.5 text-xs font-bold text-blue-400 border border-slate-200 hover:bg-slate-200 transition-colors">
-                     <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                     Attached Document
-                  </a>
-               </div>
-            </div>
-         </div>
-      </div>
-    </div>
+            <h3 class="text-xl font-bold text-slate-900 dark:text-white mb-2">Configure Products</h3>
+            <p class="text-sm text-slate-500 dark:text-slate-400 max-w-sm px-6">Add products or services to your catalog so passing AI agents can recommend them dynamically.</p>
+            <button @click="openProductModal()" class="mt-6 font-bold bg-primary text-white px-6 py-3 rounded-full flex items-center gap-2 shadow-lg hover:shadow-primary/30 active:scale-95 transition-all w-fit mx-auto">
+                <span class="material-symbols-outlined text-sm">add</span>
+                Add First Entry
+            </button>
+        </div>
 
-    <!-- Modals Overlay (Mobile Bottom Sheet Style) -->
-    <transition name="fade">
-      <div v-if="showProductModal || showCategoryModal" class="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/80 backdrop-blur-sm px-0 sm:px-4 pb-0 sm:pb-4">
+        <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div v-for="product in products" :key="product.id" class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm rounded-3xl overflow-hidden flex flex-col group relative hover:shadow-lg transition-shadow">
+                
+                <!-- Image Box -->
+                <div class="h-48 bg-slate-100 dark:bg-slate-900 relative overflow-hidden shrink-0">
+                    <img v-if="product.image_url" :src="product.image_url" class="w-full h-full object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500" />
+                    <div v-else class="w-full h-full flex items-center justify-center text-slate-400 dark:text-slate-600 bg-slate-50 dark:bg-slate-800">
+                        <span class="material-symbols-outlined text-5xl">hide_image</span>
+                    </div>
+
+                    <!-- Price Badge -->
+                    <div class="absolute top-4 right-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur text-slate-900 dark:text-white font-black text-sm px-3 py-1.5 rounded-full shadow-sm border border-slate-200/50 dark:border-slate-700/50">
+                        ${{ product.price }}
+                    </div>
+
+                    <!-- Quick Actions Overlays -->
+                    <div class="absolute top-4 left-4 flex gap-2">
+                        <button @click="openProductModal(product)" class="size-8 rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur border border-slate-200/50 dark:border-slate-700/50 flex items-center justify-center text-slate-700 dark:text-slate-300 hover:text-primary active:scale-95 transition-transform">
+                            <span class="material-symbols-outlined text-[16px]">edit</span>
+                        </button>
+                        <button @click="deleteProduct(product.id)" class="size-8 rounded-full bg-red-500/90 backdrop-blur border border-red-500/50 flex items-center justify-center text-white active:scale-95 transition-transform hover:bg-red-600">
+                            <span class="material-symbols-outlined text-[16px]">delete</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Info Box -->
+                <div class="p-5 flex-1 flex flex-col">
+                    <span class="text-[10px] font-bold uppercase tracking-widest text-primary mb-2">
+                        {{ getCategoryName(product.category_id) }}
+                    </span>
+                    <h3 class="font-bold text-slate-900 dark:text-white text-lg tracking-tight leading-snug mb-2">{{ product.title }}</h3>
+                    <p class="text-sm text-slate-600 dark:text-slate-400 line-clamp-3 leading-relaxed flex-grow">{{ product.description || 'No description provided.' }}</p>
+
+                    <div v-if="product.attachment_url" class="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700/50">
+                        <a :href="product.attachment_url" target="_blank" class="flex items-center justify-center gap-2 w-full bg-slate-50 dark:bg-slate-800 rounded-xl py-2.5 text-xs font-bold text-primary border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors">
+                            <span class="material-symbols-outlined text-[16px]">description</span>
+                            Attached Material
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modals Overlay -->
+    <div v-if="showProductModal || showCategoryModal" class="fixed inset-0 z-[100] flex items-end sm:items-center justify-center px-0 sm:px-4 pb-0 sm:pb-4">
+        <div class="absolute inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity" @click="(showProductModal = false, showCategoryModal = false)"></div>
         
         <!-- PRODUCT MODAL -->
-        <div v-if="showProductModal" class="w-full max-w-lg bg-white sm:rounded-3xl rounded-t-3xl border border-slate-300 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col slide-up relative">
-           
-           <div class="p-5 border-b border-slate-300 flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur-md z-10">
-              <h2 class="text-lg font-bold text-slate-900 tracking-tight">{{ isEditing ? 'Edit Product' : 'New Product' }}</h2>
-              <button @click="showProductModal = false" class="text-slate-600 hover:text-slate-900 p-1 rounded-full"><svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
-           </div>
-           
-           <div class="p-5 overflow-y-auto space-y-5 scrollbar-none">
-              <div class="space-y-1.5 mt-2">
-                <label class="text-[10px] uppercase tracking-widest font-bold text-slate-600 pl-1">Product Title</label>
-                <input v-model="currentProduct.title" type="text" placeholder="e.g. Enterprise License" class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-purple-500 transition-colors" />
-              </div>
+        <div v-if="showProductModal" class="w-full max-w-lg bg-white dark:bg-slate-900 sm:rounded-3xl rounded-t-3xl border border-slate-200 dark:border-slate-700 shadow-2xl flex flex-col relative z-10 animate-in slide-in-from-bottom max-h-[90vh]">
+            <div class="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-t-3xl shrink-0">
+                <h2 class="text-lg font-bold text-slate-900 dark:text-white tracking-tight">{{ isEditing ? 'Edit Config' : 'New Entry' }}</h2>
+                <button @click="showProductModal = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-full bg-slate-100 dark:bg-slate-800 transition-colors">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            
+            <div class="p-5 overflow-y-auto space-y-5 scrollbar-none pb-safe">
+                <div class="space-y-1.5 flex flex-col">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-slate-600 dark:text-slate-400 pl-1">Product Title</label>
+                    <input v-model="currentProduct.title" type="text" placeholder="e.g. Enterprise License" class="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-primary outline-none transition-shadow" />
+                </div>
 
-              <div class="grid grid-cols-2 gap-4">
-                 <div class="space-y-1.5">
-                   <label class="text-[10px] uppercase tracking-widest font-bold text-slate-600 pl-1">Price ($)</label>
-                   <div class="relative">
-                      <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-600">$</span>
-                      <input v-model="currentProduct.price" type="number" class="w-full bg-slate-50 border border-slate-200 rounded-2xl pl-8 pr-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-purple-500 transition-colors" />
-                   </div>
-                 </div>
-                 <div class="space-y-1.5">
-                   <label class="text-[10px] uppercase tracking-widest font-bold text-slate-600 pl-1">Category</label>
-                   <select v-model="currentProduct.category_id" class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-purple-500 transition-colors appearance-none">
-                     <option :value="null">Uncategorized</option>
-                     <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
-                   </select>
-                 </div>
-              </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div class="space-y-1.5 flex flex-col">
+                        <label class="text-[10px] uppercase tracking-widest font-bold text-slate-600 dark:text-slate-400 pl-1">Price ($)</label>
+                        <div class="relative bg-slate-50 dark:bg-slate-800 rounded-2xl flex border-transparent focus-within:ring-2 focus-within:ring-primary transition-shadow">
+                            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 font-bold">$</span>
+                            <input v-model="currentProduct.price" type="number" class="w-full bg-transparent border-none pl-8 pr-4 py-3 text-sm text-slate-900 dark:text-white outline-none" />
+                        </div>
+                    </div>
+                    <div class="space-y-1.5 flex flex-col">
+                        <label class="text-[10px] uppercase tracking-widest font-bold text-slate-600 dark:text-slate-400 pl-1">Category</label>
+                        <select v-model="currentProduct.category_id" class="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-primary outline-none transition-shadow appearance-none">
+                            <option :value="null">Uncategorized</option>
+                            <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+                        </select>
+                    </div>
+                </div>
 
-              <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-widest font-bold text-slate-600 pl-1">Description</label>
-                <textarea v-model="currentProduct.description" rows="3" placeholder="Tell the AI what this is useful for..." class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-purple-500 transition-colors resize-none"></textarea>
-              </div>
+                <div class="space-y-1.5 flex flex-col">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-slate-600 dark:text-slate-400 pl-1">Description Logic</label>
+                    <textarea v-model="currentProduct.description" rows="3" placeholder="Tell the AI what this is useful for..." class="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-primary outline-none transition-shadow resize-none"></textarea>
+                </div>
 
-              <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-widest font-bold text-slate-600 pl-1">Image URL (Optional)</label>
-                <input v-model="currentProduct.image_url" type="text" placeholder="https://" class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-purple-500 transition-colors" />
-              </div>
-              
-              <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-widest font-bold text-slate-600 pl-1">Document URL (Optional)</label>
-                <input v-model="currentProduct.attachment_url" type="text" placeholder="https:// Link to PDF/Doc" class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-purple-500 transition-colors" />
-              </div>
-           </div>
+                <div class="space-y-1.5 flex flex-col">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-slate-600 dark:text-slate-400 pl-1">Cover Thumbnail URL</label>
+                    <input v-model="currentProduct.image_url" type="text" placeholder="https://" class="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-primary outline-none transition-shadow" />
+                </div>
+                
+                <div class="space-y-1.5 flex flex-col">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-slate-600 dark:text-slate-400 pl-1">Detailed Link / Payload</label>
+                    <input v-model="currentProduct.attachment_url" type="text" placeholder="https://..." class="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-primary outline-none transition-shadow" />
+                </div>
+            </div>
 
-           <div class="p-5 border-t border-slate-300 bg-slate-50 pb-safe">
-              <button @click="saveProduct" class="w-full bg-blue-600 text-white shadow-sm hover:bg-blue-700 font-bold py-3.5 rounded-xl text-sm shadow-lg shadow-purple-500/20 active:scale-[0.98] transition-all">
-                {{ isEditing ? 'Save Changes' : 'Add to Catalog' }}
-              </button>
-           </div>
+            <div class="p-5 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 shrink-0 mb-safe">
+                <button @click="saveProduct" class="w-full bg-primary text-white shadow-lg hover:bg-primary/90 font-bold py-3.5 rounded-xl text-sm active:scale-[0.98] transition-all flex justify-center items-center gap-2">
+                    <span class="material-symbols-outlined text-[18px]">save</span>
+                    {{ isEditing ? 'Commit Changes' : 'Initialize Schema' }}
+                </button>
+            </div>
         </div>
 
         <!-- CATEGORY MODAL -->
-        <div v-if="showCategoryModal" class="w-full max-w-sm bg-white sm:rounded-3xl rounded-t-3xl border border-slate-300 shadow-2xl overflow-hidden flex flex-col slide-up relative">
-           <div class="p-5 border-b border-slate-300 flex justify-between items-center">
-              <h2 class="text-lg font-bold text-slate-900 tracking-tight">New Category</h2>
-              <button @click="showCategoryModal = false" class="text-slate-600 hover:text-slate-900 p-1 rounded-full"><svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
-           </div>
-           
-           <div class="p-5 space-y-5">
-              <div class="space-y-1.5">
-                <label class="text-[10px] uppercase tracking-widest font-bold text-slate-600 pl-1">Category Name</label>
-                <input v-model="currentCategory.name" type="text" placeholder="e.g. Services, Hardware" class="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-purple-500 transition-colors" />
-              </div>
-           </div>
+        <div v-if="showCategoryModal" class="w-full max-w-sm bg-white dark:bg-slate-900 sm:rounded-3xl rounded-t-3xl border border-slate-200 dark:border-slate-700 shadow-2xl flex flex-col relative z-10 animate-in slide-in-from-bottom pb-safe">
+            <div class="p-5 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center rounded-t-3xl">
+                <h2 class="text-lg font-bold text-slate-900 dark:text-white tracking-tight">Add Collection</h2>
+                <button @click="showCategoryModal = false" class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-full bg-slate-100 dark:bg-slate-800 transition-colors">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            
+            <div class="p-5 space-y-5">
+                <div class="space-y-1.5 flex flex-col">
+                    <label class="text-[10px] uppercase tracking-widest font-bold text-slate-600 dark:text-slate-400 pl-1">Category Tag</label>
+                    <input v-model="currentCategory.name" type="text" placeholder="e.g. Services" class="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-2xl px-4 py-3 text-sm text-slate-900 dark:text-white focus:ring-2 focus:ring-primary outline-none transition-shadow" />
+                </div>
+            </div>
 
-           <div class="p-5 border-t border-slate-300 bg-slate-50 pb-safe">
-               <button @click="saveCategory" class="w-full bg-white text-slate-900 font-bold py-3.5 rounded-xl text-sm shadow-lg active:scale-[0.98] transition-all">
-                Create Category
-              </button>
-           </div>
+            <div class="p-5 border-t border-slate-100 dark:border-slate-800">
+                <button @click="saveCategory" class="w-full bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold py-3.5 rounded-xl text-sm shadow-md active:scale-[0.98] transition-all flex justify-center items-center gap-2">
+                    Create Set
+                </button>
+            </div>
         </div>
 
-      </div>
-    </transition>
-
+    </div>
   </div>
 </template>
 
 <style scoped>
-.line-clamp-2 {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;  
-  overflow: hidden;
-}
-
-/* Hide scrollbar for category pills but keep scroll functionality */
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
@@ -359,20 +342,11 @@ const subCategories = (parentId) => categories.value.filter(c => c.parent_id ===
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
-
-/* Mobile Bottom sheet slide animation */
-.slide-up {
-  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+/* Basic safe padding utility for mobile keyboards/notches */
+.pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 1rem); 
 }
-@keyframes slideUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
-}
-
-.fade-enter-active, .fade-leave-active {
-  transition: opacity 0.2s ease;
-}
-.fade-enter-from, .fade-leave-to {
-  opacity: 0;
+.mb-safe {
+    margin-bottom: env(safe-area-inset-bottom, 0); 
 }
 </style>

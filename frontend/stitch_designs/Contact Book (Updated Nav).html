@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              colors: {
+                "primary": "#3c83f6",
+                "background-light": "#f5f7f8",
+                "background-dark": "#101722",
+              },
+              fontFamily: {
+                "display": ["Inter"]
+              },
+              borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "full": "9999px"},
+            },
+          },
+        }
+    </script>
+<title>AIworkfor.me - Contact Book</title>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background-light dark:bg-background-dark font-display text-slate-900 dark:text-slate-100 min-h-screen">
+<!-- Sidebar Drawer Overlay -->
+<div class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-40 hidden" id="drawer-overlay" onclick="document.getElementById('side-drawer').classList.add('-translate-x-full'); this.classList.add('hidden')"></div>
+<!-- Sidebar Drawer -->
+<aside class="fixed inset-y-0 left-0 w-72 bg-white dark:bg-slate-900 z-50 transform -translate-x-full transition-transform duration-300 ease-in-out flex flex-col" id="side-drawer">
+<!-- Drawer Header: Switch Agent -->
+<div class="p-4 border-b border-slate-100 dark:border-slate-800">
+<div class="flex items-center gap-3 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/50 dark:border-slate-700/50">
+<div class="size-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
+<span class="material-symbols-outlined">smart_toy</span>
+</div>
+<div class="flex-1 min-w-0">
+<p class="text-[10px] font-bold text-primary uppercase tracking-wider">Active Agent</p>
+<p class="font-bold text-sm truncate">Jasper AI</p>
+</div>
+<span class="material-symbols-outlined text-slate-400">unfold_more</span>
+</div>
+</div>
+<!-- Drawer Links -->
+<nav class="flex-1 overflow-y-auto p-4 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="font-medium">Dashboard</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors" href="#">
+<span class="material-symbols-outlined">settings_input_component</span>
+<span class="font-medium">Configuration</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors" href="#">
+<span class="material-symbols-outlined">menu_book</span>
+<span class="font-medium">Knowledge Base</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors" href="#">
+<span class="material-symbols-outlined">sports_esports</span>
+<span class="font-medium">Playground</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-primary/10 text-primary" href="#">
+<span class="material-symbols-outlined fill-[1]">contacts</span>
+<span class="font-bold">Contact Book</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors" href="#">
+<span class="material-symbols-outlined">bolt</span>
+<span class="font-medium">CRM AI</span>
+</a>
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors" href="#">
+<span class="material-symbols-outlined text-[20px]">inbox</span>
+<span class="font-medium">Inbox</span>
+</a>
+</nav>
+<!-- Drawer Bottom -->
+<div class="p-4 border-t border-slate-100 dark:border-slate-800 space-y-1">
+<a class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="font-medium">Global Settings</span>
+</a>
+<button class="w-full flex items-center justify-center gap-2 px-3 py-3 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold text-sm mt-2">
+<span class="material-symbols-outlined text-lg">add</span>
+      Create New Agent
+    </button>
+</div>
+</aside>
+<!-- Top Navigation -->
+<header class="sticky top-0 z-30 bg-background-light/80 dark:bg-background-dark/80 backdrop-blur-md border-b border-primary/10">
+<div class="flex items-center justify-between px-4 py-4">
+<button class="p-2 -ml-2 text-slate-600 dark:text-slate-300" onclick="document.getElementById('side-drawer').classList.remove('-translate-x-full'); document.getElementById('drawer-overlay').classList.remove('hidden')">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<h1 class="text-lg font-bold flex-1 text-center">Contact Book</h1>
+<button class="flex items-center justify-center size-10 rounded-full bg-primary/10 text-primary">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+</div>
+<!-- Search Bar -->
+<div class="px-4 pb-4">
+<label class="relative flex items-center w-full">
+<span class="material-symbols-outlined absolute left-3 text-slate-400">search</span>
+<input class="w-full bg-white dark:bg-slate-800 border-none rounded-xl py-3 pl-10 pr-4 focus:ring-2 focus:ring-primary text-sm shadow-sm" placeholder="Search leads by name or status" type="text"/>
+</label>
+</div>
+<!-- Tabs -->
+<div class="flex border-b border-primary/5 px-4 overflow-x-auto gap-6 scrollbar-hide">
+<a class="flex flex-col items-center border-b-2 border-primary pb-3 pt-2 shrink-0" href="#">
+<span class="text-primary text-sm font-semibold">All Leads</span>
+</a>
+<a class="flex flex-col items-center border-b-2 border-transparent pb-3 pt-2 shrink-0 text-slate-500" href="#">
+<span class="text-sm font-medium">Working</span>
+</a>
+<a class="flex flex-col items-center border-b-2 border-transparent pb-3 pt-2 shrink-0 text-slate-500" href="#">
+<span class="text-sm font-medium">On Hold</span>
+</a>
+<a class="flex flex-col items-center border-b-2 border-transparent pb-3 pt-2 shrink-0 text-slate-500" href="#">
+<span class="text-sm font-medium">Closed</span>
+</a>
+</div>
+</header>
+<!-- Content Area -->
+<main class="p-4 space-y-4">
+<!-- Lead Card 1 -->
+<div class="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-primary/5 flex items-start gap-4">
+<div class="size-14 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary text-2xl">person</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between mb-1">
+<h3 class="font-bold text-base truncate">John Smith</h3>
+<span class="px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-[10px] font-bold uppercase tracking-wider">Working</span>
+</div>
+<div class="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs mb-3">
+<span class="material-symbols-outlined text-sm">schedule</span>
+<span>Follow-up in <span class="text-primary font-semibold">2h 15m</span></span>
+</div>
+<div class="flex gap-2">
+<button class="flex-1 bg-primary text-white py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-sm">call</span> Call
+                    </button>
+<button class="px-3 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 py-2 rounded-lg text-xs font-semibold">
+                        Details
+                    </button>
+</div>
+</div>
+</div>
+<!-- Lead Card 2 -->
+<div class="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-primary/5 flex items-start gap-4">
+<div class="size-14 rounded-full overflow-hidden bg-slate-200 shrink-0">
+<img class="w-full h-full object-cover" data-alt="Professional headshot of a female business lead" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAuIwSSBNjh_czyTbHVvyCxERUI0Oq4lGabelitzviU48jNLJ3v5AvBysaH3Jn25P20nJoSTH2H9q_9e5jPFwS16juZTtKUfD2eyEdrF02fY28tkYGA1nKWq9Olp710oWynXALLcLiRU5Q2pk6QKQ7mTrfgnFTp41OadQKvxnwOrhafP3zrStfMddV3jLGBkXqJOqLoXGft20ROhkMMnPX117t8dLa21GjDnMcXImN-2GUnvenNYAkPWEKfiE21-Sd6KiGcp9jUAw"/>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between mb-1">
+<h3 class="font-bold text-base truncate">Sarah Jenkins</h3>
+<span class="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 text-[10px] font-bold uppercase tracking-wider">On Hold</span>
+</div>
+<div class="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs mb-3">
+<span class="material-symbols-outlined text-sm">schedule</span>
+<span>Follow-up in <span class="text-primary font-semibold">5h 40m</span></span>
+</div>
+<div class="flex gap-2">
+<button class="flex-1 bg-primary text-white py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-sm">mail</span> Email
+                    </button>
+<button class="px-3 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 py-2 rounded-lg text-xs font-semibold">
+                        Details
+                    </button>
+</div>
+</div>
+</div>
+<!-- Lead Card 3 -->
+<div class="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-primary/5 flex items-start gap-4">
+<div class="size-14 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-primary text-2xl">corporate_fare</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between mb-1">
+<h3 class="font-bold text-base truncate">Nexus Corp</h3>
+<span class="px-2 py-0.5 rounded-full bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400 text-[10px] font-bold uppercase tracking-wider">Working</span>
+</div>
+<div class="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs mb-3">
+<span class="material-symbols-outlined text-sm">calendar_today</span>
+<span>Follow-up <span class="text-primary font-semibold">Tomorrow</span></span>
+</div>
+<div class="flex gap-2">
+<button class="flex-1 bg-primary text-white py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1">
+<span class="material-symbols-outlined text-sm">chat</span> Message
+                    </button>
+<button class="px-3 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 py-2 rounded-lg text-xs font-semibold">
+                        Details
+                    </button>
+</div>
+</div>
+</div>
+<!-- Lead Card 4 -->
+<div class="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-primary/5 flex items-start gap-4 opacity-75">
+<div class="size-14 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-slate-400 text-2xl">person</span>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between mb-1">
+<h3 class="font-bold text-base truncate">Michael Chen</h3>
+<span class="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-900/50 text-slate-500 text-[10px] font-bold uppercase tracking-wider">Archived</span>
+</div>
+<div class="flex items-center gap-1.5 text-slate-400 text-xs mb-3">
+<span class="material-symbols-outlined text-sm">history</span>
+<span>Last contacted 3 days ago</span>
+</div>
+<div class="flex gap-2">
+<button class="flex-1 border border-primary text-primary py-2 rounded-lg text-xs font-semibold">
+                        Restore Lead
+                    </button>
+</div>
+</div>
+</div>
+</main>
+<!-- Floating Action Button -->
+<div class="fixed bottom-6 right-6 z-40">
+<button class="flex items-center justify-center size-14 rounded-full bg-primary text-white shadow-lg shadow-primary/30 hover:scale-105 active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-3xl">add</span>
+</button>
+</div>
+<!-- Bottom Navigation Bar -->
+</body></html>

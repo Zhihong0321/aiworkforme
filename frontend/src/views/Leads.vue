@@ -1,60 +1,43 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch, computed } from 'vue'
 import { store } from '../store'
 import { request } from '../services/api'
-import TuiBadge from '../components/ui/TuiBadge.vue'
-import TuiButton from '../components/ui/TuiButton.vue'
 import TuiInput from '../components/ui/TuiInput.vue'
 
 const leads = ref([])
 const isLoading = ref(false)
+
+// UI State
+const activeTab = ref('all') // 'all', 'working', 'on_hold', 'closed'
+const isAddingForm = ref(false)
+const chatOpen = ref(false)
+
+// Action state
 const isCreating = ref(false)
 const createError = ref('')
 const actionError = ref('')
 const actionMessage = ref('')
-const actionLoadingLeadId = ref(null)
-const voiceTestLoadingLeadId = ref(null)
+const processingLeadId = ref(null)
+
+// New Lead Form
 const newLeadName = ref('')
 const newLeadExternalId = ref('')
-const chatOpen = ref(false)
+
+// Chat Viewer
 const chatLoading = ref(false)
 const chatError = ref('')
 const chatLead = ref(null)
 const chatMessages = ref([])
-const checkLoading = ref(false)
-const mvpCheck = ref(null)
-const inboundHealth = ref(null)
-const simLeadId = ref('')
-const simText = ref('Hi, I want to know more about your service.')
-const simLoading = ref(false)
-const simResult = ref('')
-const csvFile = ref(null)
-const csvImportLoading = ref(false)
-const followupTestLoading = ref(false)
-const followupCountdown = ref(0)
-const followupTriggering = ref(false)
-let followupCountdownTimer = null
-
-const clearFollowupCountdown = () => {
-  if (followupCountdownTimer) {
-    clearInterval(followupCountdownTimer)
-    followupCountdownTimer = null
-  }
-  followupCountdown.value = 0
-}
 
 const fetchLeads = async () => {
-  if (!store.activeWorkspaceId) {
-    await store.fetchWorkspaces()
+  if (!store.activeAgentId) {
+    leads.value = []
+    return
   }
-  if (!store.activeWorkspaceId) return
   isLoading.value = true
   try {
-    const data = await request(`/workspaces/${store.activeWorkspaceId}/leads`)
-    leads.value = data
-    if (!simLeadId.value && Array.isArray(leads.value) && leads.value.length > 0) {
-      simLeadId.value = String(leads.value[0].id)
-    }
+    const data = await request(`/agents/${store.activeAgentId}/leads`)
+    leads.value = Array.isArray(data) ? data : []
   } catch (e) {
     console.error('Failed to fetch leads', e)
   } finally {
@@ -62,10 +45,45 @@ const fetchLeads = async () => {
   }
 }
 
+const getModeLabel = (lead) => {
+  const tags = Array.isArray(lead.tags) ? lead.tags : []
+  if (tags.includes('WORKING')) return 'working'
+  if (tags.includes('ON_HOLD')) return 'on_hold'
+  return 'on_hold' // Default
+}
+
+// Computed lists based on tab
+const filteredLeads = computed(() => {
+  if (activeTab.value === 'all') return leads.value
+  if (activeTab.value === 'closed') {
+      return leads.value.filter(l => l.stage === 'CLOSED_LOST' || l.stage === 'OUTCOME_PURCHASE' || l.stage === 'OUTCOME_APPOINTMENT')
+  }
+  return leads.value.filter(l => {
+      // Don't show closed items in active working tabs
+      if (l.stage === 'CLOSED_LOST' || l.stage === 'OUTCOME_PURCHASE' || l.stage === 'OUTCOME_APPOINTMENT') return false;
+      return getModeLabel(l) === activeTab.value
+  })
+})
+
+const getFollowUpText = (lead) => {
+    if (!lead.next_followup_at) return 'No follow-up scheduled'
+    const now = new Date()
+    const next = new Date(lead.next_followup_at)
+    const diffMs = next - now
+    if (diffMs < 0) return 'Overdue'
+    
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60))
+    if (diffHours < 1) return 'Within an hour'
+    if (diffHours < 24) return `In ${diffHours} hours`
+    const diffDays = Math.floor(diffHours / 24)
+    if (diffDays === 1) return 'Tomorrow'
+    return `In ${diffDays} days`
+}
+
 const createLead = async () => {
   createError.value = ''
-  if (!store.activeWorkspaceId) {
-    createError.value = 'No active workspace selected.'
+  if (!store.activeAgentId) {
+    createError.value = 'No active agent selected.'
     return
   }
   if (!newLeadExternalId.value.trim()) {
@@ -75,10 +93,10 @@ const createLead = async () => {
 
   isCreating.value = true
   try {
-    await request(`/workspaces/${store.activeWorkspaceId}/leads`, {
+    await request(`/agents/${store.activeAgentId}/leads`, {
       method: 'POST',
       body: JSON.stringify({
-        workspace_id: Number(store.activeWorkspaceId),
+        agent_id: Number(store.activeAgentId),
         external_id: newLeadExternalId.value.trim(),
         name: newLeadName.value.trim() || null,
         stage: 'NEW'
@@ -86,8 +104,8 @@ const createLead = async () => {
     })
     newLeadName.value = ''
     newLeadExternalId.value = ''
+    isAddingForm.value = false
     await fetchLeads()
-    await refreshOperationalChecks()
   } catch (e) {
     createError.value = e.message || 'Failed to create lead'
   } finally {
@@ -95,73 +113,30 @@ const createLead = async () => {
   }
 }
 
-
-const getStageVariant = (stage) => {
-  if (['NEW', 'CONTACTED'].includes(stage)) return 'info'
-  if (['ENGAGED', 'QUALIFIED'].includes(stage)) return 'success'
-  if (['TAKE_OVER'].includes(stage)) return 'warning'
-  return 'muted'
-}
-
-const getModeLabel = (lead) => {
-  const tags = Array.isArray(lead.tags) ? lead.tags : []
-  if (tags.includes('WORKING')) return 'WORKING'
-  if (tags.includes('ON_HOLD')) return 'ON HOLD'
-  return 'ON HOLD'
-}
-
 const setLeadMode = async (lead, mode) => {
   actionError.value = ''
   actionMessage.value = ''
-  actionLoadingLeadId.value = lead.id
+  processingLeadId.value = lead.id
   try {
     if (mode === 'working') {
-      const result = await request(`/messaging/leads/${lead.id}/start-work`, {
+      await request(`/messaging/leads/${lead.id}/start-work`, {
         method: 'POST',
         body: JSON.stringify({ channel: 'whatsapp' })
       })
-      const sentLabel = result?.status === 'sent' ? 'sent' : result?.status === 'accepted' ? 'accepted (pending delivery)' : result?.status || 'queued'
-      const recipient = result?.recipient ? ` to ${result.recipient}` : ''
-      actionMessage.value = `Lead ${lead.name || lead.id}: ${sentLabel}${recipient}.`
+      actionMessage.value = `Work started on ${lead.name || lead.external_id}.`
     } else {
       await request(`/workspaces/${store.activeWorkspaceId}/leads/${lead.id}/mode`, {
         method: 'POST',
         body: JSON.stringify({ mode })
       })
-      actionMessage.value = `Lead ${lead.name || lead.id} moved to ON HOLD.`
+      actionMessage.value = `${lead.name || lead.external_id} placed on hold.`
     }
     await fetchLeads()
-    await refreshOperationalChecks()
   } catch (e) {
     actionError.value = e.message || 'Failed to update mode'
   } finally {
-    actionLoadingLeadId.value = null
-  }
-}
-
-const deleteLead = async (lead) => {
-  actionError.value = ''
-  actionMessage.value = ''
-  const ok = window.confirm(`Delete lead "${lead.name || lead.external_id}" and clear all conversation history?`)
-  if (!ok) return
-
-  actionLoadingLeadId.value = lead.id
-  try {
-    await request(`/workspaces/${store.activeWorkspaceId}/leads/${lead.id}`, {
-      method: 'DELETE'
-    })
-    actionMessage.value = `Lead ${lead.name || lead.id} deleted. Conversation cleared.`
-    await fetchLeads()
-    await refreshOperationalChecks()
-    if (chatOpen.value && chatLead.value?.id === lead.id) {
-      chatOpen.value = false
-      chatLead.value = null
-      chatMessages.value = []
-    }
-  } catch (e) {
-    actionError.value = e.message || 'Failed to delete lead'
-  } finally {
-    actionLoadingLeadId.value = null
+    processingLeadId.value = null
+    setTimeout(() => { actionMessage.value = ''; actionError.value = '' }, 3000)
   }
 }
 
@@ -181,407 +156,221 @@ const reviewLeadChat = async (lead) => {
   }
 }
 
-const sendVoiceNoteTest = async (lead) => {
-  actionError.value = ''
-  actionMessage.value = ''
-  voiceTestLoadingLeadId.value = lead.id
-  try {
-    const result = await request('/messaging/mvp/test-voice-note', {
-      method: 'POST',
-      body: JSON.stringify({
-        lead_id: Number(lead.id),
-        voice: 'kiki',
-        text_content: 'Hi, quick follow-up.'
-      })
-    })
-    actionMessage.value = `Voice note sent to ${lead.external_id}. Provider message: ${result.provider_message_id || 'n/a'}.`
-    if (chatOpen.value && chatLead.value?.id === lead.id) {
-      await reviewLeadChat(lead)
-    }
-  } catch (e) {
-    actionError.value = e.message || 'Failed to send voice note test'
-  } finally {
-    voiceTestLoadingLeadId.value = null
-  }
-}
-
-const runMvpCheck = async () => {
-  try {
-    mvpCheck.value = await request('/messaging/mvp/operational-check')
-  } catch (e) {
-    actionError.value = e.message || 'Failed to run operational check'
-  }
-}
-
-const runInboundHealthCheck = async () => {
-  try {
-    inboundHealth.value = await request('/messaging/mvp/inbound-health')
-  } catch (e) {
-    actionError.value = e.message || 'Failed to fetch inbound health'
-  }
-}
-
-const refreshOperationalChecks = async () => {
-  checkLoading.value = true
-  try {
-    await Promise.all([
-      runMvpCheck(),
-      runInboundHealthCheck()
-    ])
-  } finally {
-    checkLoading.value = false
-  }
-}
-
-const simulateInbound = async () => {
-  actionError.value = ''
-  simResult.value = ''
-  if (!simLeadId.value) {
-    actionError.value = 'Pick a lead for inbound simulation.'
-    return
-  }
-  if (!simText.value.trim()) {
-    actionError.value = 'Inbound text is required.'
-    return
-  }
-  simLoading.value = true
-  try {
-    const result = await request('/messaging/mvp/simulate-inbound', {
-      method: 'POST',
-      body: JSON.stringify({
-        lead_id: Number(simLeadId.value),
-        channel: 'whatsapp',
-        text_content: simText.value.trim()
-      })
-    })
-    simResult.value = result.detail || `Inbound status: ${result.inbound_status}`
-    await fetchLeads()
-    await refreshOperationalChecks()
-  } catch (e) {
-    actionError.value = e.message || 'Failed to simulate inbound'
-  } finally {
-    simLoading.value = false
-  }
-}
-
-const onCsvFileSelected = (event) => {
-  const files = event?.target?.files
-  csvFile.value = files && files.length ? files[0] : null
-}
-
-const importLeadsFromCsv = async () => {
-  actionError.value = ''
-  actionMessage.value = ''
-  if (!store.activeWorkspaceId) {
-    actionError.value = 'No active workspace selected.'
-    return
-  }
-  if (!csvFile.value) {
-    actionError.value = 'Please choose a CSV file first.'
-    return
-  }
-
-  csvImportLoading.value = true
-  try {
-    const formData = new FormData()
-    formData.append('file', csvFile.value)
-    formData.append('has_header', 'true')
-
-    const result = await request(`/workspaces/${store.activeWorkspaceId}/leads/import-csv`, {
-      method: 'POST',
-      body: formData
-    })
-    actionMessage.value = `CSV imported: created ${result.leads_created}, duplicates ${result.skipped_duplicates}, invalid ${result.skipped_invalid}.`
-    if (Array.isArray(result.errors) && result.errors.length > 0) {
-      actionError.value = result.errors.join(' | ')
-    }
-    csvFile.value = null
-    await fetchLeads()
-    await refreshOperationalChecks()
-  } catch (e) {
-    actionError.value = e.message || 'CSV import failed'
-  } finally {
-    csvImportLoading.value = false
-  }
-}
-
-const startAllLeads = async () => {
-  actionError.value = ''
-  if (!leads.value.length) {
-    actionError.value = 'No leads available.'
-    return
-  }
-  for (const lead of leads.value) {
-    await setLeadMode(lead, 'working')
-  }
-}
-
-const triggerDueFollowupsNow = async () => {
-  if (!store.activeWorkspaceId) {
-    throw new Error('No active workspace selected.')
-  }
-  followupTriggering.value = true
-  try {
-    const result = await request(`/workspaces/${store.activeWorkspaceId}/ai-crm/trigger-due`, {
-      method: 'POST'
-    })
-    actionMessage.value = `Follow-up trigger finished: sent ${result.triggered}, skipped ${result.skipped}.`
-    if (Array.isArray(result.errors) && result.errors.length > 0) {
-      actionError.value = result.errors.join(' | ')
-    }
-    await fetchLeads()
-    await refreshOperationalChecks()
-  } finally {
-    followupTriggering.value = false
-  }
-}
-
-const processAllFollowupsNow = async () => {
-  actionError.value = ''
-  actionMessage.value = ''
-  clearFollowupCountdown()
-  if (!store.activeWorkspaceId) {
-    actionError.value = 'No active workspace selected.'
-    return
-  }
-
-  followupTestLoading.value = true
-  try {
-    const workspaceId = store.activeWorkspaceId
-    const scanResult = await request(`/workspaces/${workspaceId}/ai-crm/scan`, {
-      method: 'POST',
-      body: JSON.stringify({ force_all: true })
-    })
-
-    const fastForward = await request(`/workspaces/${workspaceId}/ai-crm/fast-forward`, {
-      method: 'POST',
-      body: JSON.stringify({ seconds: 5, include_overdue: true })
-    })
-    actionMessage.value = `AI CRM forced to test mode: scanned ${scanResult.scanned_threads}, pending follow-ups moved to ${fastForward.seconds}s (${fastForward.updated_states} thread states).`
-
-    followupCountdown.value = Number(fastForward.seconds || 5)
-    followupCountdownTimer = setInterval(async () => {
-      followupCountdown.value = Math.max(0, followupCountdown.value - 1)
-      if (followupCountdown.value > 0) {
-        return
-      }
-      clearFollowupCountdown()
-      try {
-        await triggerDueFollowupsNow()
-      } catch (e) {
-        actionError.value = e.message || 'Failed to trigger due follow-ups'
-      }
-    }, 1000)
-  } catch (e) {
-    clearFollowupCountdown()
-    actionError.value = e.message || 'Failed to process follow-ups now'
-  } finally {
-    followupTestLoading.value = false
-  }
-}
-
-onMounted(async () => {
-  await fetchLeads()
-  await refreshOperationalChecks()
+onMounted(() => {
+  if (store.activeAgentId) fetchLeads()
 })
-watch(() => store.activeWorkspaceId, async () => {
-  clearFollowupCountdown()
-  await fetchLeads()
-  await refreshOperationalChecks()
-})
-onBeforeUnmount(() => {
-  clearFollowupCountdown()
-})
+
+watch(() => store.activeAgentId, fetchLeads)
 </script>
 
 <template>
-  <div class="min-h-[calc(100vh-64px)] w-full bg-white font-inter text-slate-700 flex flex-col pb-20">
+  <div class="flex flex-col h-[calc(100vh-64px)] w-full max-w-md mx-auto relative text-slate-900 dark:text-slate-100 bg-white dark:bg-slate-900">
     
-    <!-- Header -->
-    <div class="p-5 border-b border-slate-200 bg-white border border-slate-200 shadow-sm rounded-b-[2rem] sticky top-0 z-30 mb-4">
-      <div class="flex justify-between items-end">
-        <div>
-          <h1 class="text-3xl font-semibold text-slate-900 tracking-tight mb-1">Contacts</h1>
-          <p class="text-sm text-purple-300 font-medium tracking-wide">
-            {{ leads.length }} Leads Ready
-          </p>
-        </div>
-        <button class="h-12 w-12 rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700 flex items-center justify-center text-slate-900 shadow-lg shadow-purple-500/30 active:scale-95 transition-all">
-          <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
-        </button>
-      </div>
-
-      <!-- Quick Actions -->
-      <div class="flex gap-3 mt-5 overflow-x-auto pb-2 scrollbar-none [scrollbar-width:none]">
-        <button @click="startAllLeads" class="px-5 py-2.5 rounded-full text-sm font-semibold bg-blue-600 text-white shadow-sm hover:bg-blue-700 shadow-lg shadow-purple-500/25 shrink-0 active:scale-95 transition-transform flex items-center gap-2">
-           <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-           Send Agent to Work
-        </button>
-        <button @click="processAllFollowupsNow" :disabled="followupTestLoading || followupTriggering" class="px-5 py-2.5 rounded-full text-sm font-semibold bg-white border border-slate-200 shadow-sm border border-amber-500/30 text-amber-300 hover:text-amber-200 shrink-0 active:scale-95 transition-transform">
-           Process Follow-ups
-        </button>
-      </div>
-      <p v-if="followupCountdown > 0" class="mt-3 text-xs font-bold text-amber-400">
-        Test countdown: {{ followupCountdown }}s
-      </p>
+    <!-- Action Toast -->
+    <div v-if="actionMessage || actionError" class="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 px-4 py-2 rounded-full shadow-lg text-sm font-semibold flex items-center gap-2 animate-in slide-in-from-top-2" :class="actionError ? 'bg-red-500 text-white' : 'bg-emerald-500 text-white'">
+        <span class="material-symbols-outlined text-sm">{{ actionError ? 'error' : 'check_circle' }}</span>
+        {{ actionError || actionMessage }}
     </div>
 
-    <!-- Lead List -->
-    <div v-if="isLoading" class="flex-grow flex flex-col items-center justify-center space-y-4 p-10">
-      <div class="flex gap-2">
-        <div class="w-2.5 h-2.5 rounded-full bg-purple-500 animate-bounce"></div>
-        <div class="w-2.5 h-2.5 rounded-full bg-purple-500 animate-bounce [animation-delay:0.2s]"></div>
-        <div class="w-2.5 h-2.5 rounded-full bg-purple-500 animate-bounce [animation-delay:0.4s]"></div>
-      </div>
-      <p class="text-xs text-slate-600 font-bold tracking-widest uppercase">Syncing Contacts</p>
+    <!-- Active Agent Required -->
+    <div v-if="!store.activeAgentId" class="flex flex-col items-center justify-center flex-1 p-6 text-center">
+        <span class="material-symbols-outlined text-6xl text-slate-300 dark:text-slate-700 mb-4">contacts</span>
+        <h3 class="text-lg font-bold">No Agent Linked</h3>
+        <p class="text-sm text-slate-500 mt-2">Please select or create an agent from the sidebar drawer to view their Contact Book.</p>
     </div>
 
-    <div v-else-if="leads.length === 0" class="flex-grow flex flex-col items-center justify-center p-10 text-center">
-      <div class="w-20 h-20 rounded-full bg-white border border-slate-200 shadow-sm flex items-center justify-center mb-6 ring-1 ring-white/10">
-        <svg class="w-10 h-10 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-      </div>
-      <h3 class="text-lg font-bold text-slate-900 mb-2">No Contacts Yet</h3>
-      <p class="text-sm text-slate-600">Add a contact to let your AI start chatting and capturing leads.</p>
-    </div>
-
-    <!-- Contact Cards (Mobile Replacement for Table) -->
-    <div v-else class="px-4 space-y-4 relative z-10 box-border">
-      <div 
-        v-for="lead in leads" 
-        :key="lead.id" 
-        class="bg-white border border-slate-200 shadow-sm p-5 rounded-3xl relative overflow-hidden group border border-slate-200"
-      >
-        <!-- Top Row: Name & Status -->
-        <div class="flex justify-between items-start mb-3">
-          <div>
-            <h3 class="text-lg font-bold text-slate-900 leading-tight break-words">{{ lead.name || 'Unknown' }}</h3>
-            <p class="text-xs text-slate-600 font-medium mt-1 uppercase tracking-wider">{{ lead.external_id || 'No Number' }}</p>
-          </div>
-          <span 
-            class="px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded-lg shrink-0 w-max"
-            :class="getStageVariant(lead.stage) === 'success' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : getStageVariant(lead.stage) === 'warning' ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-blue-500/20 text-blue-300 border border-blue-500/30'"
-          >
-            {{ lead.stage }}
-          </span>
+    <template v-else>
+        <!-- Header & Tabs -->
+        <div class="sticky top-0 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md pt-2 border-b border-slate-200 dark:border-slate-800">
+            <!-- Scrollable Tabs per Stitch Design -->
+            <div class="flex px-4 overflow-x-auto gap-6 scrollbar-none [scrollbar-width:none]">
+                <button 
+                  v-for="tab in [{id: 'all', label: 'All'}, {id: 'working', label: 'Working'}, {id: 'on_hold', label: 'On Hold'}, {id: 'closed', label: 'Closed'}]"
+                  :key="tab.id"
+                  @click="activeTab = tab.id"
+                  class="flex flex-col items-center border-b-2 pb-3 pt-2 shrink-0 transition-colors"
+                  :class="activeTab === tab.id ? 'border-primary text-primary font-semibold' : 'border-transparent text-slate-500 hover:text-slate-700 font-medium'"
+                >
+                  <span class="text-sm whitespace-nowrap">{{ tab.label }}</span>
+                </button>
+            </div>
         </div>
 
-        <!-- AI Summary Context (Mock/Placeholder styled nicely) -->
-        <div class="mb-4 text-sm text-slate-700 leading-relaxed max-w-full">
-          <span class="text-purple-400 font-semibold mr-1">AI Context:</span>
-          Interaction active. Current mode: {{ getModeLabel(lead) }}.
-        </div>
-
-        <!-- Meta info -->
-        <div class="mb-4">
-           <div v-if="lead.next_followup_at" class="flex items-center gap-2">
-               <span class="w-2 h-2 rounded-full bg-purple-500 animate-pulse shrink-0"></span>
-               <span class="text-xs text-slate-600">
-                 Follow-up due <span class="text-slate-900 font-medium">{{ new Date(lead.next_followup_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) }}</span>
-               </span>
-           </div>
-           <div v-else class="flex items-center gap-2">
-               <span class="w-2 h-2 rounded-full bg-slate-600 shrink-0"></span>
-               <span class="text-xs text-slate-600 font-medium uppercase tracking-tight">On Hold</span>
-           </div>
-        </div>
-
-        <!-- Action Row -->
-        <div class="flex items-center justify-between border-t border-slate-200 pt-4 w-full">
-           <!-- Mode Toggles -->
-           <div class="flex bg-slate-50 rounded-full p-1 border border-slate-200">
-             <button 
-               @click="setLeadMode(lead, 'on_hold')"
-               class="px-3 py-1.5 rounded-full text-[11px] font-bold uppercase transition-all whitespace-nowrap"
-               :class="getModeLabel(lead) !== 'WORKING' ? 'bg-slate-200 text-slate-900 shadow-sm' : 'text-slate-600'"
-             >Hold</button>
-             <button 
-               @click="setLeadMode(lead, 'working')"
-               class="px-3 py-1.5 rounded-full text-[11px] font-bold uppercase transition-all whitespace-nowrap"
-               :class="getModeLabel(lead) === 'WORKING' ? 'bg-purple-600 text-white shadow-sm shadow-purple-500/30' : 'text-slate-600'"
-             >Work</button>
-           </div>
-           
-           <div class="flex gap-2">
-             <button
-               @click="sendVoiceNoteTest(lead)"
-               :disabled="voiceTestLoadingLeadId === lead.id"
-               class="h-9 w-9 rounded-full bg-emerald-500/15 text-emerald-300 flex items-center justify-center border border-emerald-500/30 hover:bg-emerald-500/25 shrink-0 disabled:opacity-50"
-               title="Send voice note test"
-             >
-               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3a3 3 0 00-3 3v6a3 3 0 006 0V6a3 3 0 00-3-3zM5 10a7 7 0 0014 0M12 17v4m-3 0h6" /></svg>
-             </button>
-             <!-- Review Chat Button -->
-             <button @click="reviewLeadChat(lead)" class="h-9 w-9 rounded-full bg-slate-100 text-purple-300 flex items-center justify-center border border-slate-200 hover:bg-slate-200 shrink-0">
-               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
-             </button>
-             <!-- Delete Button -->
-             <button @click="deleteLead(lead)" class="h-9 w-9 rounded-full bg-red-500/10 text-red-400 flex items-center justify-center border border-red-500/20 active:bg-red-500/20 shrink-0">
-               <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-             </button>
-           </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Utility Blocks (Add Lead, Import, Check) - Collapsed vertically at bottom -->
-    <div class="px-4 mt-8 space-y-4">
-      <!-- Create Lead Card -->
-      <div class="bg-white border border-slate-200 shadow-sm p-5 rounded-[2rem] border border-slate-200">
-        <h3 class="text-slate-900 font-semibold mb-1">Add Contact</h3>
-        <p class="text-xs text-slate-600 mb-4">Manually create a contact for the AI.</p>
-        <div class="space-y-3">
-          <input v-model="newLeadName" type="text" placeholder="Contact Name" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-purple-500 transition-colors placeholder:text-slate-600" />
-          <input v-model="newLeadExternalId" type="text" placeholder="Phone Number (e.g. 60123...)" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-purple-500 transition-colors placeholder:text-slate-600" />
-          <button @click="createLead" :disabled="isCreating" class="w-full bg-blue-600 text-white shadow-sm hover:bg-blue-700 font-bold text-sm py-3 rounded-xl shadow-lg shadow-purple-500/20 active:scale-[0.98] transition-all flex justify-center mt-2">
-            {{ isCreating ? 'Adding...' : 'Save Contact' }}
-          </button>
-          <p v-if="createError" class="text-xs text-red-400 text-center mt-2">{{ createError }}</p>
-        </div>
-      </div>
-      
-      <!-- Operations Feedback -->
-      <div v-if="actionError || actionMessage" class="bg-white border border-slate-200 shadow-sm p-4 rounded-xl border border-slate-200 flex flex-col items-center text-center">
-         <p v-if="actionError" class="text-xs text-red-400 font-medium">{{ actionError }}</p>
-         <p v-if="actionMessage" class="text-xs text-emerald-400 font-medium">{{ actionMessage }}</p>
-      </div>
-    </div>
-
-    <!-- Review Chat Modal -->
-    <div v-if="chatOpen" class="fixed inset-0 z-50 bg-white/90 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4">
-      <div class="w-full max-w-2xl bg-white sm:rounded-3xl rounded-t-3xl border-t border-slate-200 sm:border shadow-2xl overflow-hidden h-[85vh] sm:h-[70vh] flex flex-col">
-        <div class="px-5 py-4 border-b border-slate-300 bg-white border border-slate-200 shadow-sm flex items-center justify-between sticky top-0">
-          <div>
-            <h3 class="text-lg font-bold text-slate-900 tracking-tight">{{ chatLead?.name || 'Contact' }}</h3>
-            <p class="text-[10px] text-purple-400 font-bold uppercase tracking-widest">{{ chatLead?.external_id || 'Reviewing History' }}</p>
-          </div>
-          <button @click="chatOpen = false" class="h-8 w-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
-        </div>
-        
-        <div class="flex-grow overflow-y-auto p-5 space-y-4 hidden scrollbar-none pb-10">
-          <div v-if="chatLoading" class="flex flex-col items-center justify-center h-full text-slate-600 space-y-3">
-             <div class="w-6 h-6 rounded-full border-t-2 border-r-2 border-purple-500 animate-spin"></div>
-             <p class="text-xs font-medium uppercase tracking-widest">Loading Logs...</p>
-          </div>
-          <p v-else-if="chatError" class="text-sm font-semibold text-red-500 text-center mt-10">{{ chatError }}</p>
-          <p v-else-if="chatMessages.length === 0" class="text-sm text-slate-600 text-center mt-10 italic">No message history.</p>
-          
-          <div v-else v-for="msg in chatMessages" :key="msg.id" 
-               class="max-w-[85%] p-3.5 rounded-2xl text-[14px] leading-relaxed relative"
-               :class="msg.direction === 'outbound' ? 'bg-blue-600 text-white shadow-sm hover:bg-blue-700 ml-auto rounded-tr-sm shadow-lg shadow-purple-500/20' : 'bg-white border border-slate-200 shadow-sm text-slate-700 mr-auto rounded-tl-sm'">
+        <!-- Main Content Area -->
+        <main class="flex-1 overflow-y-auto p-4 space-y-4 pb-24">
             
-            <p class="whitespace-pre-wrap">{{ msg.text_content || '(non-text message)' }}</p>
-            
-            <div class="flex items-center justify-between mt-2 pt-2 border-t border-white/10" :class="msg.direction === 'outbound' ? 'border-white/20' : 'border-slate-200'">
-              <span class="text-[9px] font-bold uppercase tracking-wider" :class="msg.direction === 'outbound' ? 'text-slate-900/70' : 'text-slate-600'">{{ msg.direction }}</span>
-              <span class="text-[9px] opacity-70">{{ new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
+            <div v-if="isLoading" class="flex justify-center p-8">
+                <span class="material-symbols-outlined animate-spin text-primary">sync</span>
             </div>
             
-          </div>
-        </div>
-      </div>
-    </div>
+            <div v-else-if="filteredLeads.length === 0" class="text-center p-8 border border-slate-100 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-800/20 w-full box-border mt-10">
+                <span class="material-symbols-outlined text-4xl text-slate-300 mb-2">person_off</span>
+                <h3 class="text-sm font-bold">No Contacts Found</h3>
+                <p class="text-xs text-slate-500 mt-1">Add a new contact to see them appear here.</p>
+            </div>
 
+            <!-- Lead Cards -->
+            <div 
+              v-else 
+              v-for="lead in filteredLeads" 
+              :key="lead.id" 
+              class="bg-white dark:bg-slate-800 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-start gap-4 transition-opacity"
+              :class="{'opacity-75': activeTab === 'all' && (getModeLabel(lead) === 'on_hold' || lead.stage.includes('CLOSED'))}"
+            >
+                <!-- Avatar -->
+                <div class="size-14 rounded-full flex items-center justify-center shrink-0" :class="getModeLabel(lead) === 'working' ? 'bg-primary/10 text-primary' : 'bg-slate-100 dark:bg-slate-700 text-slate-400'">
+                    <span class="material-symbols-outlined text-2xl" :class="lead.stage.includes('CLOSED') ? 'person_off' : (getModeLabel(lead) === 'working' ? 'corporate_fare' : 'person')">
+                        {{ lead.stage.includes('CLOSED') ? 'person_off' : (getModeLabel(lead) === 'working' ? 'corporate_fare' : 'person') }}
+                    </span>
+                </div>
+                
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between mb-1">
+                        <h3 class="font-bold text-base truncate">{{ lead.name || 'Unknown' }}</h3>
+                        <span 
+                            class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider whitespace-nowrap shrink-0 ml-2"
+                            :class="
+                                lead.stage.includes('CLOSED') ? 'bg-slate-100 dark:bg-slate-900/50 text-slate-500' :
+                                (getModeLabel(lead) === 'working' ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' : 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400')
+                            "
+                        >
+                            {{ lead.stage.includes('CLOSED') ? 'Archived' : (getModeLabel(lead) === 'working' ? 'Working' : 'On Hold') }}
+                        </span>
+                    </div>
+                    
+                    <div class="flex items-center gap-1.5 text-slate-500 dark:text-slate-400 text-xs mb-3">
+                        <span class="material-symbols-outlined text-sm">schedule</span>
+                        <span v-if="lead.stage.includes('CLOSED')">Last contacted recently</span>
+                        <span v-else>
+                            Follow-up <span class="text-primary font-semibold">{{ getFollowUpText(lead) }}</span>
+                        </span>
+                    </div>
+                    
+                    <div class="flex items-center gap-1.5 text-slate-400 dark:text-slate-500 text-[10px] mb-3 font-mono">
+                        <span class="material-symbols-outlined text-[12px] align-text-bottom">phone_iphone</span> {{ lead.external_id }}
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="flex gap-2">
+                        <button 
+                            v-if="!lead.stage.includes('CLOSED')"
+                            @click="setLeadMode(lead, getModeLabel(lead) === 'working' ? 'on_hold' : 'working')"
+                            :disabled="processingLeadId === lead.id"
+                            class="flex-1 text-white py-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors disabled:opacity-50"
+                            :class="getModeLabel(lead) === 'working' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-primary hover:bg-primary/90'"
+                        >
+                            <span class="material-symbols-outlined text-sm">{{ getModeLabel(lead) === 'working' ? 'pause_circle' : 'play_circle' }}</span>
+                            {{ getModeLabel(lead) === 'working' ? 'Hold Mode' : 'Start Working' }}
+                        </button>
+                        
+                        <button 
+                            @click="reviewLeadChat(lead)"
+                            class="px-3 py-2 rounded-lg text-xs font-semibold shrink-0 transition-colors flex items-center gap-1"
+                            :class="lead.stage.includes('CLOSED') ? 'flex-1 bg-primary text-white' : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300'"
+                        >
+                            <span class="material-symbols-outlined text-sm pr-0.5">forum</span>
+                            {{ lead.stage.includes('CLOSED') ? 'Review History' : 'Chat' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Floating Action Button -->
+        <div class="fixed bottom-8 right-6 z-30">
+            <button 
+                @click="isAddingForm = true"
+                class="flex items-center justify-center size-14 rounded-full bg-primary text-white shadow-lg shadow-primary/30 hover:scale-105 active:scale-95 transition-transform"
+            >
+                <span class="material-symbols-outlined text-3xl">add</span>
+            </button>
+        </div>
+
+        <!-- Add Lead Modal (Sliding Drawer) -->
+        <div v-if="isAddingForm" class="fixed inset-0 z-50 flex flex-col justify-end">
+            <!-- Backdrop -->
+            <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm transition-opacity" @click="isAddingForm = false"></div>
+            
+            <div class="relative w-full max-w-md mx-auto bg-white dark:bg-slate-900 rounded-t-2xl shadow-2xl flex flex-col animate-in slide-in-from-bottom duration-300 z-10 box-border p-6 pb-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="font-bold text-lg">Add New Contact</h3>
+                    <button @click="isAddingForm = false" class="text-slate-400 hover:text-slate-600 p-1">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                
+                <div class="space-y-4">
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-sm font-semibold text-slate-700 dark:text-slate-300">Name</label>
+                        <TuiInput v-model="newLeadName" placeholder="e.g. John Doe" class="!rounded-xl !bg-slate-50 dark:!bg-slate-800" />
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                        <label class="text-sm font-semibold text-slate-700 dark:text-slate-300">Phone / ID</label>
+                        <TuiInput v-model="newLeadExternalId" placeholder="e.g. 60123456789" class="!rounded-xl !bg-slate-50 dark:!bg-slate-800" />
+                    </div>
+                    <p v-if="createError" class="text-xs text-red-500 font-medium">{{ createError }}</p>
+                    
+                    <button 
+                        @click="createLead"
+                        :disabled="isCreating"
+                        class="w-full bg-primary hover:bg-primary/90 text-white font-bold h-12 rounded-xl mt-4 flex items-center justify-center transition-transform active:scale-[0.98] disabled:opacity-50"
+                    >
+                        {{ isCreating ? 'Saving...' : 'Add Contact' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Chat History Modal (Sliding Drawer) -->
+        <div v-if="chatOpen" class="fixed inset-0 z-50 flex flex-col justify-end">
+            <div class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm transition-opacity" @click="chatOpen = false"></div>
+            
+            <div class="relative w-full max-w-md mx-auto bg-white dark:bg-slate-900 h-[85vh] rounded-t-2xl shadow-2xl flex flex-col animate-in slide-in-from-bottom duration-300 z-10 box-border">
+                
+                <!-- Drag Handle -->
+                <div class="w-full flex justify-center pt-3 pb-1">
+                    <div class="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full"></div>
+                </div>
+
+                <header class="px-6 pb-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center">
+                    <div class="min-w-0 pr-4">
+                        <h3 class="font-bold text-lg truncate">{{ chatLead?.name || 'Contact History' }}</h3>
+                        <p class="text-xs text-slate-500 font-mono">{{ chatLead?.external_id }}</p>
+                    </div>
+                    <button @click="chatOpen = false" class="p-2 shrink-0 bg-slate-100 dark:bg-slate-800 rounded-full transition-colors text-slate-500">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </header>
+
+                <div class="flex-1 overflow-y-auto p-4 space-y-4 pb-20 bg-slate-50 dark:bg-slate-900/50">
+                    <div v-if="chatLoading" class="flex flex-col items-center justify-center h-full text-slate-600 space-y-3">
+                        <span class="material-symbols-outlined animate-spin text-primary">sync</span>
+                        <p class="text-xs font-semibold uppercase tracking-widest text-primary">Loading Transcript...</p>
+                    </div>
+                    <p v-else-if="chatError" class="text-sm font-semibold text-red-500 text-center mt-10">{{ chatError }}</p>
+                    <div v-else-if="chatMessages.length === 0" class="flex flex-col items-center justify-center h-full text-slate-400">
+                        <span class="material-symbols-outlined text-4xl mb-2 opacity-50">forum</span>
+                        <p class="text-sm font-medium">No conversation history yet.</p>
+                    </div>
+                    
+                    <template v-else>
+                        <div v-for="msg in chatMessages" :key="msg.id" 
+                            class="max-w-[85%] p-3.5 rounded-2xl text-[14px] leading-relaxed relative"
+                            :class="msg.direction === 'outbound' ? 'bg-primary text-white ml-auto rounded-tr-sm shadow-sm' : 'bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm mr-auto rounded-tl-sm'">
+                            
+                            <p class="whitespace-pre-wrap">{{ msg.text_content || '(media attached)' }}</p>
+                            
+                            <div class="flex items-center justify-between mt-2 pt-1.5 text-xs opacity-70">
+                                <span class="uppercase tracking-wider font-semibold">{{ msg.direction === 'outbound' ? 'Agent' : 'Lead' }}</span>
+                                <span>{{ new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}</span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+
+    </template>
   </div>
 </template>

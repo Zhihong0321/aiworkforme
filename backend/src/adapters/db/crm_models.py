@@ -112,6 +112,7 @@ class Lead(SQLModel, table=True):
     last_verify_at: Optional[datetime] = None
     verify_error: Optional[str] = None
     name: Optional[str] = None
+    agent_id: Optional[int] = Field(default=None, foreign_key="zairag_agents.id", index=True)
     
     stage: LeadStage = Field(default=LeadStage.NEW)
     tags: List[str] = Field(default=[], sa_column=Column(JSON)) # List of LeadTag strings
@@ -208,12 +209,12 @@ class LeadMemory(SQLModel, table=True):
     last_updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 
-class AICRMWorkspaceControl(SQLModel, table=True):
-    __tablename__ = "et_ai_crm_workspace_controls"
+class AgentCRMProfile(SQLModel, table=True):
+    __tablename__ = "et_agent_crm_profiles"
 
     id: Optional[int] = Field(default=None, primary_key=True)
     tenant_id: int = Field(foreign_key="et_tenants.id", index=True)
-    workspace_id: int = Field(foreign_key="et_workspaces.id", index=True, unique=True)
+    agent_id: int = Field(foreign_key="zairag_agents.id", index=True, unique=True)
 
     enabled: bool = Field(default=True)
     scan_frequency_messages: int = Field(default=4)
@@ -222,6 +223,11 @@ class AICRMWorkspaceControl(SQLModel, table=True):
     not_interested_strategy: AICRMFollowupStrategy = Field(default=AICRMFollowupStrategy.PROMO)
     rejected_strategy: AICRMFollowupStrategy = Field(default=AICRMFollowupStrategy.DISCOUNT)
     double_reject_strategy: AICRMFollowupStrategy = Field(default=AICRMFollowupStrategy.STOP)
+    
+    # Time and Working Hours
+    timezone: str = Field(default="UTC")
+    working_hours_start: str = Field(default="09:00 AM")
+    working_hours_end: str = Field(default="06:00 PM")
 
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)

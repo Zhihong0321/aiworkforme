@@ -12,6 +12,7 @@ from src.adapters.db.agent_models import Agent, AgentMCPServer, AgentKnowledgeFi
 from src.adapters.db.mcp_models import MCPServer
 from src.app.runtime.knowledge_processor import KnowledgeProcessor
 from src.infra.llm.router import LLMRouter
+from src.adapters.db.crm_models import Lead
 import logging
 logger = logging.getLogger(__name__)
 
@@ -276,3 +277,41 @@ def delete_agent_knowledge(
     session.delete(file)
     session.commit()
     return {"message": "File deleted"}
+
+
+@router.get("/{agent_id}/leads", response_model=List[Lead])
+def list_agent_leads(
+    agent_id: int,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access)
+):
+    agent = session.get(Agent, agent_id)
+    if not agent or agent.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    leads = session.exec(select(Lead).where(
+        Lead.tenant_id == auth.tenant.id,
+        Lead.agent_id == agent_id
+    )).all()
+    return leads
+
+
+@router.post("/{agent_id}/leads", response_model=Lead)
+def create_agent_lead(
+    agent_id: int,
+    lead: Lead,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access)
+):
+    agent = session.get(Agent, agent_id)
+    if not agent or agent.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Agent not found")
+        
+    lead.tenant_id = auth.tenant.id
+    lead.agent_id = agent_id
+    lead.workspace_id = None
+    
+    session.add(lead)
+    session.commit()
+    session.refresh(lead)
+    return lead

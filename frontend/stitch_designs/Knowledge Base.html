@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Knowledge Base - AIworkfor.me</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#3c83f6",
+                        "background-light": "#f5f7f8",
+                        "background-dark": "#101722",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display">
+<div class="relative flex min-h-screen w-full flex-col max-w-md mx-auto bg-white dark:bg-slate-900 shadow-xl overflow-x-hidden">
+<!-- Header -->
+<header class="sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
+<div class="flex items-center p-4 justify-between">
+<div class="flex items-center gap-3">
+<button class="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+<span class="material-symbols-outlined text-slate-600 dark:text-slate-400">arrow_back</span>
+</button>
+<h2 class="text-lg font-bold tracking-tight">Knowledge Base</h2>
+</div>
+<div class="flex items-center gap-1">
+<button class="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+<span class="material-symbols-outlined text-slate-600 dark:text-slate-400">search</span>
+</button>
+<button class="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+<span class="material-symbols-outlined text-slate-600 dark:text-slate-400">more_vert</span>
+</button>
+</div>
+</div>
+<!-- Swipeable Tabs -->
+<div class="flex px-4">
+<button class="flex-1 flex flex-col items-center justify-center border-b-2 border-primary py-3 text-primary">
+<span class="text-sm font-bold">Files</span>
+</button>
+<button class="flex-1 flex flex-col items-center justify-center border-b-2 border-transparent py-3 text-slate-500 hover:text-slate-700 dark:text-slate-400 transition-colors">
+<span class="text-sm font-bold">FAQ</span>
+</button>
+</div>
+</header>
+<!-- Main Content Area -->
+<main class="flex-1 overflow-y-auto pb-24">
+<!-- Tab Content: Files -->
+<div class="p-4 space-y-6" id="files-section">
+<!-- Upload Card -->
+<div class="relative group">
+<div class="absolute -inset-1 bg-gradient-to-r from-primary/20 to-primary/10 rounded-xl blur opacity-25 group-hover:opacity-50 transition duration-1000"></div>
+<div class="relative flex flex-col items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl p-8 bg-white dark:bg-slate-800 text-center hover:border-primary transition-colors cursor-pointer">
+<div class="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+<span class="material-symbols-outlined text-primary text-3xl">cloud_upload</span>
+</div>
+<h3 class="text-lg font-bold">Tap to Upload</h3>
+<p class="text-slate-500 dark:text-slate-400 text-sm mt-1 mb-4">Upload your documents to train the AI (PDF, DOCX, TXT)</p>
+<button class="bg-primary hover:bg-primary/90 text-white px-6 py-2 rounded-lg font-semibold text-sm transition-all active:scale-95">
+                            Select Files
+                        </button>
+</div>
+</div>
+<!-- Recent Files List -->
+<div class="space-y-4">
+<div class="flex items-center justify-between">
+<h3 class="text-base font-bold">Recent Files</h3>
+<button class="text-primary text-sm font-semibold">View All</button>
+</div>
+<div class="space-y-3">
+<!-- File Item 1 -->
+<div class="flex items-center gap-4 p-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
+<div class="p-2 bg-red-100 dark:bg-red-900/30 rounded">
+<span class="material-symbols-outlined text-red-600 dark:text-red-400">description</span>
+</div>
+<div class="flex-1 min-w-0">
+<p class="text-sm font-semibold truncate">Q4_Report_2023.pdf</p>
+<p class="text-xs text-slate-500">2.4 MB • 2 hours ago</p>
+</div>
+<span class="flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-[10px] font-bold uppercase tracking-wider">
+<span class="material-symbols-outlined text-[12px]">check_circle</span>
+                                Ready
+                            </span>
+</div>
+<!-- File Item 2 -->
+<div class="flex items-center gap-4 p-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
+<div class="p-2 bg-blue-100 dark:bg-blue-900/30 rounded">
+<span class="material-symbols-outlined text-blue-600 dark:text-blue-400">article</span>
+</div>
+<div class="flex-1 min-w-0">
+<p class="text-sm font-semibold truncate">Training_Manual_v2.docx</p>
+<p class="text-xs text-slate-500">512 KB • Yesterday</p>
+</div>
+<span class="flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-[10px] font-bold uppercase tracking-wider">
+<span class="material-symbols-outlined text-[12px]">check_circle</span>
+                                Ready
+                            </span>
+</div>
+<!-- File Item 3 -->
+<div class="flex items-center gap-4 p-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
+<div class="p-2 bg-amber-100 dark:bg-amber-900/30 rounded">
+<span class="material-symbols-outlined text-amber-600 dark:text-amber-400">text_snippet</span>
+</div>
+<div class="flex-1 min-w-0">
+<p class="text-sm font-semibold truncate">Meeting_Notes.txt</p>
+<p class="text-xs text-slate-500">12 KB • 3 days ago</p>
+</div>
+<span class="flex items-center gap-1 px-2 py-1 rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 text-[10px] font-bold uppercase tracking-wider">
+<span class="material-symbols-outlined text-[12px]">check_circle</span>
+                                Ready
+                            </span>
+</div>
+</div>
+</div>
+</div>
+<!-- Tab Content: FAQ (Hidden in this mobile view mock but structured for design consistency) -->
+<div class="hidden p-4 space-y-4" id="faq-section">
+<div class="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+<div class="p-4 bg-slate-50 dark:bg-slate-800 flex justify-between items-center cursor-pointer">
+<p class="text-sm font-semibold">How do I update my billing information?</p>
+<span class="material-symbols-outlined">expand_more</span>
+</div>
+</div>
+<div class="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
+<div class="p-4 bg-slate-50 dark:bg-slate-800 flex justify-between items-center cursor-pointer">
+<p class="text-sm font-semibold">Can I export my knowledge base?</p>
+<span class="material-symbols-outlined">expand_more</span>
+</div>
+</div>
+</div>
+</main>
+<!-- Floating Action Button -->
+<button class="fixed bottom-24 right-6 size-14 bg-primary text-white rounded-full shadow-lg shadow-primary/40 flex items-center justify-center hover:scale-105 transition-transform active:scale-95 z-30">
+<span class="material-symbols-outlined text-2xl">add</span>
+</button>
+<!-- Bottom Navigation -->
+<nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 px-6 py-2 pb-6 z-40">
+<div class="flex justify-between items-center">
+<a class="flex flex-col items-center gap-1 text-slate-400 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined">chat_bubble</span>
+<span class="text-[10px] font-medium">Chat</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-primary" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">book_2</span>
+<span class="text-[10px] font-medium">Knowledge</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-slate-400 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined">handyman</span>
+<span class="text-[10px] font-medium">Tools</span>
+</a>
+<a class="flex flex-col items-center gap-1 text-slate-400 hover:text-primary transition-colors" href="#">
+<span class="material-symbols-outlined">settings</span>
+<span class="text-[10px] font-medium">Settings</span>
+</a>
+</div>
+</nav>
+</div>
+</body></html>

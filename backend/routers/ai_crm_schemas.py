@@ -58,7 +58,7 @@ class AICRMScanRequest(SQLModel):
 
 
 class AICRMScanResponse(SQLModel):
-    workspace_id: int
+    agent_id: int
     scanned_threads: int
     skipped_threads: int
     next_followups_set: int
@@ -66,7 +66,7 @@ class AICRMScanResponse(SQLModel):
 
 
 class AICRMTriggerResponse(SQLModel):
-    workspace_id: int
+    agent_id: int
     triggered: int
     skipped: int
     errors: List[str]
@@ -78,7 +78,7 @@ class AICRMFastForwardRequest(SQLModel):
 
 
 class AICRMFastForwardResponse(SQLModel):
-    workspace_id: int
+    agent_id: int
     seconds: int
     target_followup_at: datetime
     updated_states: int

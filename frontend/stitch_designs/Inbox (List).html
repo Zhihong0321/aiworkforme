@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#3c83f6",
+                        "background-light": "#f5f7f8",
+                        "background-dark": "#101722",
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.5rem", "lg": "1rem", "xl": "1.5rem", "full": "9999px"},
+                },
+            },
+        }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background-light dark:bg-background-dark text-slate-900 dark:text-slate-100 font-display">
+<div class="relative flex h-screen w-full flex-col overflow-hidden max-w-md mx-auto bg-white dark:bg-slate-950 shadow-2xl">
+<!-- Top App Bar -->
+<header class="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 sticky top-0 z-10">
+<div class="flex items-center gap-4">
+<button class="flex items-center justify-center p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<h1 class="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Inbox</h1>
+</div>
+<div class="flex items-center gap-2">
+<button class="flex items-center justify-center p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400">
+<span class="material-symbols-outlined">search</span>
+</button>
+<button class="flex items-center justify-center p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</div>
+</header>
+<!-- Tabs -->
+<nav class="flex border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+<a class="flex-1 flex flex-col items-center justify-center pt-3 pb-2 border-b-2 border-primary text-primary" href="#">
+<span class="text-sm font-semibold uppercase tracking-wider">All</span>
+</a>
+<a class="flex-1 flex flex-col items-center justify-center pt-3 pb-2 border-b-2 border-transparent text-slate-500 dark:text-slate-400" href="#">
+<span class="text-sm font-semibold uppercase tracking-wider">Unread</span>
+</a>
+<a class="flex-1 flex flex-col items-center justify-center pt-3 pb-2 border-b-2 border-transparent text-slate-500 dark:text-slate-400" href="#">
+<span class="text-sm font-semibold uppercase tracking-wider">Archived</span>
+</a>
+</nav>
+<!-- Main Conversation List -->
+<main class="flex-1 overflow-y-auto hide-scrollbar">
+<!-- Item 1: Unread -->
+<div class="flex items-center gap-4 px-4 py-4 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer border-b border-slate-100 dark:border-slate-800/50">
+<div class="relative shrink-0">
+<div class="size-14 rounded-full bg-primary/10 flex items-center justify-center text-primary border-2 border-primary/20 bg-cover bg-center" data-alt="Portrait of AI Assistant avatar" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuAqWIMb7hNr9RY4H7VmLfYm_KFE5csL_oNI7ARyL9N1Zu83N3y1VCNWjqF0RY9lMOQ7laDgapldMyy41zG2XmWkxbRdAfODW0efD-6yeCqT2jXsh3NeNk6CbVd8IyNINDgL--LVMa-vtOf7Tpgw167PwyDUVS4Qn8Q7WOLjYP-1AB_Y3GPavdYItCr0oxDrrb3AyOA9hrK5pdbnnPGLbKQzRERe7GQfN0URCsGrro1sjDX_dWKnYnigvivwent4yWrN66C7ktWuoQ')">
+</div>
+<div class="absolute bottom-0 right-0 size-3.5 bg-green-500 border-2 border-white dark:border-slate-950 rounded-full"></div>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="text-base font-bold text-slate-900 dark:text-slate-100 truncate">AI Assistant</h3>
+<span class="text-xs font-semibold text-primary">10:45 AM</span>
+</div>
+<div class="flex justify-between items-start">
+<p class="text-sm font-medium text-slate-600 dark:text-slate-400 line-clamp-1">Your task is complete! Check the results of the data analysis.</p>
+<span class="ml-2 flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-primary text-white text-[10px] font-bold">2</span>
+</div>
+</div>
+</div>
+<!-- Item 2 -->
+<div class="flex items-center gap-4 px-4 py-4 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer border-b border-slate-100 dark:border-slate-800/50">
+<div class="shrink-0">
+<div class="size-14 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-400 bg-cover bg-center" data-alt="Design Team group profile photo" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuD3_KLSwnXAPxuZaYVDCNg3WBz5xqIy7JMl-MuAWJHGbNuJ9tMbBTQ9mvkK7w1nlbV97LemUEdY7fTLingY5ciSTzJo84aCH7Fg9px98NkyrcV1dLqgCREKrd9mE0TIx1Sd6_lxwJxJiecDz_K-UzVPtF9NTKnNj9ZYQ-IrxHvwu-5Zc6HlfCPZDO0yU_A2ZelIXHR6HFIPnnafq5k58jD3x2Srnac_3uZyqIn9X3clKdU_sZnotUV_RAk-3OUKKo4A9st3KIaQGQ')">
+</div>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="text-base font-semibold text-slate-900 dark:text-slate-100 truncate">Design Team</h3>
+<span class="text-xs text-slate-500 dark:text-slate-500">9:30 AM</span>
+</div>
+<div class="flex justify-between items-start">
+<p class="text-sm text-slate-500 dark:text-slate-400 line-clamp-1">The new UI components are ready for review. Take a look at the Figma.</p>
+<span class="ml-2 material-symbols-outlined text-sm text-slate-400">done_all</span>
+</div>
+</div>
+</div>
+<!-- Item 3 -->
+<div class="flex items-center gap-4 px-4 py-4 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer border-b border-slate-100 dark:border-slate-800/50">
+<div class="shrink-0">
+<div class="size-14 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-400 bg-cover bg-center" data-alt="Sarah Jenkins profile avatar" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBfJhUR7YQ5_QpQa0TFQJKNsbwm5o-nJUwKidr2_3Mf7xUD4AdgpgRuUGenudPZEg3zHiNuZ6iFeXfCFwdzvmS93c4hF1gH3eRKscmuZmvj4YkJQfxBaHKjSFVqsyFZ2znFzaNph4jFRdBr75rWQ-7w2dam7UVjvnozfToi0r15im2c2qceUlGAqmBwjP1mjNoNd7nLaYc5pPYP3XPqZ2vTAOtYXqWIR8HgeQaZi8hf0yhaDLp6oMMut8l-pk2oC8pLktzuUWpoVw')">
+</div>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="text-base font-semibold text-slate-900 dark:text-slate-100 truncate">Sarah Jenkins</h3>
+<span class="text-xs text-slate-500 dark:text-slate-500">Yesterday</span>
+</div>
+<div class="flex justify-between items-start">
+<p class="text-sm text-slate-500 dark:text-slate-400 line-clamp-1">Can we hop on a quick call to discuss the project timeline?</p>
+<span class="ml-2 material-symbols-outlined text-sm text-slate-400">done</span>
+</div>
+</div>
+</div>
+<!-- Item 4 -->
+<div class="flex items-center gap-4 px-4 py-4 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer border-b border-slate-100 dark:border-slate-800/50">
+<div class="shrink-0">
+<div class="size-14 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-400 bg-cover bg-center" data-alt="Marketing Channel icon" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBYpY2xj2k1lVSWK1REgKYdlQ8-SrZZ39CBxjH48IDBLU-ecetvO9-fv-UsLneSbdtyOp9Cq-ZH0XyzoC6zWnoDPxP7CZVvSSp_9mLEPaqbZ2Ks7yLE19QB5TrruhesCqIuhFjH_BSfQGXV_28OABXXKJGUOJ6aQVDMImfYcXFC8HY8WrcTKYFi4-MmA-wlwu0xFqtP-S9dqk1ls-Behl-5cpcU93fDnXSBcewCeqPPyEctbsOUROkLNoz2d02NUD5jUBz3kvxwsQ')">
+</div>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="text-base font-semibold text-slate-900 dark:text-slate-100 truncate">Marketing Bot</h3>
+<span class="text-xs text-slate-500 dark:text-slate-500">Wednesday</span>
+</div>
+<div class="flex justify-between items-start">
+<p class="text-sm text-slate-500 dark:text-slate-400 line-clamp-1">Weekly analytics report is ready. Click here to view the PDF.</p>
+</div>
+</div>
+</div>
+<!-- Item 5: Unread -->
+<div class="flex items-center gap-4 px-4 py-4 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer border-b border-slate-100 dark:border-slate-800/50">
+<div class="shrink-0">
+<div class="size-14 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-400 bg-cover bg-center" data-alt="Alex Rivera profile avatar" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuBo5_pEnFG4cUeQB7knud4P5BiEeIWfJXuwGnn91nniQxt99goPY4hnbV8MzS_f9nTHf8noubJ2AcRpvh4od5qwBCTEqgisbwdDo9ZFy0i9JFOWtsy7L2Pd99IhENJdacZ1zm5qOfFBRfqoGFaA8pJB2kuEZV8WP3etOVX8bIUfpyAr4JY7tWGwNCilMW4_Pc_wUWtxgYWbbYj29UAD5yCU0IBwR3veF1DZfCLpKVugxK-gp7IQpUcp4FQwzX7u7e60IJyaeeUVmQ')">
+</div>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="text-base font-bold text-slate-900 dark:text-slate-100 truncate">Alex Rivera</h3>
+<span class="text-xs font-semibold text-primary">Monday</span>
+</div>
+<div class="flex justify-between items-start">
+<p class="text-sm font-medium text-slate-600 dark:text-slate-400 line-clamp-1">I've attached the latest contract revisions for your review.</p>
+<span class="ml-2 flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-primary text-white text-[10px] font-bold">1</span>
+</div>
+</div>
+</div>
+<!-- More Items for Scrolling -->
+<div class="flex items-center gap-4 px-4 py-4 hover:bg-slate-50 dark:hover:bg-slate-900 transition-colors cursor-pointer border-b border-slate-100 dark:border-slate-800/50">
+<div class="shrink-0">
+<div class="size-14 rounded-full bg-slate-200 dark:bg-slate-800 flex items-center justify-center text-slate-400 bg-cover bg-center" data-alt="Support Team avatar" style="background-image: url('https://lh3.googleusercontent.com/aida-public/AB6AXuB77eWb41TeOT7VFw6GaTCJm29bzbKTeZu09s2c4DORnv4swJ21ol5uifOoXY4599ZGQMck2w_Lz1oOIFZ8sZHMC-WXItQtsYuOqqu3HJyc3jBfvMmnN042bf9aR19yGJ3HXQVb9sn4arGJ9KF3wV09j0tkqXuuhx45abWo3TfAPUeexKQ6u1APrKfiP90ZdoMn5pmQgXIWyIoCCndbPar40-nDgqzrAQkQE99hTRLADoi2xD44Disz92Ic_QvbZbvyYfyK1YhQWg')">
+</div>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex justify-between items-baseline mb-0.5">
+<h3 class="text-base font-semibold text-slate-900 dark:text-slate-100 truncate">Customer Support</h3>
+<span class="text-xs text-slate-500 dark:text-slate-500">Oct 12</span>
+</div>
+<div class="flex justify-between items-start">
+<p class="text-sm text-slate-500 dark:text-slate-400 line-clamp-1">Ticket #4928 has been resolved successfully.</p>
+</div>
+</div>
+</div>
+</main>
+<!-- Floating Action Button -->
+<button class="absolute bottom-24 right-6 size-14 bg-primary text-white rounded-full shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-2xl">chat</span>
+</button>
+<!-- Bottom Navigation Bar -->
+<div class="flex border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 pb-4 pt-2">
+<a class="flex flex-1 flex-col items-center justify-end gap-1 text-primary" href="#">
+<div class="flex h-8 items-center justify-center">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1">inbox</span>
+</div>
+<p class="text-xs font-bold leading-normal tracking-[0.015em]">Inbox</p>
+</a>
+<a class="flex flex-1 flex-col items-center justify-end gap-1 text-slate-500 dark:text-slate-400" href="#">
+<div class="flex h-8 items-center justify-center">
+<span class="material-symbols-outlined">check_circle</span>
+</div>
+<p class="text-xs font-medium leading-normal tracking-[0.015em]">Tasks</p>
+</a>
+<a class="flex flex-1 flex-col items-center justify-end gap-1 text-slate-500 dark:text-slate-400" href="#">
+<div class="flex h-8 items-center justify-center">
+<span class="material-symbols-outlined">folder</span>
+</div>
+<p class="text-xs font-medium leading-normal tracking-[0.015em]">Projects</p>
+</a>
+<a class="flex flex-1 flex-col items-center justify-end gap-1 text-slate-500 dark:text-slate-400" href="#">
+<div class="flex h-8 items-center justify-center">
+<span class="material-symbols-outlined">settings</span>
+</div>
+<p class="text-xs font-medium leading-normal tracking-[0.015em]">Settings</p>
+</a>
+</div>
+</div>
+</body></html>
