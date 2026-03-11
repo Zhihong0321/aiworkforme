@@ -158,10 +158,10 @@ watch(
   <div class="tui-loader relative rounded-xl p-4">
     <div class="relative flex items-center justify-between gap-3 font-mono">
       <div class="flex flex-col">
-        <span class="text-[11px] uppercase tracking-[0.2em] text-slate-600">{{ label }}</span>
+        <span class="text-[11px] uppercase tracking-[0.2em] text-ink-subtle">{{ label }}</span>
         <span class="mt-1 text-xl font-semibold gradient-text">{{ text.join('') }}</span>
       </div>
-      <span class="rounded-md border border-slate-900 bg-slate-50 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-900">
+      <span class="rounded-md border border-line-strong bg-surface-muted/90 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-ink">
         {{ pillLabel }}
       </span>
     </div>
@@ -170,7 +170,7 @@ watch(
 
 <style scoped>
 .gradient-text {
-  background: linear-gradient(120deg, #16f2b3, #7c3aed, #06b6d4, #f472b6);
+  background: linear-gradient(120deg, rgb(var(--accent-rgb)), rgb(var(--accent-strong-rgb)), rgb(var(--warning-rgb)));
   background-size: 250% 250%;
   -webkit-background-clip: text;
   background-clip: text;

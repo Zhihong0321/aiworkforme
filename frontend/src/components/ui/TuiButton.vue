@@ -21,14 +21,14 @@ const props = defineProps({
 })
 
 const base =
-  'inline-flex items-center justify-center gap-2 rounded-md border font-semibold uppercase tracking-[0.12em] transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-[rgba(29,78,216,0.2)] active:translate-y-[1px] select-none'
+  'inline-flex items-center justify-center gap-2 rounded-xl border font-semibold uppercase tracking-[0.12em] transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-primary/20 active:translate-y-[1px] select-none disabled:cursor-not-allowed disabled:opacity-60'
 
 const variants = {
   primary:
-    'border-[var(--accent)] bg-[var(--accent)] text-slate-900 hover:brightness-95',
+    'border-primary-strong bg-primary text-primary-foreground shadow-[0_18px_30px_-18px_rgb(var(--accent-rgb)_/_0.55)] hover:border-primary-strong hover:bg-primary-strong',
   outline:
-    'border-[var(--border-strong)] bg-white text-[var(--text)] hover:bg-[var(--accent-soft)]',
-  ghost: 'border-transparent bg-transparent text-[var(--text)] hover:bg-[var(--accent-soft)]'
+    'border-line-strong bg-surface-elevated/90 text-ink shadow-[0_16px_24px_-24px_rgb(var(--text-rgb)_/_0.55)] hover:bg-primary/10',
+  ghost: 'border-transparent bg-transparent text-ink hover:bg-primary/10'
 }
 
 const sizes = {

@@ -58,15 +58,26 @@ const handleLogin = async () => {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-slate-50 px-4">
-    <div class="max-w-md w-full">
-      <div class="text-center mb-10">
-        <h2 class="text-3xl font-black text-slate-900 uppercase tracking-tighter">Aiworkfor.me</h2>
-        <p class="mt-2 text-sm text-slate-600 uppercase tracking-widest font-bold">Tenant Console</p>
+  <div class="mobile-shell flex min-h-screen items-center justify-center px-4 py-8">
+    <div class="w-full max-w-md">
+      <div class="mb-8 text-center">
+        <p class="text-[11px] font-bold uppercase tracking-[0.3em] text-ink-subtle">Tenant Console</p>
+        <h2 class="mt-3 text-3xl font-black uppercase tracking-[-0.04em] text-ink">Aiworkfor.me</h2>
+        <p class="mx-auto mt-3 max-w-[18rem] text-sm text-ink-muted">
+          Sign in to review agents, conversations, and workspace activity from one calm mobile dashboard.
+        </p>
       </div>
 
-      <div class="bg-white p-10 rounded-[2.5rem] shadow-2xl shadow-slate-200 border border-slate-100">
-        <h1 class="text-xl font-bold text-slate-900 mb-6">Welcome Back</h1>
+      <div class="surface-card rounded-[2rem] p-6 sm:p-8">
+        <div class="mb-6 flex items-start justify-between gap-4">
+          <div>
+            <p class="text-[11px] font-bold uppercase tracking-[0.26em] text-primary">Welcome Back</p>
+            <h1 class="mt-2 text-2xl font-bold text-ink">Tenant Sign In</h1>
+          </div>
+          <div class="flex h-12 w-12 items-center justify-center rounded-2xl border border-primary/15 bg-primary/10 text-primary">
+            <span class="material-symbols-outlined text-[26px]">shield_person</span>
+          </div>
+        </div>
         
         <div class="space-y-6">
           <TuiInput 
@@ -87,12 +98,12 @@ const handleLogin = async () => {
             required
           />
 
-          <div v-if="error" class="p-4 bg-red-50 border border-red-100 rounded-2xl text-xs text-red-600 font-bold">
+          <div v-if="error" class="rounded-2xl border border-danger/20 bg-danger/10 p-4 text-xs font-bold text-danger">
             {{ error }}
           </div>
 
           <TuiButton 
-            class="w-full !py-4 shadow-lg shadow-indigo-200" 
+            class="w-full !py-4" 
             :loading="isLoading"
             type="button"
             @click="handleLogin"
@@ -102,13 +113,13 @@ const handleLogin = async () => {
         </div>
 
         <div class="mt-6 text-center">
-          <router-link to="/platform/login" class="text-xs font-bold text-indigo-600 hover:underline uppercase tracking-widest">
+          <router-link to="/platform/login" class="text-xs font-bold uppercase tracking-[0.22em] text-primary hover:underline">
             Platform Admin Login
           </router-link>
         </div>
 
-        <div class="mt-8 text-center">
-          <p class="text-[10px] text-slate-600 font-bold uppercase tracking-widest leading-loose">
+        <div class="mt-8 border-t border-line/70 pt-6 text-center">
+          <p class="text-[10px] font-bold uppercase tracking-[0.22em] leading-loose text-ink-subtle">
             Enterprise Grade AI Orchestration<br/>
             © 2026 Aiworkforme Inc.
           </p>

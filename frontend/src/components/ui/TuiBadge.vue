@@ -14,15 +14,15 @@ const props = defineProps({
 
 const variants = {
   success:
-    'border-emerald-200 bg-emerald-50 text-emerald-700',
+    'border-success/25 bg-success/10 text-success',
   info:
-    'border-[var(--border-strong)] bg-white text-[var(--text)]',
+    'border-line-strong bg-surface-elevated/90 text-ink',
   warning:
-    'border-amber-200 bg-amber-50 text-amber-700',
+    'border-warning/25 bg-warning/10 text-warning',
   muted:
-    'border-[var(--border)] bg-white text-[var(--muted)]',
+    'border-line bg-surface/80 text-ink-muted',
   danger:
-    'border-red-500/50 bg-red-500/10 text-red-500'
+    'border-danger/30 bg-danger/10 text-danger'
 }
 
 const sizes = {

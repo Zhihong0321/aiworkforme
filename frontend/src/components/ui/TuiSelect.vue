@@ -40,10 +40,10 @@ const onChange = (event) => {
     <div class="relative">
       <select
         :class="[
-          'w-full appearance-none rounded-xl border px-4 py-3 pr-10 text-sm transition-all focus:outline-none focus:ring-2',
+          'w-full appearance-none rounded-2xl border px-4 py-3 pr-10 text-sm transition-all focus:outline-none focus:ring-2',
           dark 
             ? 'bg-white/5 border-white/10 text-slate-900 focus:border-white/30 focus:ring-white/10' 
-            : 'bg-white border-[var(--border-strong)] text-[var(--text)] focus:border-[var(--accent)] focus:ring-[rgba(29,78,216,0.15)]'
+            : 'border-line-strong bg-surface-elevated/90 text-[var(--text)] focus:border-primary focus:ring-primary/15'
         ]"
         :value="modelValue"
         @change="onChange"

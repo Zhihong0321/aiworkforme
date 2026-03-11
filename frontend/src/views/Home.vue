@@ -1,9 +1,8 @@
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { store } from '../store'
 import { request } from '../services/api'
-import TuiLoader from '../components/ui/TuiLoader.vue'
 
 const router = useRouter()
 const isLoading = ref(true)
@@ -39,11 +38,31 @@ onMounted(async () => {
 })
 
 const quickActions = [
-    { name: 'Inbox', path: '/inbox', icon: 'inbox', colorClass: 'bg-blue-50 dark:bg-blue-900/30 text-primary' },
-    { name: 'Add Lead', path: '/leads', icon: 'person_add', colorClass: 'bg-green-50 dark:bg-green-900/30 text-green-600' },
-    { name: 'Train Brain', path: '/knowledge', icon: 'psychology', colorClass: 'bg-purple-50 dark:bg-purple-900/30 text-purple-600' },
-    { name: 'Playground', path: '/playground', icon: 'play_circle', colorClass: 'bg-orange-50 dark:bg-orange-900/30 text-orange-600' }
+    { name: 'Inbox', path: '/inbox', icon: 'inbox', tone: 'accent' },
+    { name: 'Add Lead', path: '/leads', icon: 'person_add', tone: 'sage' },
+    { name: 'Train Brain', path: '/knowledge', icon: 'psychology', tone: 'sand' },
+    { name: 'Playground', path: '/playground', icon: 'play_circle', tone: 'clay' }
 ]
+
+const actionToneClass = (tone) => {
+    const tones = {
+        accent: 'border-primary/10 bg-primary/10 text-primary',
+        sage: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-300',
+        sand: 'border-warning/20 bg-warning/10 text-warning',
+        clay: 'border-orange-200 bg-orange-50 text-orange-700 dark:border-orange-500/20 dark:bg-orange-500/10 dark:text-orange-300'
+    }
+    return tones[tone] || tones.accent
+}
+
+const activityToneClass = (tone) => {
+    const tones = {
+        green: 'bg-success/10 text-success',
+        purple: 'bg-primary/10 text-primary',
+        blue: 'bg-sky-100 text-sky-700 dark:bg-sky-500/10 dark:text-sky-300',
+        slate: 'bg-surface-muted text-ink-muted'
+    }
+    return tones[tone] || tones.slate
+}
 
 const navigateTo = (path) => {
     router.push(path)
@@ -51,13 +70,14 @@ const navigateTo = (path) => {
 </script>
 
 <template>
-  <div class="flex flex-col min-h-[calc(100vh-64px)] w-full max-w-md mx-auto relative text-slate-900 dark:text-slate-100 bg-background-light dark:bg-background-dark overflow-hidden">
+  <div class="mobile-shell relative mx-auto flex min-h-[calc(100vh-76px)] w-full max-w-md flex-col overflow-hidden rounded-[2rem] border border-line/60 bg-background-light/70 text-ink shadow-panel">
     
     <main class="flex-1 pb-24 overflow-y-auto scrollbar-none">
         
-        <!-- Header area inside page to match typical iOS page structures if TopNav is transparent -->
-        <div class="px-4 py-6 pb-2">
-             <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">Overview</h1>
+        <div class="px-5 py-6 pb-3">
+             <p class="text-[11px] font-bold uppercase tracking-[0.26em] text-ink-subtle">Overview</p>
+             <h1 class="mt-2 text-3xl font-bold tracking-tight text-ink">Control Center</h1>
+             <p class="mt-2 text-sm text-ink-muted">Your mobile snapshot of agent health, leads, and next actions.</p>
         </div>
 
         <div v-if="isLoading" class="flex justify-center py-20">
@@ -65,85 +85,74 @@ const navigateTo = (path) => {
         </div>
 
         <template v-else>
-            <!-- Status Cards -->
             <section class="p-4 grid grid-cols-1 gap-3">
-                <div class="flex flex-col gap-4 rounded-3xl p-6 bg-primary/10 border border-primary/20 shadow-sm relative overflow-hidden">
-                    <span class="absolute -right-4 -top-4 bg-primary/20 w-32 h-32 rounded-full blur-3xl"></span>
+                <div class="relative overflow-hidden rounded-[1.75rem] border border-primary/15 bg-[linear-gradient(145deg,_rgb(var(--panel-elevated-rgb)_/_0.94),_rgb(var(--accent-soft-rgb)_/_0.88))] p-6 shadow-panel">
+                    <span class="absolute -right-4 -top-4 h-32 w-32 rounded-full bg-primary/15 blur-3xl"></span>
                     
-                    <div class="flex items-center justify-between border-b border-primary/10 pb-4 relative z-10">
+                    <div class="relative z-10 flex items-center justify-between border-b border-primary/10 pb-4">
                         <div class="flex flex-col">
-                            <p class="text-[10px] font-bold uppercase tracking-widest text-primary/80 mb-1">System Health</p>
-                            <p class="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                                <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.8)]"></span>
+                            <p class="mb-1 text-[10px] font-bold uppercase tracking-[0.22em] text-primary/80">System Health</p>
+                            <p class="flex items-center gap-2 text-xl font-bold text-ink">
+                                <span class="h-2.5 w-2.5 rounded-full bg-success shadow-[0_0_12px_rgb(var(--success-rgb)_/_0.4)]"></span>
                                 Optimal
                             </p>
                         </div>
-                        <div class="size-12 rounded-full bg-primary/20 flex items-center justify-center text-primary backdrop-blur-sm border border-primary/30">
+                        <div class="flex size-12 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary backdrop-blur-sm">
                             <span class="material-symbols-outlined text-3xl">verified_user</span>
                         </div>
                     </div>
                     
-                    <div class="grid grid-cols-2 gap-4 relative z-10">
+                    <div class="relative z-10 grid grid-cols-2 gap-4">
                         <div class="flex flex-col">
-                            <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Active Agents</p>
-                            <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ store.activeAgentId ? '1' : '0' }}</p>
+                            <p class="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-ink-muted">Active Agents</p>
+                            <p class="text-2xl font-bold text-ink">{{ store.activeAgentId ? '1' : '0' }}</p>
                         </div>
-                        <div class="flex flex-col border-l border-slate-200 dark:border-slate-700/50 pl-4">
-                            <p class="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-1">Total Leads</p>
-                            <p class="text-2xl font-bold text-slate-900 dark:text-white">{{ dashboardStats.totalLeads }}</p>
+                        <div class="flex flex-col border-l border-line/80 pl-4">
+                            <p class="mb-1 text-xs font-bold uppercase tracking-[0.2em] text-ink-muted">Total Leads</p>
+                            <p class="text-2xl font-bold text-ink">{{ dashboardStats.totalLeads }}</p>
                         </div>
                     </div>
                 </div>
             </section>
 
-            <!-- 2x2 Grid of Buttons -->
             <section class="p-4 pt-2">
-                <h2 class="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest mb-3 px-1">Quick Actions</h2>
+                <h2 class="mb-3 px-1 text-[11px] font-bold uppercase tracking-[0.24em] text-ink-subtle">Quick Actions</h2>
                 <div class="grid grid-cols-2 gap-3">
                     <button 
                         v-for="action in quickActions" 
                         :key="action.name"
                         @click="navigateTo(action.path)"
-                        class="flex flex-col items-center justify-center gap-3 rounded-3xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800/80 p-6 shadow-sm hover:shadow-md active:scale-95 transition-all text-center"
+                        class="surface-card flex flex-col items-center justify-center gap-3 rounded-[1.5rem] p-6 text-center transition-all active:scale-95 hover:-translate-y-0.5"
                     >
-                        <div class="flex h-14 w-14 items-center justify-center rounded-2xl shadow-inner border border-white/50 dark:border-slate-700/50" :class="action.colorClass">
+                        <div class="flex h-14 w-14 items-center justify-center rounded-2xl border shadow-inner" :class="actionToneClass(action.tone)">
                             <span class="material-symbols-outlined text-[28px]">{{ action.icon }}</span>
                         </div>
-                        <span class="text-sm font-bold text-slate-800 dark:text-slate-200">{{ action.name }}</span>
+                        <span class="text-sm font-bold text-ink">{{ action.name }}</span>
                     </button>
                 </div>
             </section>
 
-            <!-- Recent Activity -->
             <section class="p-4">
-                <div class="flex items-center justify-between mb-4 px-1">
-                    <h2 class="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Activity Log</h2>
-                    <button class="text-primary text-[11px] font-bold tracking-wider hover:underline">View All</button>
+                <div class="mb-4 flex items-center justify-between px-1">
+                    <h2 class="text-[11px] font-bold uppercase tracking-[0.24em] text-ink-subtle">Activity Log</h2>
+                    <button class="text-[11px] font-bold tracking-[0.2em] text-primary hover:underline">View All</button>
                 </div>
                 
                 <div class="space-y-2">
                     <div 
                         v-for="activity in dashboardStats.recentActivity" 
                         :key="activity.id"
-                        class="flex items-center gap-4 p-4 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700 transition-colors shadow-sm"
+                        class="surface-card flex items-center gap-4 rounded-[1.4rem] p-4 transition-colors"
                     >
-                        <!-- Dynamic Color formatting -->
-                        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl shadow-inner" 
-                            :class="{
-                                'bg-blue-50 dark:bg-blue-900/40 text-blue-600': activity.color === 'blue',
-                                'bg-green-50 dark:bg-green-900/40 text-green-600': activity.color === 'green',
-                                'bg-purple-50 dark:bg-purple-900/40 text-purple-600': activity.color === 'purple',
-                                'bg-slate-50 dark:bg-slate-900/60 text-slate-600': activity.color === 'slate'
-                            }"
-                        >
+                        <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl shadow-inner" :class="activityToneClass(activity.color)">
                             <span class="material-symbols-outlined text-xl">{{ activity.icon }}</span>
                         </div>
                         
                         <div class="flex-1 min-w-0">
-                            <p class="text-sm font-bold text-slate-900 dark:text-white truncate">{{ activity.title }}</p>
-                            <p class="text-xs font-medium text-slate-500 dark:text-slate-400 truncate mt-0.5">{{ activity.desc }}</p>
+                            <p class="truncate text-sm font-bold text-ink">{{ activity.title }}</p>
+                            <p class="mt-0.5 truncate text-xs font-medium text-ink-muted">{{ activity.desc }}</p>
                         </div>
-                        <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 whitespace-nowrap">{{ activity.time }}</p>
+                        <p class="whitespace-nowrap text-[10px] font-bold uppercase tracking-[0.2em] text-ink-subtle">{{ activity.time }}</p>
                     </div>
                 </div>
             </section>

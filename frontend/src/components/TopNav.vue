@@ -51,49 +51,47 @@ const pageTitle = computed(() => {
 
 <template>
   <div>
-    <!-- Navigation Drawer Overlay -->
     <div 
         v-show="isMobileMenuOpen" 
         class="fixed inset-0 z-50 overflow-hidden" 
         id="sidebar-drawer"
     >
       <div 
-          class="absolute inset-0 bg-slate-900/50 backdrop-blur-sm transition-opacity"
+          class="absolute inset-0 bg-[rgb(var(--text-rgb)_/_0.42)] backdrop-blur-sm transition-opacity"
           @click="toggleMobileMenu"
       ></div>
       <div 
-          class="absolute inset-y-0 left-0 w-full max-w-xs bg-white dark:bg-slate-950 shadow-2xl flex flex-col transform transition-transform duration-300"
+          class="absolute inset-y-0 left-0 flex w-full max-w-xs flex-col border-r border-line/80 bg-surface-elevated/95 px-1 shadow-2xl backdrop-blur-xl transition-transform duration-300"
           :class="isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'"
       >
-        <!-- Drawer Header / Agent Switcher -->
-        <div class="p-6 border-b border-slate-100 dark:border-slate-800">
+        <div class="border-b border-line/70 px-5 pb-5 pt-6">
           <div class="flex items-center justify-between mb-4">
-            <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Active Agent</span>
-            <button class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200" @click="toggleMobileMenu">
+            <span class="text-xs font-bold uppercase tracking-[0.24em] text-ink-subtle">Workspace</span>
+            <button class="rounded-full p-2 text-ink-subtle transition-colors hover:bg-surface-muted/80 hover:text-ink" @click="toggleMobileMenu">
               <span class="material-symbols-outlined">close</span>
             </button>
           </div>
-          <div class="flex items-center gap-3 p-3 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-900 cursor-pointer transition-colors relative group">
-            <div class="size-10 rounded-full bg-primary/20 flex items-center justify-center text-primary font-bold">
+          <div class="group relative flex cursor-pointer items-center gap-3 rounded-[1.5rem] border border-line/90 bg-surface-muted/80 p-3.5 transition-colors hover:border-line-strong hover:bg-surface-muted">
+            <div class="flex size-11 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-sm font-bold text-primary">
                 {{ activeAgentName.charAt(0).toUpperCase() }}
             </div>
             <div class="flex-1 overflow-hidden" v-if="!isPlatformAdmin">
-              <p class="font-bold text-slate-900 dark:text-slate-100 truncate">{{ activeAgentName }}</p>
-              <p class="text-xs text-slate-500">Active Now</p>
+              <p class="truncate font-bold text-ink">{{ activeAgentName }}</p>
+              <p class="text-xs text-ink-muted">Active now</p>
             </div>
             <div class="flex-1 overflow-hidden" v-else>
-               <p class="font-bold text-slate-900 dark:text-slate-100 truncate">Platform Admin</p>
+               <p class="truncate font-bold text-ink">Platform Admin</p>
+               <p class="text-xs text-ink-muted">Global controls</p>
             </div>
-            <span class="material-symbols-outlined text-slate-400">unfold_more</span>
+            <span class="material-symbols-outlined text-ink-subtle">unfold_more</span>
             
-            <!-- Minimal dropdown for agent switching -->
-            <div class="absolute top-[110%] left-0 w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg shadow-xl hidden group-hover:block z-50" v-if="!isPlatformAdmin && store.agents.length > 1">
+            <div class="absolute left-0 top-[110%] z-50 hidden w-full rounded-2xl border border-line bg-surface-elevated p-1 shadow-panel group-hover:block" v-if="!isPlatformAdmin && store.agents.length > 1">
                 <div 
                     v-for="agent in store.agents" 
                     :key="agent.id"
                     @click="store.setActiveAgent(agent.id)"
-                    class="px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm truncate"
-                    :class="{'font-bold text-primary': store.activeAgentId == agent.id}"
+                    class="cursor-pointer truncate rounded-xl px-4 py-2.5 text-sm transition-colors hover:bg-primary/10"
+                    :class="store.activeAgentId == agent.id ? 'font-bold text-primary' : 'text-ink-muted'"
                 >
                     {{ agent.name }}
                 </div>
@@ -101,23 +99,24 @@ const pageTitle = computed(() => {
           </div>
         </div>
 
-        <!-- Drawer Links -->
-        <nav class="flex-1 overflow-y-auto p-4 space-y-1">
+        <nav class="flex-1 space-y-1 overflow-y-auto p-4">
           <router-link
             v-for="item in navItems"
             :key="item.path"
             :to="item.path"
-            class="flex items-center gap-3 px-4 py-3 rounded-xl transition-colors"
-            :class="isActive(item.path) ? 'bg-primary/10 text-primary font-bold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'"
+            class="flex items-center gap-3 rounded-2xl px-4 py-3 transition-colors"
+            :class="isActive(item.path) ? 'bg-primary/10 text-primary font-bold shadow-[inset_0_0_0_1px_rgb(var(--accent-rgb)_/_0.14)]' : 'text-ink-muted hover:bg-surface-muted/80 hover:text-ink'"
           >
             <span class="material-symbols-outlined" :class="{'font-fill': isActive(item.path)}">{{ item.icon }}</span>
-            <span class="font-medium">{{ item.label }}</span>
+            <div class="min-w-0">
+              <span class="block truncate font-medium">{{ item.label }}</span>
+              <span class="block truncate text-[11px] font-medium text-ink-subtle">{{ item.description }}</span>
+            </div>
           </router-link>
         </nav>
 
-        <!-- Drawer Bottom Actions -->
-        <div class="p-4 mt-auto border-t border-slate-100 dark:border-slate-800 space-y-1">
-          <button @click="handleLogout" class="flex w-full items-center gap-3 px-4 py-3 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors">
+        <div class="mt-auto space-y-1 border-t border-line/70 p-4">
+          <button @click="handleLogout" class="flex w-full items-center gap-3 rounded-2xl px-4 py-3 text-ink-muted transition-colors hover:bg-danger/10 hover:text-danger">
             <span class="material-symbols-outlined">logout</span>
             <span class="font-medium">Logout</span>
           </button>
@@ -125,23 +124,25 @@ const pageTitle = computed(() => {
       </div>
     </div>
 
-    <!-- Top App Bar -->
-    <header class="sticky top-0 z-40 flex items-center bg-white/80 dark:bg-slate-950/80 backdrop-blur-md p-4 justify-between border-b border-slate-200 dark:border-slate-800 max-w-4xl mx-auto">
+    <header class="sticky top-0 z-40 mx-auto flex w-full max-w-5xl items-center justify-between border-b border-line/70 bg-surface/80 px-4 py-3 shadow-shell backdrop-blur-xl sm:px-6">
       <div class="flex items-center gap-4">
         <button 
             @click="toggleMobileMenu" 
-            class="text-slate-900 dark:text-slate-100 flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line/80 bg-surface-elevated/90 text-ink shadow-[0_8px_20px_-16px_rgb(var(--text-rgb)_/_0.55)] transition-colors hover:border-line-strong hover:bg-surface-muted"
         >
           <span class="material-symbols-outlined">menu</span>
         </button>
       </div>
-      <h2 class="text-slate-900 dark:text-slate-100 text-lg font-bold leading-tight tracking-[-0.015em] flex-1 text-center truncate px-4">
-        {{ pageTitle }}
-      </h2>
-      <div class="flex items-center justify-end w-10">
-        <button class="text-slate-900 dark:text-slate-100 flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer relative">
+      <div class="min-w-0 flex-1 px-4 text-center">
+        <p class="text-[10px] font-bold uppercase tracking-[0.26em] text-ink-subtle">Aiworkfor.me</p>
+        <h2 class="truncate text-base font-bold leading-tight tracking-[-0.015em] text-ink sm:text-lg">
+          {{ pageTitle }}
+        </h2>
+      </div>
+      <div class="flex w-11 items-center justify-end">
+        <button class="relative flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full border border-line/80 bg-surface-elevated/90 text-ink shadow-[0_8px_20px_-16px_rgb(var(--text-rgb)_/_0.55)] transition-colors hover:border-line-strong hover:bg-surface-muted">
           <span class="material-symbols-outlined">notifications</span>
-          <span class="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full border border-white dark:border-slate-950"></span>
+          <span class="absolute right-3 top-3 h-2.5 w-2.5 rounded-full border border-surface-elevated bg-danger"></span>
         </button>
       </div>
     </header>

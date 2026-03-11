@@ -33,7 +33,7 @@ const onInput = (event) => {
       :type="type"
       :value="modelValue"
       :placeholder="placeholder"
-      class="w-full rounded-md border border-[var(--border-strong)] bg-white px-3 py-2 text-[var(--text)] transition focus:border-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[rgba(29,78,216,0.15)]"
+      class="w-full rounded-2xl border border-line-strong bg-surface-elevated/90 px-4 py-3 text-ink transition placeholder:text-ink-subtle focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/15"
       @input="onInput"
     />
   </label>
