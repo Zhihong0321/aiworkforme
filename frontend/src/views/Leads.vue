@@ -121,11 +121,14 @@ const setLeadMode = async (lead, mode) => {
     if (mode === 'working') {
       await request(`/messaging/leads/${lead.id}/start-work`, {
         method: 'POST',
-        body: JSON.stringify({ channel: 'whatsapp' })
+        body: JSON.stringify({
+          channel: 'whatsapp',
+          channel_session_id: store.activeAgent?.preferred_channel_session_id || null,
+        })
       })
       actionMessage.value = `Work started on ${lead.name || lead.external_id}.`
     } else {
-      await request(`/workspaces/${store.activeWorkspaceId}/leads/${lead.id}/mode`, {
+      await request(`/leads/${lead.id}/mode`, {
         method: 'POST',
         body: JSON.stringify({ mode })
       })

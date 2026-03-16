@@ -247,6 +247,10 @@ def test_trigger_due_followups_enqueues_audio_message_when_allowed():
     )
     now = datetime.utcnow()
     session.add(channel)
+    session.commit()
+    session.refresh(channel)
+    agent.preferred_channel_session_id = channel.id
+    session.add(agent)
     session.add(
         UnifiedMessage(
             tenant_id=lead.tenant_id,

@@ -16,5 +16,6 @@ REPO NAME : AIworkforMe
 - Restructured agent UX into per-agent dashboards with WhatsApp routing and agent-scoped contacts, knowledge, and inbox flows
 - Clarified channel setup UI with explicit Add New Channel actions and verified frontend build
 - Added Start Working and On Hold controls to agent dashboard contacts and verified frontend build
+- Fixed per-agent WhatsApp routing so manual starts and AI CRM follow-ups use the assigned channel, with backend regression tests and frontend build
 
 =====================

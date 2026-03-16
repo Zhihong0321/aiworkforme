@@ -152,16 +152,6 @@ async def start_lead_work(
 
     lead = _validate_lead_tenant(session, lead_id, auth.tenant.id)
     _validate_lead_number_for_whatsapp(lead)
-    channel_session = _resolve_whatsapp_channel_session_for_tenant(
-        session=session,
-        tenant_id=auth.tenant.id,
-        channel_session_id=payload.channel_session_id,
-    )
-    if channel_session.status != SessionStatus.ACTIVE:
-        raise HTTPException(
-            status_code=400,
-            detail="WhatsApp session is not active. Refresh/scan QR in Channel Setup first.",
-        )
 
     thread = _get_or_create_thread(session, auth.tenant.id, lead.id, channel)
     if not thread.agent_id:
@@ -170,9 +160,28 @@ async def start_lead_work(
     if not agent or agent.tenant_id != auth.tenant.id:
         raise HTTPException(status_code=400, detail="Assigned agent is unavailable")
 
+    requested_channel_session_id = payload.channel_session_id
+    if requested_channel_session_id is None:
+        requested_channel_session_id = getattr(agent, "preferred_channel_session_id", None)
+    if requested_channel_session_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No WhatsApp channel is assigned to this agent. Pick the exact channel in Agent Dashboard first.",
+        )
+
     include_context_prompt = get_bool_system_setting(
         session, "record_context_prompt", default=False
     )
+    channel_session = _resolve_whatsapp_channel_session_for_tenant(
+        session=session,
+        tenant_id=auth.tenant.id,
+        channel_session_id=requested_channel_session_id,
+    )
+    if channel_session.status != SessionStatus.ACTIVE:
+        raise HTTPException(
+            status_code=400,
+            detail="WhatsApp session is not active. Refresh/scan QR in Channel Setup first.",
+        )
     text_content, ai_trace = await _generate_initial_outreach_text(
         router, agent, lead, include_context_prompt
     )

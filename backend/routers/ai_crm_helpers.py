@@ -435,40 +435,23 @@ def resolve_channel_session_id(
     if channel != "whatsapp":
         return None
 
-    if fallback_channel_session_id:
-        thread_session = session.get(ChannelSession, fallback_channel_session_id)
-        if (
-            thread_session
-            and thread_session.tenant_id == tenant_id
-            and thread_session.channel_type == ChannelType.WHATSAPP
-            and thread_session.status == SessionStatus.ACTIVE
-        ):
-            return int(thread_session.id)
+    if not agent_id:
+        return None
 
-    if agent_id:
-        agent = session.get(Agent, agent_id)
-        preferred_session_id = getattr(agent, "preferred_channel_session_id", None) if agent else None
-        if preferred_session_id:
-            preferred_session = session.get(ChannelSession, preferred_session_id)
-            if (
-                preferred_session
-                and preferred_session.tenant_id == tenant_id
-                and preferred_session.channel_type == ChannelType.WHATSAPP
-                and preferred_session.status == SessionStatus.ACTIVE
-            ):
-                return int(preferred_session.id)
+    agent = session.get(Agent, agent_id)
+    preferred_session_id = getattr(agent, "preferred_channel_session_id", None) if agent else None
+    if not preferred_session_id:
+        return None
 
-    active = session.exec(
-        select(ChannelSession)
-        .where(
-            ChannelSession.tenant_id == tenant_id,
-            ChannelSession.channel_type == ChannelType.WHATSAPP,
-            ChannelSession.status == SessionStatus.ACTIVE,
-        )
-        .order_by(ChannelSession.updated_at.desc())
-        .limit(1)
-    ).first()
-    return int(active.id) if active and active.id else None
+    preferred_session = session.get(ChannelSession, preferred_session_id)
+    if (
+        preferred_session
+        and preferred_session.tenant_id == tenant_id
+        and preferred_session.channel_type == ChannelType.WHATSAPP
+        and preferred_session.status == SessionStatus.ACTIVE
+    ):
+        return int(preferred_session.id)
+    return None
 
 
 def clear_thread_followup_state(

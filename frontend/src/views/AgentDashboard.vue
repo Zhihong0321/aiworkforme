@@ -351,7 +351,10 @@ const setLeadMode = async (lead, mode) => {
     if (mode === 'working') {
       await request(`/messaging/leads/${lead.id}/start-work`, {
         method: 'POST',
-        body: JSON.stringify({ channel: 'whatsapp' }),
+        body: JSON.stringify({
+          channel: 'whatsapp',
+          channel_session_id: form.preferred_channel_session_id || null,
+        }),
       })
       setToast(`AI started for ${lead.name || lead.external_id}`)
     } else {
@@ -902,7 +905,7 @@ onMounted(loadDashboard)
           <article class="rounded-[1.75rem] border border-line/80 bg-surface-elevated/90 p-5 shadow-shell">
             <h2 class="text-xl font-bold text-ink">Current Routing</h2>
             <p class="mt-2 text-sm leading-6 text-ink-muted">
-              New inbound messages will prefer this assigned WhatsApp when deciding which agent should respond. Follow-up messages also reuse the thread’s WhatsApp session whenever possible.
+              New outbound starts and follow-ups use this agent's assigned WhatsApp. If that channel is disconnected, the send should stop instead of silently switching to another number.
             </p>
             <div class="mt-5 rounded-[1.4rem] border border-line/80 bg-surface p-4">
               <p class="text-[11px] font-bold uppercase tracking-[0.2em] text-ink-subtle">Assigned Number</p>
