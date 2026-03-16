@@ -24,6 +24,7 @@ from .ai_crm_helpers import (
     ensure_control,
     normalize_aggressiveness,
     normalize_strategy,
+    synchronize_active_thread_assignments,
     upsert_thread_state,
     validate_agent,
 )
@@ -91,6 +92,7 @@ def list_ai_crm_threads(
 ):
     validate_agent(session, auth.tenant.id, agent_id)
     control = ensure_control(session, auth.tenant.id, agent_id)
+    synchronize_active_thread_assignments(session, auth.tenant.id)
     review_after_hours = max(1, min(24 * 14, int(control.review_after_hours or 24)))
     now = datetime.utcnow()
 
@@ -100,8 +102,8 @@ def list_ai_crm_threads(
         .where(
             UnifiedThread.tenant_id == auth.tenant.id,
             UnifiedThread.status == "active",
+            UnifiedThread.agent_id == agent_id,
             Lead.tenant_id == auth.tenant.id,
-            Lead.agent_id == agent_id,
         )
         .order_by(UnifiedThread.updated_at.desc())
     ).all()

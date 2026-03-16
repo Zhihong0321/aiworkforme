@@ -37,6 +37,7 @@ from .ai_crm_helpers import (
     safe_status,
     safe_message_type,
     strategy_for_status,
+    synchronize_active_thread_assignments,
     upsert_thread_state,
 )
 from .ai_crm_schemas import AICRMScanResponse, AICRMTriggerResponse
@@ -96,6 +97,7 @@ async def scan_agent_threads(
     force_all: bool,
 ) -> AICRMScanResponse:
     control = ensure_control(session, tenant_id, agent_id)
+    synchronize_active_thread_assignments(session, tenant_id)
     review_after_hours = max(1, min(24 * 14, int(control.review_after_hours or 24)))
     now = datetime.utcnow()
     rows = session.exec(
@@ -104,8 +106,8 @@ async def scan_agent_threads(
         .where(
             UnifiedThread.tenant_id == tenant_id,
             UnifiedThread.status == "active",
+            UnifiedThread.agent_id == agent_id,
             Lead.tenant_id == tenant_id,
-            Lead.agent_id == agent_id,
         )
         .order_by(UnifiedThread.updated_at.desc())
     ).all()

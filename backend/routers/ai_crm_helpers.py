@@ -24,9 +24,12 @@ from src.adapters.db.crm_models import (
     AICRMFollowupMessageType,
     AICRMLeadStatus,
     AICRMThreadState,
+    Lead,
 )
+from src.adapters.db.messaging_models import UnifiedMessage, UnifiedThread
 
 from .ai_crm_schemas import AICRMControlResponse
+from .messaging_helpers_validation import sync_whatsapp_thread_assignment
 
 
 logger = logging.getLogger(__name__)
@@ -100,6 +103,52 @@ def as_control_response(control: AgentCRMProfile) -> AICRMControlResponse:
         rejected_strategy=control.rejected_strategy.value,
         double_reject_strategy=control.double_reject_strategy.value,
     )
+
+
+def synchronize_active_thread_assignments(session: Session, tenant_id: int) -> int:
+    rows = session.exec(
+        select(UnifiedThread, Lead)
+        .join(Lead, Lead.id == UnifiedThread.lead_id)
+        .where(
+            UnifiedThread.tenant_id == tenant_id,
+            UnifiedThread.status == "active",
+            Lead.tenant_id == tenant_id,
+            UnifiedThread.channel == "whatsapp",
+        )
+    ).all()
+
+    changed = 0
+    for thread, lead in rows:
+        latest_channel_session_id = session.exec(
+            select(UnifiedMessage.channel_session_id)
+            .where(
+                UnifiedMessage.tenant_id == tenant_id,
+                UnifiedMessage.thread_id == thread.id,
+                UnifiedMessage.channel_session_id.is_not(None),
+            )
+            .order_by(UnifiedMessage.created_at.desc(), UnifiedMessage.id.desc())
+            .limit(1)
+        ).first()
+        if latest_channel_session_id is not None:
+            if sync_whatsapp_thread_assignment(
+                session=session,
+                tenant_id=tenant_id,
+                lead=lead,
+                thread=thread,
+                channel_session_id=int(latest_channel_session_id),
+            ):
+                changed += 1
+                continue
+
+        if thread.agent_id is not None and lead.agent_id != thread.agent_id:
+            lead.agent_id = thread.agent_id
+            session.add(lead)
+            changed += 1
+
+    if changed:
+        session.commit()
+
+    return changed
 
 
 def status_from_text(text: str, last_direction: str) -> Tuple[AICRMLeadStatus, str, str, Optional[int]]:

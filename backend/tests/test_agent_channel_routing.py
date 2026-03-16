@@ -185,3 +185,82 @@ def test_start_lead_work_uses_agent_preferred_channel_when_payload_omits_channel
     assert outbound.channel_session_id == channel_b.id
     assert queue is not None
     assert queue.channel_session_id == channel_b.id
+
+
+def test_start_lead_work_respects_lead_agent_when_workspace_is_missing(monkeypatch):
+    session = _make_session()
+    tenant = Tenant(id=51, name="Tenant 51")
+    session.add(tenant)
+
+    channel = ChannelSession(
+        tenant_id=tenant.id,
+        channel_type=ChannelType.WHATSAPP,
+        session_identifier="channel-b",
+        display_name="Channel B",
+        status=SessionStatus.ACTIVE,
+        session_metadata={},
+    )
+    session.add(channel)
+    session.commit()
+    session.refresh(channel)
+
+    agent_a = Agent(id=151, tenant_id=tenant.id, name="Agent A", system_prompt="A")
+    agent_b = Agent(
+        id=152,
+        tenant_id=tenant.id,
+        name="Agent B",
+        system_prompt="B",
+        preferred_channel_session_id=channel.id,
+    )
+    lead = Lead(
+        id=351,
+        tenant_id=tenant.id,
+        workspace_id=None,
+        agent_id=agent_b.id,
+        external_id="60123450000",
+        name="Casey",
+        stage="NEW",
+    )
+    session.add(agent_a)
+    session.add(agent_b)
+    session.add(lead)
+    session.commit()
+
+    async def _fake_generate_initial_outreach_text(router, agent_obj, lead_obj, include_context_prompt):
+        assert agent_obj.id == agent_b.id
+        assert lead_obj.id == lead.id
+        return "Hello from Agent B.", {"provider": "test", "model": "fake", "usage": {}}
+
+    monkeypatch.setattr(
+        "routers.messaging_core_routes._generate_initial_outreach_text",
+        _fake_generate_initial_outreach_text,
+    )
+    monkeypatch.setattr(
+        "routers.messaging_core_routes.dispatch_next_outbound_for_tenant",
+        lambda session_obj, tenant_id: None,
+    )
+
+    auth = SimpleNamespace(tenant=SimpleNamespace(id=tenant.id))
+    response = asyncio.run(
+        start_lead_work(
+            lead_id=int(lead.id),
+            payload=LeadWorkStartRequest(channel="whatsapp"),
+            session=session,
+            auth=auth,
+            router=SimpleNamespace(),
+        )
+    )
+
+    thread = session.exec(select(UnifiedThread).where(UnifiedThread.lead_id == lead.id)).first()
+    outbound = session.exec(
+        select(UnifiedMessage).where(
+            UnifiedMessage.lead_id == lead.id,
+            UnifiedMessage.direction == "outbound",
+        )
+    ).first()
+
+    assert response.channel_session_id == channel.id
+    assert thread is not None
+    assert thread.agent_id == agent_b.id
+    assert outbound is not None
+    assert outbound.channel_session_id == channel.id

@@ -23,5 +23,6 @@ REPO NAME : AIworkforMe
 - Added a conversation-thread reset action that archives the current inbox thread, cancels stale queued sends, starts a fresh active thread, filters AI CRM to active threads, and validated with backend tests plus a frontend build.
 - Fixed duplicate WhatsApp sales-material sends by tracing them to ambiguous provider read-timeouts, then suppressing retries after a sent request and validating with focused backend regressions.
 - Added a Reset Thread button on agent contact cards and verified frontend build
+- Fixed empty inbox by syncing WhatsApp thread ownership to the assigned agent and restoring chat visibility.
 
 =====================

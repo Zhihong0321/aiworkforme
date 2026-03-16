@@ -10,7 +10,7 @@ SAFE CHANGE: Keep error codes/messages compatible.
 import os
 import re
 from datetime import datetime, timedelta
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from fastapi import HTTPException
 from sqlmodel import Session, select
@@ -62,6 +62,11 @@ def resolve_agent_for_lead(session: Session, tenant_id: int, lead_id: int) -> in
     if not lead or lead.tenant_id != tenant_id:
         raise HTTPException(status_code=404, detail="Lead not found")
 
+    if lead.agent_id is not None:
+        agent = session.get(Agent, lead.agent_id)
+        if agent and agent.tenant_id == tenant_id:
+            return agent.id
+
     workspace = session.get(Workspace, lead.workspace_id)
     if workspace and workspace.tenant_id == tenant_id and workspace.agent_id is not None:
         agent = session.get(Agent, workspace.agent_id)
@@ -78,6 +83,53 @@ def resolve_agent_for_lead(session: Session, tenant_id: int, lead_id: int) -> in
         status_code=400,
         detail="No AI agent is configured for tenant. Configure at least one agent first.",
     )
+
+
+def resolve_agent_for_channel_session(
+    session: Session,
+    tenant_id: int,
+    channel_session_id: Optional[int],
+) -> Optional[Agent]:
+    if channel_session_id is None:
+        return None
+
+    matches = session.exec(
+        select(Agent)
+        .where(
+            Agent.tenant_id == tenant_id,
+            Agent.preferred_channel_session_id == channel_session_id,
+        )
+        .order_by(Agent.id.asc())
+    ).all()
+    if len(matches) != 1:
+        return None
+    return matches[0]
+
+
+def sync_whatsapp_thread_assignment(
+    session: Session,
+    tenant_id: int,
+    lead: Lead,
+    thread: UnifiedThread,
+    channel_session_id: Optional[int],
+) -> bool:
+    owner = resolve_agent_for_channel_session(session, tenant_id, channel_session_id)
+    if owner is None:
+        return False
+
+    changed = False
+    if lead.agent_id != owner.id:
+        lead.agent_id = owner.id
+        session.add(lead)
+        changed = True
+
+    if thread.agent_id != owner.id:
+        thread.agent_id = owner.id
+        thread.updated_at = datetime.utcnow()
+        session.add(thread)
+        changed = True
+
+    return changed
 
 
 def get_or_create_thread(session: Session, tenant_id: int, lead_id: int, channel: str) -> UnifiedThread:
@@ -132,6 +184,170 @@ def normalize_session_key(value: str) -> str:
     return normalized
 
 
+def _normalize_whatsapp_phone_candidate(value: Optional[str]) -> Optional[str]:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+
+    if "@" in raw:
+        raw = raw.split("@", 1)[0]
+
+    digits = re.sub(r"\D+", "", raw)
+    if 8 <= len(digits) <= 15:
+        return digits
+    return None
+
+
+def _is_phone_like_label(value: Optional[str]) -> bool:
+    normalized = _normalize_whatsapp_phone_candidate(value)
+    return normalized is not None and normalized == re.sub(r"\D+", "", str(value or ""))
+
+
+def _description_from_inputs(description: Optional[str], display_name: Optional[str]) -> Optional[str]:
+    preferred = str(description or "").strip()
+    if preferred:
+        return preferred
+
+    fallback = str(display_name or "").strip()
+    if fallback:
+        return fallback
+    return None
+
+
+def _metadata_provider_session_id(channel_session: ChannelSession) -> Optional[str]:
+    metadata = channel_session.session_metadata if isinstance(channel_session.session_metadata, dict) else {}
+    raw = metadata.get("provider_session_id")
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    return None
+
+
+def _extract_phone_candidate_from_node(
+    node: Any,
+    parent_keys: Sequence[str] = (),
+) -> Optional[Tuple[int, str]]:
+    if isinstance(node, dict):
+        best: Optional[Tuple[int, str]] = None
+        for raw_key, value in node.items():
+            key = str(raw_key or "").strip().lower()
+            candidate = _extract_phone_candidate_from_node(value, (*parent_keys, key))
+            if candidate and (best is None or candidate[0] > best[0]):
+                best = candidate
+        return best
+
+    if isinstance(node, list):
+        best: Optional[Tuple[int, str]] = None
+        for item in node:
+            candidate = _extract_phone_candidate_from_node(item, parent_keys)
+            if candidate and (best is None or candidate[0] > best[0]):
+                best = candidate
+        return best
+
+    if not isinstance(node, str):
+        return None
+
+    raw = node.strip()
+    if not raw:
+        return None
+
+    normalized = _normalize_whatsapp_phone_candidate(raw)
+    if not normalized:
+        return None
+
+    keys = [str(k or "").lower() for k in parent_keys]
+    last_key = keys[-1] if keys else ""
+    joined = ".".join(keys)
+
+    if "@s.whatsapp.net" in raw or "@lid" in raw:
+        return (100, normalized)
+
+    high_signal_parts = (
+        "phone",
+        "number",
+        "mobile",
+        "msisdn",
+        "jid",
+        "wid",
+        "whatsapp",
+    )
+    if any(part in last_key for part in high_signal_parts):
+        return (90, normalized)
+
+    if last_key == "id" and any(
+        scope in joined for scope in ("me", "self", "account", "owner", "user", "profile")
+    ):
+        return (80, normalized)
+
+    return None
+
+
+def extract_whatsapp_phone_from_payload(payload: Optional[Dict[str, Any]]) -> Optional[str]:
+    if not isinstance(payload, dict):
+        return None
+    candidate = _extract_phone_candidate_from_node(payload)
+    return candidate[1] if candidate else None
+
+
+def sync_whatsapp_channel_identity(
+    channel_session: ChannelSession,
+    *,
+    provider_payload: Optional[Dict[str, Any]] = None,
+    explicit_phone: Optional[str] = None,
+    description: Optional[str] = None,
+    provider_session_id: Optional[str] = None,
+) -> bool:
+    metadata = dict(channel_session.session_metadata or {})
+    changed = False
+
+    description_value = str(description or "").strip()
+    if description_value and metadata.get("description") != description_value:
+        metadata["description"] = description_value
+        changed = True
+
+    provider_session_value = str(
+        provider_session_id
+        or metadata.get("provider_session_id")
+        or channel_session.session_identifier
+        or ""
+    ).strip()
+    if provider_session_value and metadata.get("provider_session_id") != provider_session_value:
+        metadata["provider_session_id"] = provider_session_value
+        changed = True
+
+    connected_number = _normalize_whatsapp_phone_candidate(explicit_phone) or extract_whatsapp_phone_from_payload(
+        provider_payload
+    )
+    if connected_number:
+        if not metadata.get("description"):
+            existing_label = str(channel_session.display_name or "").strip()
+            if existing_label and not _is_phone_like_label(existing_label):
+                metadata["description"] = existing_label
+                changed = True
+
+        for key in ("phone", "phone_number", "whatsapp_number", "wa_phone", "connected_number"):
+            if metadata.get(key) != connected_number:
+                metadata[key] = connected_number
+                changed = True
+
+        if metadata.get("channel_identity") != connected_number:
+            metadata["channel_identity"] = connected_number
+            changed = True
+
+        if channel_session.session_identifier != connected_number:
+            channel_session.session_identifier = connected_number
+            changed = True
+
+        if channel_session.display_name != connected_number:
+            channel_session.display_name = connected_number
+            changed = True
+
+    if channel_session.session_metadata != metadata:
+        channel_session.session_metadata = metadata
+        changed = True
+
+    return changed
+
+
 def resolve_whatsapp_base_url(
     channel_session: Optional[ChannelSession] = None, override_url: Optional[str] = None
 ) -> str:
@@ -177,15 +393,23 @@ def upsert_whatsapp_channel_session(
     tenant_id: int,
     session_identifier: str,
     display_name: Optional[str],
+    description: Optional[str],
     provider_base_url: Optional[str],
 ) -> ChannelSession:
-    channel_session = session.exec(
+    candidates = session.exec(
         select(ChannelSession).where(
             ChannelSession.tenant_id == tenant_id,
             ChannelSession.channel_type == ChannelType.WHATSAPP,
-            ChannelSession.session_identifier == session_identifier,
         )
-    ).first()
+    ).all()
+    channel_session = next(
+        (
+            item for item in candidates
+            if item.session_identifier == session_identifier
+            or _metadata_provider_session_id(item) == session_identifier
+        ),
+        None,
+    )
 
     now = datetime.utcnow()
     if not channel_session:
@@ -207,11 +431,23 @@ def upsert_whatsapp_channel_session(
     metadata = dict(channel_session.session_metadata or {})
     if provider_base_url:
         metadata["provider_base_url"] = provider_base_url.rstrip("/")
+    if metadata.get("provider_session_id") != session_identifier:
+        metadata["provider_session_id"] = session_identifier
+    description_value = _description_from_inputs(description, display_name)
+    if description_value:
+        metadata["description"] = description_value
     channel_session.session_metadata = metadata
     session.add(channel_session)
     session.commit()
     session.refresh(channel_session)
     return channel_session
+
+
+def whatsapp_provider_session_identifier(channel_session: ChannelSession) -> str:
+    metadata_value = _metadata_provider_session_id(channel_session)
+    if metadata_value:
+        return metadata_value
+    return channel_session.session_identifier
 
 
 def assert_whatsapp_channel_session_for_tenant(

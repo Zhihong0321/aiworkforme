@@ -33,6 +33,7 @@ from .messaging_helpers import (
     resolve_whatsapp_channel_session_for_tenant as _resolve_whatsapp_channel_session_for_tenant,
     stage_value as _stage_value,
     sync_whatsapp_channel_identity as _sync_whatsapp_channel_identity,
+    sync_whatsapp_thread_assignment as _sync_whatsapp_thread_assignment,
     validate_channel_session as _validate_channel_session,
     validate_lead_number_for_whatsapp as _validate_lead_number_for_whatsapp,
     validate_lead_tenant as _validate_lead_tenant,
@@ -372,6 +373,20 @@ def create_inbound_message(
         session.add(message)
         session.commit()
         session.refresh(message)
+
+    if channel == "whatsapp" and channel_session is not None and message.thread_id is not None:
+        thread = session.get(UnifiedThread, message.thread_id)
+        if thread and thread.tenant_id == auth.tenant.id:
+            if _sync_whatsapp_thread_assignment(
+                session=session,
+                tenant_id=auth.tenant.id,
+                lead=lead,
+                thread=thread,
+                channel_session_id=channel_session.id,
+            ):
+                session.commit()
+                session.refresh(lead)
+                session.refresh(thread)
 
     return MessageCreateResponse(
         message_id=message.id,
