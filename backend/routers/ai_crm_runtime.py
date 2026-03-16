@@ -17,9 +17,9 @@ from sqlmodel import Session, func, select
 from src.adapters.db.crm_models import (
     AgentCRMProfile,
     AICRMFollowupStrategy,
+    AICRMFollowupMessageType,
     AICRMLeadStatus,
     AICRMThreadState,
-    AgentCRMProfile,
     Lead,
 )
 from src.adapters.db.messaging_models import OutboundQueue, UnifiedMessage, UnifiedThread
@@ -27,13 +27,15 @@ from src.infra.llm.router import LLMRouter
 
 from .ai_crm_helpers import (
     analyze_thread_with_ai,
-    base_hours_for_aggressiveness,
+    clear_thread_followup_state,
     compute_next_followup_at,
     compute_planned_followup_hours,
     ensure_control,
     generate_followup_text,
+    normalize_bool,
     resolve_channel_session_id,
     safe_status,
+    safe_message_type,
     strategy_for_status,
     upsert_thread_state,
 )
@@ -94,6 +96,8 @@ async def scan_agent_threads(
     force_all: bool,
 ) -> AICRMScanResponse:
     control = ensure_control(session, tenant_id, agent_id)
+    review_after_hours = max(1, min(24 * 14, int(control.review_after_hours or 24)))
+    now = datetime.utcnow()
     rows = session.exec(
         select(UnifiedThread, Lead)
         .join(Lead, Lead.id == UnifiedThread.lead_id)
@@ -112,7 +116,14 @@ async def scan_agent_threads(
 
     for thread, lead in rows:
         try:
-            state = upsert_thread_state(session, tenant_id, agent_id, thread.id, lead.id)
+            state = upsert_thread_state(
+                session=session,
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                thread_id=thread.id,
+                lead_id=lead.id,
+                workspace_id=lead.workspace_id,
+            )
             total_messages = int(
                 session.exec(
                     select(func.count(UnifiedMessage.id)).where(
@@ -122,10 +133,38 @@ async def scan_agent_threads(
                 ).one()
             )
 
-            threshold = max(3, min(10, int(control.scan_frequency_messages or 4)))
+            last_message = session.exec(
+                select(UnifiedMessage)
+                .where(
+                    UnifiedMessage.tenant_id == tenant_id,
+                    UnifiedMessage.thread_id == thread.id,
+                )
+                .order_by(UnifiedMessage.created_at.desc(), UnifiedMessage.id.desc())
+                .limit(1)
+            ).first()
+            if not last_message:
+                skipped_threads += 1
+                continue
+
+            if last_message.direction != "outbound":
+                if state.next_followup_at is not None:
+                    clear_thread_followup_state(
+                        session=session,
+                        tenant_id=tenant_id,
+                        thread_id=thread.id,
+                        reason="customer_replied_or_thread_active",
+                    )
+                skipped_threads += 1
+                continue
+
+            silence_hours = max(
+                0.0,
+                (now - last_message.created_at).total_seconds() / 3600.0,
+            )
+            conversation_changed = total_messages != int(state.last_scanned_message_count or 0)
             should_scan = force_all or (
-                total_messages >= threshold
-                and (total_messages - int(state.last_scanned_message_count or 0) >= threshold)
+                silence_hours >= review_after_hours
+                and conversation_changed
             )
 
             if not should_scan:
@@ -140,11 +179,14 @@ async def scan_agent_threads(
                 )
                 .order_by(UnifiedMessage.created_at.asc())
             ).all()
-            if not messages:
-                skipped_threads += 1
-                continue
 
-            parsed = await analyze_thread_with_ai(router, control, messages)
+            parsed = await analyze_thread_with_ai(
+                router=router,
+                control=control,
+                messages=messages,
+                silence_hours=silence_hours,
+                review_after_hours=review_after_hours,
+            )
             detected_status = safe_status(parsed.get("status"))
             raw_detected_status = str(parsed.get("status") or "").strip().upper() or "NO_RESPONSE"
 
@@ -159,11 +201,24 @@ async def scan_agent_threads(
                 reject_count = 0
 
             strategy = strategy_for_status(control, detected_status)
-            recommended_hours = parsed.get("recommended_followup_hours")
+            should_follow_up = normalize_bool(
+                parsed.get("should_follow_up"),
+                default=(strategy != AICRMFollowupStrategy.STOP),
+            )
+            if not should_follow_up:
+                strategy = AICRMFollowupStrategy.STOP
+
+            recommended_hours = parsed.get("recommended_wait_hours")
+            if recommended_hours is None:
+                recommended_hours = parsed.get("recommended_followup_hours")
             try:
                 recommended_hours = int(recommended_hours) if recommended_hours is not None else None
             except Exception:
                 recommended_hours = None
+            followup_message_type = safe_message_type(
+                parsed.get("recommended_message_type"),
+                bool(control.allow_voice_notes),
+            )
 
             planned_followup_hours = compute_planned_followup_hours(
                 aggressiveness=control.aggressiveness,
@@ -181,12 +236,14 @@ async def scan_agent_threads(
                 "status_source": str(parsed.get("_analysis_source") or "heuristic_fallback"),
                 "status_raw": raw_detected_status,
                 "status_final": detected_status.value,
-                "scan_frequency_messages": threshold,
+                "review_after_hours": review_after_hours,
                 "message_count": total_messages,
-                "messages_since_last_scan": max(0, total_messages - int(state.last_scanned_message_count or 0)),
+                "silence_hours": round(silence_hours, 1),
                 "aggressiveness": control.aggressiveness.value,
                 "followup_strategy": strategy.value,
-                "recommended_followup_hours": recommended_hours,
+                "followup_message_type": followup_message_type.value,
+                "should_follow_up": should_follow_up,
+                "recommended_wait_hours": recommended_hours,
                 "planned_followup_hours": planned_followup_hours,
                 "next_followup_at": next_followup_at.isoformat() if next_followup_at else None,
                 "reject_count": reject_count,
@@ -201,6 +258,7 @@ async def scan_agent_threads(
             state.summary = str(parsed.get("summary") or "").strip()[:500] or None
             state.customer_reaction = str(parsed.get("customer_reaction") or "").strip()[:128] or None
             state.followup_strategy = strategy
+            state.followup_message_type = followup_message_type
             state.aggressiveness = control.aggressiveness
             state.reject_count = reject_count
             state.reason_trace = reason_trace
@@ -210,6 +268,7 @@ async def scan_agent_threads(
             state.updated_at = datetime.utcnow()
             session.add(state)
 
+            lead.last_followup_review_at = datetime.utcnow()
             lead.next_followup_at = next_followup_at
             session.add(lead)
 
@@ -278,6 +337,49 @@ async def trigger_due_followups(
                 skipped += 1
                 continue
 
+            latest_message = session.exec(
+                select(UnifiedMessage)
+                .where(
+                    UnifiedMessage.tenant_id == tenant_id,
+                    UnifiedMessage.thread_id == thread.id,
+                )
+                .order_by(UnifiedMessage.created_at.desc(), UnifiedMessage.id.desc())
+                .limit(1)
+            ).first()
+            if not latest_message:
+                skipped += 1
+                continue
+            if latest_message.direction != "outbound":
+                clear_thread_followup_state(
+                    session=session,
+                    tenant_id=tenant_id,
+                    thread_id=thread.id,
+                    reason="customer_replied_before_due_trigger",
+                )
+                lead.next_followup_at = None
+                session.add(lead)
+                session.commit()
+                skipped += 1
+                continue
+
+            silence_hours = max(
+                0.0,
+                (now - latest_message.created_at).total_seconds() / 3600.0,
+            )
+            review_after_hours = max(1, min(24 * 14, int(control.review_after_hours or 24)))
+            if silence_hours < review_after_hours:
+                clear_thread_followup_state(
+                    session=session,
+                    tenant_id=tenant_id,
+                    thread_id=thread.id,
+                    reason="recent_outbound_exists_before_due_trigger",
+                )
+                lead.next_followup_at = None
+                session.add(lead)
+                session.commit()
+                skipped += 1
+                continue
+
             queued_exists = session.exec(
                 select(OutboundQueue)
                 .join(UnifiedMessage, UnifiedMessage.id == OutboundQueue.message_id)
@@ -290,6 +392,16 @@ async def trigger_due_followups(
                 .limit(1)
             ).first()
             if queued_exists:
+                state.next_followup_at = None
+                trace = dict(state.reason_trace or {})
+                trace["last_trigger_decision"] = "skipped_existing_recent_outbound_queue"
+                trace["last_trigger_checked_at"] = datetime.utcnow().isoformat()
+                state.reason_trace = trace
+                state.updated_at = datetime.utcnow()
+                session.add(state)
+                lead.next_followup_at = None
+                session.add(lead)
+                session.commit()
                 skipped += 1
                 continue
 
@@ -307,6 +419,7 @@ async def trigger_due_followups(
                 lead_name=lead.name,
                 state=state,
                 strategy=state.followup_strategy,
+                message_type=state.followup_message_type,
                 messages=messages,
             )
             if not text:
@@ -319,6 +432,27 @@ async def trigger_due_followups(
                 skipped += 1
                 continue
 
+            message_type = (
+                state.followup_message_type.value
+                if hasattr(state.followup_message_type, "value")
+                else str(state.followup_message_type or AICRMFollowupMessageType.TEXT.value)
+            )
+            raw_payload = {
+                "source": "ai_crm_followup",
+                "ai_crm_state_id": state.id,
+                "status": state.status.value,
+                "strategy": state.followup_strategy.value,
+                "followup_message_type": message_type,
+            }
+            if message_type == AICRMFollowupMessageType.AUDIO.value:
+                raw_payload.update(
+                    {
+                        "tts_model": "qwen3-tts-flash",
+                        "tts_voice": "kiki",
+                        "tts_instructions": "Warm, helpful, concise, conversational",
+                    }
+                )
+
             outbound = UnifiedMessage(
                 tenant_id=tenant_id,
                 lead_id=lead.id,
@@ -327,14 +461,9 @@ async def trigger_due_followups(
                 channel=thread.channel,
                 external_message_id=f"out_{uuid4().hex}",
                 direction="outbound",
-                message_type="text",
+                message_type=message_type,
                 text_content=text,
-                raw_payload={
-                    "source": "ai_crm_followup",
-                    "ai_crm_state_id": state.id,
-                    "status": state.status.value,
-                    "strategy": state.followup_strategy.value,
-                },
+                raw_payload=raw_payload,
                 delivery_status="queued",
                 created_at=now,
                 updated_at=now,
@@ -362,14 +491,7 @@ async def trigger_due_followups(
             trace["last_triggered_at"] = now.isoformat()
             trace["last_trigger_message_preview"] = text[:160]
             state.reason_trace = trace
-            if state.status in {
-                AICRMLeadStatus.NOT_INTERESTED,
-                AICRMLeadStatus.REJECTED,
-                AICRMLeadStatus.DOUBLE_REJECT,
-            }:
-                state.next_followup_at = None
-            else:
-                state.next_followup_at = now + timedelta(hours=base_hours_for_aggressiveness(state.aggressiveness))
+            state.next_followup_at = None
             state.updated_at = now
             session.add(state)
 

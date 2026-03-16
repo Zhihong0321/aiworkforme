@@ -17,6 +17,8 @@ class AICRMControlUpdateRequest(SQLModel):
     enabled: bool = True
     scan_frequency_messages: int = 4
     aggressiveness: str = "BALANCED"
+    review_after_hours: int = 24
+    allow_voice_notes: bool = False
     not_interested_strategy: str = "PROMO"
     rejected_strategy: str = "DISCOUNT"
     double_reject_strategy: str = "STOP"
@@ -26,6 +28,8 @@ class AICRMControlResponse(SQLModel):
     enabled: bool
     scan_frequency_messages: int
     aggressiveness: str
+    review_after_hours: int
+    allow_voice_notes: bool
     not_interested_strategy: str
     rejected_strategy: str
     double_reject_strategy: str
@@ -42,11 +46,13 @@ class AICRMThreadRow(SQLModel):
     summary: Optional[str]
     reject_count: int
     followup_strategy: str
+    followup_message_type: str
     aggressiveness: str
     next_followup_at: Optional[datetime]
     last_scanned_at: Optional[datetime]
     last_scanned_message_count: int
     pending_scan: bool
+    silence_hours: Optional[int]
     last_message_preview: Optional[str]
     last_message_direction: Optional[str]
     last_message_at: Optional[datetime]

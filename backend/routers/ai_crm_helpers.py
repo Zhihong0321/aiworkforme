@@ -14,26 +14,24 @@ from typing import Any, Dict, List, Optional, Tuple
 from fastapi import HTTPException
 from sqlmodel import Session, select
 
+from src.adapters.db.agent_models import Agent
 from src.adapters.db.channel_models import ChannelSession, ChannelType, SessionStatus
 from src.adapters.db.crm_models import (
     AgentCRMProfile,
     AICRMAggressiveness,
     AICRMFollowupStrategy,
+    AICRMFollowupMessageType,
     AICRMLeadStatus,
     AICRMThreadState,
-    AgentCRMProfile,
-    Lead,
-    Workspace,
 )
-from src.adapters.db.messaging_models import UnifiedThread
 
 from .ai_crm_schemas import AICRMControlResponse
 
 
-def validate_agent(session: Session, tenant_id: int, agent_id: int) -> Workspace:
-    agent = session.get(Workspace, agent_id)
+def validate_agent(session: Session, tenant_id: int, agent_id: int) -> Agent:
+    agent = session.get(Agent, agent_id)
     if not agent or agent.tenant_id != tenant_id:
-        raise HTTPException(status_code=404, detail="Workspace not found")
+        raise HTTPException(status_code=404, detail="Agent not found")
     return agent
 
 
@@ -73,6 +71,8 @@ def ensure_control(session: Session, tenant_id: int, agent_id: int) -> AgentCRMP
         enabled=True,
         scan_frequency_messages=4,
         aggressiveness=AICRMAggressiveness.BALANCED,
+        review_after_hours=24,
+        allow_voice_notes=False,
         not_interested_strategy=AICRMFollowupStrategy.PROMO,
         rejected_strategy=AICRMFollowupStrategy.DISCOUNT,
         double_reject_strategy=AICRMFollowupStrategy.STOP,
@@ -90,6 +90,8 @@ def as_control_response(control: AgentCRMProfile) -> AICRMControlResponse:
         enabled=bool(control.enabled),
         scan_frequency_messages=int(control.scan_frequency_messages),
         aggressiveness=control.aggressiveness.value,
+        review_after_hours=int(control.review_after_hours or 24),
+        allow_voice_notes=bool(control.allow_voice_notes),
         not_interested_strategy=control.not_interested_strategy.value,
         rejected_strategy=control.rejected_strategy.value,
         double_reject_strategy=control.double_reject_strategy.value,
@@ -100,7 +102,7 @@ def status_from_text(text: str, last_direction: str) -> Tuple[AICRMLeadStatus, s
     raw = (text or "").strip()
     low = raw.lower()
     if not raw:
-        return AICRMLeadStatus.NO_RESPONSE, "No clear reply.", "No customer response detected.", 48
+        return AICRMLeadStatus.NO_RESPONSE, "No clear reply.", "No customer response detected.", 0
 
     reject_tokens = ["not interested", "no thanks", "do not", "don't", "stop", "remove", "no need"]
     deny_tokens = ["reject", "decline", "cannot", "can't", "too expensive", "expensive"]
@@ -108,18 +110,29 @@ def status_from_text(text: str, last_direction: str) -> Tuple[AICRMLeadStatus, s
     positive_tokens = ["yes", "interested", "sounds good", "okay", "ok", "let's", "book", "buy"]
 
     if any(token in low for token in reject_tokens):
-        return AICRMLeadStatus.NOT_INTERESTED, "Not interested", "Lead asked to stop or showed no interest.", 96
+        return AICRMLeadStatus.NOT_INTERESTED, "Not interested", "Lead asked to stop or showed no interest.", None
     if any(token in low for token in deny_tokens):
-        return AICRMLeadStatus.REJECTED, "Rejected", "Lead rejected the offer.", 120
+        return AICRMLeadStatus.REJECTED, "Rejected", "Lead rejected the offer.", None
     if any(token in low for token in positive_tokens):
         return AICRMLeadStatus.POSITIVE, "Positive", "Lead replied positively.", 12
     if any(token in low for token in consider_tokens):
         return AICRMLeadStatus.CONSIDERING, "Considering", "Lead is considering and asked for time.", 24
 
     if last_direction != "inbound":
-        return AICRMLeadStatus.NO_RESPONSE, "No response", "No recent customer reply after outreach.", 48
+        return AICRMLeadStatus.NO_RESPONSE, "No response", "No recent customer reply after outreach.", 0
 
     return AICRMLeadStatus.CONSIDERING, "Considering", "Neutral reply; likely still evaluating.", 24
+
+
+def normalize_bool(value: Any, default: bool = True) -> bool:
+    if isinstance(value, bool):
+        return value
+    raw = str(value or "").strip().lower()
+    if raw in {"true", "1", "yes", "y"}:
+        return True
+    if raw in {"false", "0", "no", "n"}:
+        return False
+    return default
 
 
 def safe_status(raw_status: Any) -> AICRMLeadStatus:
@@ -154,6 +167,19 @@ def base_hours_for_aggressiveness(aggressiveness: AICRMAggressiveness) -> int:
     }.get(aggressiveness, 48)
 
 
+def clamp_wait_hours(value: Optional[int]) -> Optional[int]:
+    if value is None:
+        return None
+    return int(max(0, min(24 * 30, int(value))))
+
+
+def safe_message_type(raw_value: Any, allow_voice_notes: bool) -> AICRMFollowupMessageType:
+    normalized = str(raw_value or "").strip().lower()
+    if normalized == AICRMFollowupMessageType.AUDIO.value and allow_voice_notes:
+        return AICRMFollowupMessageType.AUDIO
+    return AICRMFollowupMessageType.TEXT
+
+
 def compute_next_followup_at(
     aggressiveness: AICRMAggressiveness,
     status: AICRMLeadStatus,
@@ -180,6 +206,9 @@ def compute_planned_followup_hours(
     if strategy == AICRMFollowupStrategy.STOP:
         return None
 
+    if recommended_hours is not None:
+        return clamp_wait_hours(recommended_hours)
+
     base = base_hours_for_aggressiveness(aggressiveness)
     multiplier = {
         AICRMLeadStatus.POSITIVE: 0.5,
@@ -189,13 +218,7 @@ def compute_planned_followup_hours(
         AICRMLeadStatus.REJECTED: 2.0,
         AICRMLeadStatus.DOUBLE_REJECT: 2.5,
     }.get(status, 1.0)
-    planned_hours = int(max(6, min(336, round(base * multiplier))))
-
-    if recommended_hours and recommended_hours > 0:
-        rec = int(max(6, min(336, recommended_hours)))
-        planned_hours = int(max(6, min(336, round((planned_hours + rec) / 2))))
-
-    return planned_hours
+    return int(max(6, min(336, round(base * multiplier))))
 
 
 def parse_json_from_llm(content: str) -> Dict[str, Any]:
@@ -217,6 +240,8 @@ async def analyze_thread_with_ai(
     router,
     control: AgentCRMProfile,
     messages,
+    silence_hours: float,
+    review_after_hours: int,
 ) -> Dict[str, Any]:
     history_lines: List[str] = []
     for item in messages[-12:]:
@@ -228,14 +253,20 @@ async def analyze_thread_with_ai(
 
     history_blob = "\n".join(history_lines)
     system_prompt = (
-        "Classify CRM thread state and output strict JSON only. "
-        "Valid statuses: NO_RESPONSE, CONSIDERING, POSITIVE, NOT_INTERESTED, REJECTED. "
+        "You are a CRM review engine for dormant sales conversations. Output strict JSON only. "
+        "Valid statuses: NO_RESPONSE, CONSIDERING, POSITIVE, NOT_INTERESTED, REJECTED, DOUBLE_REJECT. "
+        "Valid recommended_message_type values: text, audio. "
         "Do not output markdown."
     )
     user_prompt = (
         "Analyze this conversation and return JSON with keys: "
-        "status, customer_reaction, summary, recommended_followup_hours.\n\n"
+        "status, customer_reaction, summary, should_follow_up, recommended_wait_hours, recommended_message_type.\n\n"
         f"Aggressiveness: {control.aggressiveness.value}.\n"
+        f"Voice notes allowed: {bool(control.allow_voice_notes)}.\n"
+        f"The thread becomes reviewable after {review_after_hours} hours with no customer reply.\n"
+        f"It has currently been silent for {round(float(silence_hours), 1)} hours since the last outbound message.\n"
+        "Interpret recommended_wait_hours as hours from now until the next follow-up. "
+        "Return 0 if a follow-up should be sent now. Return null if no follow-up should be scheduled.\n"
         f"Conversation:\n{history_blob}"
     )
 
@@ -269,7 +300,9 @@ async def analyze_thread_with_ai(
         "status": status.value,
         "customer_reaction": reaction,
         "summary": summary,
-        "recommended_followup_hours": recommended,
+        "should_follow_up": status not in {AICRMLeadStatus.NOT_INTERESTED, AICRMLeadStatus.REJECTED},
+        "recommended_wait_hours": recommended,
+        "recommended_message_type": "text",
         "_analysis_source": "heuristic_fallback",
     }
 
@@ -279,6 +312,7 @@ async def generate_followup_text(
     lead_name: Optional[str],
     state: AICRMThreadState,
     strategy: AICRMFollowupStrategy,
+    message_type: AICRMFollowupMessageType,
     messages,
 ) -> str:
     history_lines: List[str] = []
@@ -305,7 +339,11 @@ async def generate_followup_text(
         messages=[
             {
                 "role": "system",
-                "content": "Write one short WhatsApp follow-up message. Keep it human, concise, and polite.",
+                "content": (
+                    "Write one short WhatsApp voice-note script. Keep it spoken, human, concise, and polite."
+                    if message_type == AICRMFollowupMessageType.AUDIO
+                    else "Write one short WhatsApp follow-up message. Keep it human, concise, and polite."
+                ),
             },
             {
                 "role": "user",
@@ -313,6 +351,7 @@ async def generate_followup_text(
                     f"Lead name: {lead_name or 'there'}.\n"
                     f"Status: {state.status.value}.\n"
                     f"Aggressiveness: {state.aggressiveness.value}.\n"
+                    f"Format: {message_type.value}.\n"
                     f"Strategy: {strategy.value}. {guidance}\n"
                     f"Recent conversation:\n" + "\n".join(history_lines)
                 ),
@@ -339,24 +378,41 @@ def upsert_thread_state(
     agent_id: int,
     thread_id: int,
     lead_id: int,
+    workspace_id: Optional[int] = None,
 ) -> AICRMThreadState:
     state = session.exec(
         select(AICRMThreadState).where(
             AICRMThreadState.tenant_id == tenant_id,
-            AICRMThreadState.agent_id == agent_id,
             AICRMThreadState.thread_id == thread_id,
         )
     ).first()
     if state:
+        changed = False
+        if int(state.agent_id or 0) != int(agent_id):
+            state.agent_id = agent_id
+            changed = True
+        if int(state.lead_id or 0) != int(lead_id):
+            state.lead_id = lead_id
+            changed = True
+        if state.workspace_id != workspace_id:
+            state.workspace_id = workspace_id
+            changed = True
+        if changed:
+            state.updated_at = datetime.utcnow()
+            session.add(state)
+            session.commit()
+            session.refresh(state)
         return state
 
     state = AICRMThreadState(
         tenant_id=tenant_id,
+        workspace_id=workspace_id,
         agent_id=agent_id,
         thread_id=thread_id,
         lead_id=lead_id,
         status=AICRMLeadStatus.NO_RESPONSE,
         followup_strategy=AICRMFollowupStrategy.PROMO,
+        followup_message_type=AICRMFollowupMessageType.TEXT,
         aggressiveness=AICRMAggressiveness.BALANCED,
         reject_count=0,
         last_scanned_message_count=0,
@@ -384,3 +440,32 @@ def resolve_channel_session_id(session: Session, tenant_id: int, channel: str) -
         .limit(1)
     ).first()
     return int(active.id) if active and active.id else None
+
+
+def clear_thread_followup_state(
+    session: Session,
+    tenant_id: int,
+    thread_id: Optional[int],
+    reason: str,
+) -> None:
+    if thread_id is None:
+        return
+
+    state = session.exec(
+        select(AICRMThreadState).where(
+            AICRMThreadState.tenant_id == tenant_id,
+            AICRMThreadState.thread_id == thread_id,
+        )
+    ).first()
+    if not state:
+        return
+
+    trace = dict(state.reason_trace or {})
+    trace["last_reset_reason"] = reason
+    trace["last_reset_at"] = datetime.utcnow().isoformat()
+    state.next_followup_at = None
+    state.followup_last_generated_at = None
+    state.updated_at = datetime.utcnow()
+    state.reason_trace = trace
+    session.add(state)
+    session.commit()

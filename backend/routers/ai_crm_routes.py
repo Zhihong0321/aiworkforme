@@ -61,13 +61,17 @@ def update_ai_crm_control(
     auth: AuthContext = Depends(require_tenant_access),
 ):
     validate_agent(session, auth.tenant.id, agent_id)
-    if payload.scan_frequency_messages < 3 or payload.scan_frequency_messages > 10:
-        raise HTTPException(status_code=400, detail="scan_frequency_messages must be between 3 and 10")
+    if payload.scan_frequency_messages < 1 or payload.scan_frequency_messages > 25:
+        raise HTTPException(status_code=400, detail="scan_frequency_messages must be between 1 and 25")
+    if payload.review_after_hours < 1 or payload.review_after_hours > 24 * 14:
+        raise HTTPException(status_code=400, detail="review_after_hours must be between 1 and 336")
 
     control = ensure_control(session, auth.tenant.id, agent_id)
     control.enabled = bool(payload.enabled)
     control.scan_frequency_messages = int(payload.scan_frequency_messages)
     control.aggressiveness = normalize_aggressiveness(payload.aggressiveness)
+    control.review_after_hours = int(payload.review_after_hours)
+    control.allow_voice_notes = bool(payload.allow_voice_notes)
     control.not_interested_strategy = normalize_strategy(payload.not_interested_strategy)
     control.rejected_strategy = normalize_strategy(payload.rejected_strategy)
     control.double_reject_strategy = normalize_strategy(payload.double_reject_strategy)
@@ -87,7 +91,8 @@ def list_ai_crm_threads(
 ):
     validate_agent(session, auth.tenant.id, agent_id)
     control = ensure_control(session, auth.tenant.id, agent_id)
-    threshold = max(3, min(10, int(control.scan_frequency_messages or 4)))
+    review_after_hours = max(1, min(24 * 14, int(control.review_after_hours or 24)))
+    now = datetime.utcnow()
 
     rows = session.exec(
         select(UnifiedThread, Lead)
@@ -102,7 +107,14 @@ def list_ai_crm_threads(
 
     results: List[AICRMThreadRow] = []
     for thread, lead in rows:
-        state = upsert_thread_state(session, auth.tenant.id, agent_id, thread.id, lead.id)
+        state = upsert_thread_state(
+            session=session,
+            tenant_id=auth.tenant.id,
+            agent_id=agent_id,
+            thread_id=thread.id,
+            lead_id=lead.id,
+            workspace_id=lead.workspace_id,
+        )
         total_messages = int(
             session.exec(
                 select(func.count(UnifiedMessage.id)).where(
@@ -117,9 +129,19 @@ def list_ai_crm_threads(
                 UnifiedMessage.tenant_id == auth.tenant.id,
                 UnifiedMessage.thread_id == thread.id,
             )
-            .order_by(UnifiedMessage.created_at.desc())
+            .order_by(UnifiedMessage.created_at.desc(), UnifiedMessage.id.desc())
             .limit(1)
         ).first()
+        silence_hours = None
+        pending_scan = False
+        if last_msg and last_msg.direction == "outbound":
+            silence_hours = int(
+                max(0.0, (now - last_msg.created_at).total_seconds() / 3600.0)
+            )
+            pending_scan = bool(
+                silence_hours >= review_after_hours
+                and total_messages != int(state.last_scanned_message_count or 0)
+            )
 
         results.append(
             AICRMThreadRow(
@@ -133,11 +155,13 @@ def list_ai_crm_threads(
                 summary=state.summary,
                 reject_count=int(state.reject_count or 0),
                 followup_strategy=state.followup_strategy.value,
+                followup_message_type=state.followup_message_type.value,
                 aggressiveness=state.aggressiveness.value,
                 next_followup_at=state.next_followup_at,
                 last_scanned_at=state.last_scanned_at,
                 last_scanned_message_count=int(state.last_scanned_message_count or 0),
-                pending_scan=bool(total_messages - int(state.last_scanned_message_count or 0) >= threshold),
+                pending_scan=pending_scan,
+                silence_hours=silence_hours,
                 last_message_preview=(last_msg.text_content[:140] if last_msg and last_msg.text_content else None),
                 last_message_direction=(last_msg.direction if last_msg else None),
                 last_message_at=(last_msg.created_at if last_msg else None),

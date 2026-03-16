@@ -1,6 +1,6 @@
 """
 MODULE: AI CRM Router Composition
-PURPOSE: Compose AI CRM route handlers under a stable workspaces prefix.
+PURPOSE: Compose AI CRM route handlers under a stable agent-scoped prefix.
 DOES: Aggregate AI CRM route modules and re-export background-cycle entrypoint.
 DOES NOT: Implement endpoint business logic directly.
 INVARIANTS: Prefix/tag and background-cycle export name remain stable.

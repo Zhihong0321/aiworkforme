@@ -228,10 +228,40 @@ def apply_ai_crm_additive_migration(engine: Engine):
     if dialect == "postgresql":
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE et_ai_crm_thread_states ADD COLUMN IF NOT EXISTS reason_trace JSON"))
+            conn.execute(text("ALTER TABLE et_ai_crm_thread_states ADD COLUMN IF NOT EXISTS agent_id INTEGER"))
+            conn.execute(text("ALTER TABLE et_ai_crm_thread_states ADD COLUMN IF NOT EXISTS followup_message_type VARCHAR(16) DEFAULT 'text'"))
+            conn.execute(text("ALTER TABLE et_agent_crm_profiles ADD COLUMN IF NOT EXISTS review_after_hours INTEGER DEFAULT 24"))
+            conn.execute(text("ALTER TABLE et_agent_crm_profiles ADD COLUMN IF NOT EXISTS allow_voice_notes BOOLEAN DEFAULT FALSE"))
             conn.execute(
                 text(
-                    "CREATE INDEX IF NOT EXISTS idx_ai_crm_thread_states_tenant_workspace_next "
-                    "ON et_ai_crm_thread_states(tenant_id, workspace_id, next_followup_at)"
+                    "UPDATE et_ai_crm_thread_states AS state "
+                    "SET agent_id = leads.agent_id "
+                    "FROM et_leads AS leads "
+                    "WHERE state.lead_id = leads.id "
+                    "AND state.agent_id IS NULL "
+                    "AND leads.agent_id IS NOT NULL"
+                )
+            )
+            conn.execute(
+                text(
+                    "UPDATE et_ai_crm_thread_states AS state "
+                    "SET agent_id = workspaces.agent_id "
+                    "FROM et_workspaces AS workspaces "
+                    "WHERE state.workspace_id = workspaces.id "
+                    "AND state.agent_id IS NULL "
+                    "AND workspaces.agent_id IS NOT NULL"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_ai_crm_thread_states_tenant_agent_next "
+                    "ON et_ai_crm_thread_states(tenant_id, agent_id, next_followup_at)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_agent_crm_profiles_tenant_agent "
+                    "ON et_agent_crm_profiles(tenant_id, agent_id)"
                 )
             )
             # Backward compatibility check for deprecated table
@@ -256,10 +286,44 @@ def apply_ai_crm_additive_migration(engine: Engine):
                 existing_cols = {col["name"] for col in insp.get_columns("et_ai_crm_thread_states")}
                 if "reason_trace" not in existing_cols:
                     conn.execute(text("ALTER TABLE et_ai_crm_thread_states ADD COLUMN reason_trace JSON"))
+                if "agent_id" not in existing_cols:
+                    conn.execute(text("ALTER TABLE et_ai_crm_thread_states ADD COLUMN agent_id INTEGER"))
+                if "followup_message_type" not in existing_cols:
+                    conn.execute(text("ALTER TABLE et_ai_crm_thread_states ADD COLUMN followup_message_type VARCHAR(16) DEFAULT 'text'"))
                 conn.execute(
                     text(
-                        "CREATE INDEX IF NOT EXISTS idx_ai_crm_thread_states_tenant_workspace_next "
-                        "ON et_ai_crm_thread_states(tenant_id, workspace_id, next_followup_at)"
+                        "UPDATE et_ai_crm_thread_states "
+                        "SET agent_id = ("
+                        "  SELECT et_leads.agent_id FROM et_leads WHERE et_leads.id = et_ai_crm_thread_states.lead_id"
+                        ") "
+                        "WHERE agent_id IS NULL"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "UPDATE et_ai_crm_thread_states "
+                        "SET agent_id = ("
+                        "  SELECT et_workspaces.agent_id FROM et_workspaces WHERE et_workspaces.id = et_ai_crm_thread_states.workspace_id"
+                        ") "
+                        "WHERE agent_id IS NULL"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_ai_crm_thread_states_tenant_agent_next "
+                        "ON et_ai_crm_thread_states(tenant_id, agent_id, next_followup_at)"
+                    )
+                )
+            if "et_agent_crm_profiles" in tables:
+                profile_cols = {col["name"] for col in insp.get_columns("et_agent_crm_profiles")}
+                if "review_after_hours" not in profile_cols:
+                    conn.execute(text("ALTER TABLE et_agent_crm_profiles ADD COLUMN review_after_hours INTEGER DEFAULT 24"))
+                if "allow_voice_notes" not in profile_cols:
+                    conn.execute(text("ALTER TABLE et_agent_crm_profiles ADD COLUMN allow_voice_notes BOOLEAN DEFAULT FALSE"))
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS idx_agent_crm_profiles_tenant_agent "
+                        "ON et_agent_crm_profiles(tenant_id, agent_id)"
                     )
                 )
             if "et_ai_crm_workspace_controls" in tables:

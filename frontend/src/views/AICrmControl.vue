@@ -18,6 +18,8 @@ const control = ref({
   enabled: true,
   scan_frequency_messages: 4,
   aggressiveness: 'BALANCED',
+  review_after_hours: 24,
+  allow_voice_notes: false,
   not_interested_strategy: 'PROMO',
   rejected_strategy: 'DISCOUNT',
   double_reject_strategy: 'STOP'
@@ -86,24 +88,24 @@ const traceText = (trace) => {
   }
 }
 
-const ensureWorkspace = async () => {
-  if (!store.activeWorkspaceId) {
-    await store.fetchWorkspaces()
+const ensureAgent = async () => {
+  if (!store.activeAgentId) {
+    await store.fetchAgents()
   }
-  if (!store.activeWorkspaceId) {
-    throw new Error('No active workspace found')
+  if (!store.activeAgentId) {
+    throw new Error('No active AI agent found')
   }
-  return store.activeWorkspaceId
+  return store.activeAgentId
 }
 
 const fetchControl = async () => {
-  const workspaceId = await ensureWorkspace()
-  control.value = await request(`/workspaces/${workspaceId}/ai-crm/control`)
+  const agentId = await ensureAgent()
+  control.value = await request(`/agents/${agentId}/ai-crm/control`)
 }
 
 const fetchThreads = async () => {
-  const workspaceId = await ensureWorkspace()
-  threads.value = await request(`/workspaces/${workspaceId}/ai-crm/threads`)
+  const agentId = await ensureAgent()
+  threads.value = await request(`/agents/${agentId}/ai-crm/threads`)
 }
 
 const loadAll = async () => {
@@ -123,12 +125,13 @@ const saveControl = async () => {
   errorMessage.value = ''
   pageMessage.value = ''
   try {
-    const workspaceId = await ensureWorkspace()
+    const agentId = await ensureAgent()
     const payload = {
       ...control.value,
-      scan_frequency_messages: Number(control.value.scan_frequency_messages || 4)
+      scan_frequency_messages: Number(control.value.scan_frequency_messages || 4),
+      review_after_hours: Number(control.value.review_after_hours || 24)
     }
-    control.value = await request(`/workspaces/${workspaceId}/ai-crm/control`, {
+    control.value = await request(`/agents/${agentId}/ai-crm/control`, {
       method: 'PUT',
       body: JSON.stringify(payload)
     })
@@ -145,13 +148,13 @@ const runScan = async (forceAll = false) => {
   errorMessage.value = ''
   pageMessage.value = ''
   try {
-    const workspaceId = await ensureWorkspace()
-    const result = await request(`/workspaces/${workspaceId}/ai-crm/scan`, {
+    const agentId = await ensureAgent()
+    const result = await request(`/agents/${agentId}/ai-crm/scan`, {
       method: 'POST',
       body: JSON.stringify({ force_all: forceAll })
     })
     await fetchThreads()
-    pageMessage.value = `Scan complete: scanned ${result.scanned_threads}, skipped ${result.skipped_threads}, scheduled ${result.next_followups_set}.`
+    pageMessage.value = `Review complete: scanned ${result.scanned_threads}, skipped ${result.skipped_threads}, scheduled ${result.next_followups_set}.`
     if (Array.isArray(result.errors) && result.errors.length > 0) {
       errorMessage.value = result.errors.join(' | ')
     }
@@ -167,8 +170,8 @@ const triggerDue = async () => {
   errorMessage.value = ''
   pageMessage.value = ''
   try {
-    const workspaceId = await ensureWorkspace()
-    const result = await request(`/workspaces/${workspaceId}/ai-crm/trigger-due`, {
+    const agentId = await ensureAgent()
+    const result = await request(`/agents/${agentId}/ai-crm/trigger-due`, {
       method: 'POST'
     })
     await fetchThreads()
@@ -184,9 +187,9 @@ const triggerDue = async () => {
 }
 
 watch(
-  () => store.activeWorkspaceId,
+  () => store.activeAgentId,
   async () => {
-    if (store.activeWorkspaceId) {
+    if (store.activeAgentId) {
       await loadAll()
     }
   }
@@ -202,9 +205,9 @@ onMounted(loadAll)
         <div class="flex flex-wrap items-start justify-between gap-4">
           <div class="space-y-2">
             <p class="text-[10px] uppercase font-black tracking-[0.3em] text-orange-600">AI Control CRM</p>
-            <h1 class="text-3xl font-black text-slate-900 tracking-tight">Conversation Scan + Follow-up Trigger</h1>
+            <h1 class="text-3xl font-black text-slate-900 tracking-tight">Dormant Lead Review + Follow-up Trigger</h1>
             <p class="text-sm text-slate-600 max-w-3xl">
-              AI scans each conversation every N messages, classifies lead status, and schedules follow-up timing with passive, balanced, or aggressive behavior.
+              CRM AI runs per AI agent and focuses on dormant leads: threads where our last message has gone unanswered long enough to deserve a re-engagement decision.
             </p>
           </div>
           <div class="flex gap-2">
@@ -215,7 +218,7 @@ onMounted(loadAll)
         </div>
       </header>
 
-      <TuiCard title="AI CRM Controls" subtitle="Set scan frequency, follow-up aggressiveness, and rejected-lead strategy">
+      <TuiCard title="AI CRM Controls" subtitle="Set dormant-review timing, follow-up style, and per-agent recovery strategy">
         <div v-if="isLoading" class="text-sm text-slate-600 py-6">Loading AI CRM control...</div>
         <div v-else class="space-y-5">
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -227,12 +230,12 @@ onMounted(loadAll)
               </select>
             </label>
             <TuiInput
-              v-model="control.scan_frequency_messages"
+              v-model="control.review_after_hours"
               type="number"
-              label="Scan Every N Messages"
-              hint="Min 3, max 10"
-              :min="3"
-              :max="10"
+              label="Review After No Reply (Hours)"
+              hint="When our last message has gone unanswered this long, CRM AI reviews the thread."
+              :min="1"
+              :max="336"
             />
             <label class="space-y-2">
               <span class="text-[10px] font-black uppercase tracking-widest text-slate-600">Follow-up Aggressiveness</span>
@@ -245,6 +248,13 @@ onMounted(loadAll)
           </div>
 
           <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <label class="space-y-2">
+              <span class="text-[10px] font-black uppercase tracking-widest text-slate-600">Allow Voice Note Follow-up</span>
+              <select v-model="control.allow_voice_notes" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800">
+                <option :value="false">Text Only</option>
+                <option :value="true">Allow Audio Follow-up</option>
+              </select>
+            </label>
             <label class="space-y-2">
               <span class="text-[10px] font-black uppercase tracking-widest text-slate-600">Not Interested Strategy</span>
               <select v-model="control.not_interested_strategy" class="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800">
@@ -280,9 +290,9 @@ onMounted(loadAll)
         </div>
       </TuiCard>
 
-      <TuiCard title="Thread Status" subtitle="Live AI classification and follow-up schedule per conversation">
+      <TuiCard title="Thread Status" subtitle="Dormant-thread review state, AI decision, and next follow-up per conversation">
         <div v-if="isLoading" class="text-sm text-slate-600 py-6">Loading conversation states...</div>
-        <div v-else-if="sortedThreads.length === 0" class="text-sm text-slate-600 py-6">No active conversation threads found in this workspace.</div>
+        <div v-else-if="sortedThreads.length === 0" class="text-sm text-slate-600 py-6">No active conversation threads found for this AI agent.</div>
         <div v-else class="overflow-x-auto">
           <table class="w-full min-w-[1400px] text-sm">
             <thead>
@@ -291,8 +301,10 @@ onMounted(loadAll)
                 <th class="py-3 pr-3">Status</th>
                 <th class="py-3 pr-3">Reaction</th>
                 <th class="py-3 pr-3">Strategy</th>
+                <th class="py-3 pr-3">Message Type</th>
                 <th class="py-3 pr-3">Reject Count</th>
                 <th class="py-3 pr-3">Messages</th>
+                <th class="py-3 pr-3">Silence</th>
                 <th class="py-3 pr-3">Next Follow-up</th>
                 <th class="py-3 pr-3">Last Scan</th>
                 <th class="py-3">Summary</th>
@@ -310,11 +322,13 @@ onMounted(loadAll)
                 </td>
                 <td class="py-3 pr-3 text-[11px] text-slate-600">{{ row.customer_reaction || '-' }}</td>
                 <td class="py-3 pr-3 text-[11px] text-slate-700">{{ strategyLabel(row.followup_strategy) }} · {{ row.aggressiveness }}</td>
+                <td class="py-3 pr-3 text-[11px] text-slate-700 uppercase">{{ row.followup_message_type || 'text' }}</td>
                 <td class="py-3 pr-3 text-[11px] text-slate-700">{{ row.reject_count }}</td>
                 <td class="py-3 pr-3">
                   <p class="text-[11px] text-slate-700">{{ row.total_messages }} total</p>
-                  <p v-if="row.pending_scan" class="text-[10px] font-bold text-orange-600">Scan pending</p>
+                  <p v-if="row.pending_scan" class="text-[10px] font-bold text-orange-600">Review pending</p>
                 </td>
+                <td class="py-3 pr-3 text-[11px] text-slate-600">{{ row.silence_hours != null ? `${row.silence_hours}h` : '-' }}</td>
                 <td class="py-3 pr-3 text-[11px] text-slate-600">{{ formatDate(row.next_followup_at) }}</td>
                 <td class="py-3 pr-3 text-[11px] text-slate-600">{{ formatDate(row.last_scanned_at) }}</td>
                 <td class="py-3 text-[11px] text-slate-600">

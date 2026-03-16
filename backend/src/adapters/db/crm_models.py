@@ -60,6 +60,12 @@ class AICRMFollowupStrategy(str, Enum):
     DISCOUNT = "DISCOUNT"
     OTHER = "OTHER"
 
+
+class AICRMFollowupMessageType(str, Enum):
+    TEXT = "text"
+    AUDIO = "audio"
+
+
 class StrategyStatus(str, Enum):
     DRAFT = "DRAFT"
     ACTIVE = "ACTIVE"
@@ -219,6 +225,8 @@ class AgentCRMProfile(SQLModel, table=True):
     enabled: bool = Field(default=True)
     scan_frequency_messages: int = Field(default=4)
     aggressiveness: AICRMAggressiveness = Field(default=AICRMAggressiveness.BALANCED)
+    review_after_hours: int = Field(default=24)
+    allow_voice_notes: bool = Field(default=False)
 
     not_interested_strategy: AICRMFollowupStrategy = Field(default=AICRMFollowupStrategy.PROMO)
     rejected_strategy: AICRMFollowupStrategy = Field(default=AICRMFollowupStrategy.DISCOUNT)
@@ -238,7 +246,8 @@ class AICRMThreadState(SQLModel, table=True):
 
     id: Optional[int] = Field(default=None, primary_key=True)
     tenant_id: int = Field(foreign_key="et_tenants.id", index=True)
-    workspace_id: int = Field(foreign_key="et_workspaces.id", index=True)
+    workspace_id: Optional[int] = Field(default=None, foreign_key="et_workspaces.id", index=True)
+    agent_id: int = Field(foreign_key="zairag_agents.id", index=True)
     thread_id: int = Field(foreign_key="et_threads.id", index=True, unique=True)
     lead_id: int = Field(foreign_key="et_leads.id", index=True)
 
@@ -246,6 +255,7 @@ class AICRMThreadState(SQLModel, table=True):
     summary: Optional[str] = None
     customer_reaction: Optional[str] = Field(default=None, max_length=128)
     followup_strategy: AICRMFollowupStrategy = Field(default=AICRMFollowupStrategy.PROMO)
+    followup_message_type: AICRMFollowupMessageType = Field(default=AICRMFollowupMessageType.TEXT)
     aggressiveness: AICRMAggressiveness = Field(default=AICRMAggressiveness.BALANCED)
     reject_count: int = Field(default=0)
     reason_trace: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
