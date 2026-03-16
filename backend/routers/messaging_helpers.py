@@ -102,3 +102,11 @@ def sync_whatsapp_channel_identity(
         changed = True
 
     return changed
+
+
+def whatsapp_provider_session_identifier(channel_session: ChannelSession) -> str:
+    metadata = channel_session.session_metadata if isinstance(channel_session.session_metadata, dict) else {}
+    provider_session_id = str(metadata.get("provider_session_id") or "").strip()
+    if provider_session_id:
+        return provider_session_id
+    return channel_session.session_identifier

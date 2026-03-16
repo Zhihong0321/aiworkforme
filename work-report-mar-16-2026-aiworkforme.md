@@ -7,5 +7,6 @@ REPO NAME : AIworkforMe
 - Added a toggleable built-in Voice Note Follow-Up skill that seeds as an MCP option, enables live agent voice-note decisions in the conversation runtime, enqueues WhatsApp audio replies with 15-second guardrails, and fixes multi-skill toggling in the agent UI.
 - Fixed agent-scoped CRM AI routes and delivered dormant-lead follow-up logic with verified backend tests and frontend build.
 - Patched messaging helper facade to restore WhatsApp channel identity imports and verified router startup/tests.
+- Patched messaging helper facade to restore WhatsApp provider session identifier export and verified startup imports.
 
 =====================
