@@ -425,9 +425,38 @@ def upsert_thread_state(
     return state
 
 
-def resolve_channel_session_id(session: Session, tenant_id: int, channel: str) -> Optional[int]:
+def resolve_channel_session_id(
+    session: Session,
+    tenant_id: int,
+    channel: str,
+    agent_id: Optional[int] = None,
+    fallback_channel_session_id: Optional[int] = None,
+) -> Optional[int]:
     if channel != "whatsapp":
         return None
+
+    if fallback_channel_session_id:
+        thread_session = session.get(ChannelSession, fallback_channel_session_id)
+        if (
+            thread_session
+            and thread_session.tenant_id == tenant_id
+            and thread_session.channel_type == ChannelType.WHATSAPP
+            and thread_session.status == SessionStatus.ACTIVE
+        ):
+            return int(thread_session.id)
+
+    if agent_id:
+        agent = session.get(Agent, agent_id)
+        preferred_session_id = getattr(agent, "preferred_channel_session_id", None) if agent else None
+        if preferred_session_id:
+            preferred_session = session.get(ChannelSession, preferred_session_id)
+            if (
+                preferred_session
+                and preferred_session.tenant_id == tenant_id
+                and preferred_session.channel_type == ChannelType.WHATSAPP
+                and preferred_session.status == SessionStatus.ACTIVE
+            ):
+                return int(preferred_session.id)
 
     active = session.exec(
         select(ChannelSession)

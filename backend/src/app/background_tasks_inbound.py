@@ -86,12 +86,27 @@ def _resolve_thread_agent(session: Session, message: Any) -> Optional[Any]:
         if not lead or lead.tenant_id != message.tenant_id:
             return None
 
-        workspace = session.get(Workspace, lead.workspace_id)
-        candidate_agent_id = (
-            workspace.agent_id
-            if workspace and workspace.tenant_id == message.tenant_id
-            else None
-        )
+        candidate_agent_id = getattr(lead, "agent_id", None)
+
+        if candidate_agent_id is None and getattr(message, "channel_session_id", None):
+            preferred_agent = session.exec(
+                select(Agent)
+                .where(
+                    Agent.tenant_id == message.tenant_id,
+                    Agent.preferred_channel_session_id == message.channel_session_id,
+                )
+                .order_by(Agent.id.asc())
+            ).first()
+            candidate_agent_id = preferred_agent.id if preferred_agent else None
+
+        if candidate_agent_id is None:
+            workspace = session.get(Workspace, lead.workspace_id)
+            candidate_agent_id = (
+                workspace.agent_id
+                if workspace and workspace.tenant_id == message.tenant_id
+                else None
+            )
+
         if candidate_agent_id is None:
             fallback = session.exec(
                 select(Agent)

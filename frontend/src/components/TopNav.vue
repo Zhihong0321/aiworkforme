@@ -35,6 +35,7 @@ const goToAgents = () => {
 const selectAgent = (agentId) => {
   store.setActiveAgent(agentId)
   closeAgentMenu()
+  router.push(`/agents/${agentId}`)
 }
 
 const handleLogout = () => {
@@ -77,6 +78,9 @@ const activeAgentName = computed(() => {
     return store.activeAgent?.name || 'Aiworkfor.me'
 })
 const pageTitle = computed(() => {
+    if (route.name === 'Agent Dashboard') {
+      return store.activeAgent?.name || 'Agent Dashboard'
+    }
     const matched = navItems.value.find(item => isActive(item.path))
     return matched ? matched.label : route.name || 'Overview'
 })

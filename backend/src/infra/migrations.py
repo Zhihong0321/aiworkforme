@@ -415,3 +415,53 @@ def apply_agent_sales_material_links_migration(engine: Engine):
             conn.execute(text("UPDATE zairag_agent_sales_materials SET external_url = '' WHERE external_url IS NULL"))
             conn.execute(text("CREATE INDEX IF NOT EXISTS idx_agent_sales_materials_source_type ON zairag_agent_sales_materials(source_type)"))
         logger.info("Agent sales material links migration applied for SQLite.")
+
+
+def apply_agent_preferred_channel_migration(engine: Engine):
+    """
+    Ensures agents can store a preferred WhatsApp channel session.
+    Safe to run repeatedly.
+    """
+    dialect = engine.dialect.name
+    if dialect == "postgresql":
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE zairag_agents "
+                    "ADD COLUMN IF NOT EXISTS preferred_channel_session_id INTEGER REFERENCES et_channel_sessions(id)"
+                )
+            )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_zairag_agents_preferred_channel_session_id "
+                    "ON zairag_agents(preferred_channel_session_id)"
+                )
+            )
+        logger.info("Agent preferred channel migration applied for PostgreSQL.")
+        return
+
+    if dialect == "sqlite":
+        insp = inspect(engine)
+        tables = set(insp.get_table_names())
+        if "zairag_agents" not in tables:
+            return
+
+        existing_cols = {col["name"] for col in insp.get_columns("zairag_agents")}
+        with engine.begin() as conn:
+            if "preferred_channel_session_id" not in existing_cols:
+                conn.execute(
+                    text(
+                        "ALTER TABLE zairag_agents "
+                        "ADD COLUMN preferred_channel_session_id INTEGER REFERENCES et_channel_sessions(id)"
+                    )
+                )
+            conn.execute(
+                text(
+                    "CREATE INDEX IF NOT EXISTS idx_zairag_agents_preferred_channel_session_id "
+                    "ON zairag_agents(preferred_channel_session_id)"
+                )
+            )
+        logger.info("Agent preferred channel migration applied for SQLite.")
+        return
+
+    logger.warning("Skipping agent preferred channel migration for unsupported dialect: %s", dialect)

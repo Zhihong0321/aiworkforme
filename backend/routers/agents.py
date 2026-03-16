@@ -16,6 +16,7 @@ from src.adapters.db.agent_models import (
     AgentSalesMaterial,
     AgentUpdate,
 )
+from src.adapters.db.channel_models import ChannelSession, ChannelType
 from src.adapters.db.mcp_models import MCPServer
 from src.app.runtime.knowledge_processor import KnowledgeProcessor
 from src.app.runtime.sales_materials import (
@@ -42,6 +43,7 @@ class AgentCreate(BaseModel):
     mimic_human_typing: Optional[bool] = False
     emoji_level: Optional[str] = "none"
     segment_delay_ms: Optional[int] = 800
+    preferred_channel_session_id: Optional[int] = None
 
 
 class AgentSalesMaterialRead(BaseModel):
@@ -62,6 +64,25 @@ class AgentSalesMaterialRead(BaseModel):
 class AgentSalesMaterialLinkCreate(BaseModel):
     url: str
     description: str
+
+
+def _validate_preferred_channel_session(
+    session: Session,
+    tenant_id: int,
+    preferred_channel_session_id: Optional[int],
+) -> Optional[int]:
+    if preferred_channel_session_id is None:
+        return None
+
+    channel_session = session.get(ChannelSession, preferred_channel_session_id)
+    if (
+        not channel_session
+        or channel_session.tenant_id != tenant_id
+        or channel_session.channel_type != ChannelType.WHATSAPP
+    ):
+        raise HTTPException(status_code=400, detail="Preferred WhatsApp channel is invalid")
+
+    return int(channel_session.id)
 
 @router.get("/", response_model=List[AgentRead])
 def list_agents(
@@ -117,6 +138,11 @@ def create_agent(
         mimic_human_typing=bool(agent_in.mimic_human_typing or False),
         emoji_level=str(agent_in.emoji_level or "none"),
         segment_delay_ms=int(agent_in.segment_delay_ms or 800),
+        preferred_channel_session_id=_validate_preferred_channel_session(
+            session,
+            auth.tenant.id,
+            agent_in.preferred_channel_session_id,
+        ),
     )
     
     session.add(new_agent)
@@ -140,6 +166,7 @@ def create_agent(
         mimic_human_typing=new_agent.mimic_human_typing,
         emoji_level=new_agent.emoji_level,
         segment_delay_ms=new_agent.segment_delay_ms,
+        preferred_channel_session_id=new_agent.preferred_channel_session_id,
     )
 
 @router.put("/{agent_id}", response_model=AgentRead)
@@ -163,6 +190,13 @@ def update_agent(
         agent.emoji_level = payload.emoji_level
     if payload.segment_delay_ms is not None:
         agent.segment_delay_ms = payload.segment_delay_ms
+    fields_set = getattr(payload, "model_fields_set", None) or getattr(payload, "__fields_set__", set())
+    if "preferred_channel_session_id" in fields_set:
+        agent.preferred_channel_session_id = _validate_preferred_channel_session(
+            session,
+            auth.tenant.id,
+            payload.preferred_channel_session_id,
+        )
 
     session.add(agent)
     session.commit()

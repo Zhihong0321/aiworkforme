@@ -30,6 +30,12 @@ class Agent(SQLModel, table=True):
     emoji_level: str = Field(default="none")
     # Delay (ms) between each segmented message burst
     segment_delay_ms: int = Field(default=800)
+    # Preferred WhatsApp channel for this agent's inbound and follow-up routing.
+    preferred_channel_session_id: Optional[int] = Field(
+        default=None,
+        foreign_key="et_channel_sessions.id",
+        index=True,
+    )
     
     chat_sessions: List["ChatSession"] = Relationship(
         back_populates="agent",
@@ -96,6 +102,7 @@ class AgentRead(SQLModel):
     mimic_human_typing: bool = False
     emoji_level: str = "none"
     segment_delay_ms: int = 800
+    preferred_channel_session_id: Optional[int] = None
     class Config:
         from_attributes = True
 
@@ -105,3 +112,4 @@ class AgentUpdate(SQLModel):
     mimic_human_typing: Optional[bool] = None
     emoji_level: Optional[str] = None
     segment_delay_ms: Optional[int] = None
+    preferred_channel_session_id: Optional[int] = None

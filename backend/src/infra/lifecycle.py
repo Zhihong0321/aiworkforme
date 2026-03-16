@@ -42,6 +42,7 @@ from src.app.background_tasks_messaging import background_outbound_dispatch_loop
 from src.infra.database import engine
 from src.infra.migrations import (
     apply_ai_crm_additive_migration,
+    apply_agent_preferred_channel_migration,
     apply_agent_sales_material_links_migration,
     apply_legacy_table_rename_migration,
     apply_message_usage_columns_migration,
@@ -87,6 +88,7 @@ async def run_startup_sequence() -> None:
         apply_ai_crm_additive_migration(engine)
         apply_workspace_decoupling_migration(engine)
         apply_lead_agent_id_additive_migration(engine)
+        apply_agent_preferred_channel_migration(engine)
         apply_agent_sales_material_links_migration(engine)
 
         schema_check = evaluate_message_schema_compat(engine)

@@ -1,15 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Inbox from '../views/Inbox.vue'
-import Leads from '../views/Leads.vue'
 import Strategy from '../views/Strategy.vue'
-import Knowledge from '../views/Knowledge.vue'
 import Analytics from '../views/Analytics.vue'
 import Playground from '../views/Playground.vue'
 import Settings from '../views/Settings.vue'
 import ChannelSetup from '../views/ChannelSetup.vue'
 import Catalog from '../views/Catalog.vue'
 import Calendar from '../views/Calendar.vue'
-import Agents from '../views/Agents.vue'
+import AgentsHome from '../views/AgentsHome.vue'
+import AgentDashboard from '../views/AgentDashboard.vue'
 import Login from '../views/Login.vue'
 import PlatformLogin from '../views/PlatformLogin.vue'
 import MessageHistory from '../views/MessageHistory.vue'
@@ -43,19 +41,29 @@ const routes = [
   {
     path: '/agents',
     name: 'Agents',
-    component: Agents,
+    component: AgentsHome,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/agents/:agentId',
+    name: 'Agent Dashboard',
+    component: AgentDashboard,
     meta: { requiresAuth: true }
   },
   {
     path: '/inbox',
-    name: 'Inbox',
-    component: Inbox,
+    redirect: () => {
+      const activeAgentId = window.localStorage.getItem('activeAgentId')
+      return activeAgentId ? `/agents/${activeAgentId}?tab=inbox` : '/agents'
+    },
     meta: { requiresAuth: true }
   },
   {
     path: '/leads',
-    name: 'Leads',
-    component: Leads,
+    redirect: () => {
+      const activeAgentId = window.localStorage.getItem('activeAgentId')
+      return activeAgentId ? `/agents/${activeAgentId}?tab=contacts` : '/agents'
+    },
     meta: { requiresAuth: true }
   },
   {
@@ -66,8 +74,10 @@ const routes = [
   },
   {
     path: '/knowledge',
-    name: 'Knowledge',
-    component: Knowledge,
+    redirect: () => {
+      const activeAgentId = window.localStorage.getItem('activeAgentId')
+      return activeAgentId ? `/agents/${activeAgentId}?tab=knowledge` : '/agents'
+    },
     meta: { requiresAuth: true }
   },
   {

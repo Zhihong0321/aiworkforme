@@ -426,7 +426,13 @@ async def trigger_due_followups(
                 skipped += 1
                 continue
 
-            channel_session_id = resolve_channel_session_id(session, tenant_id, thread.channel)
+            channel_session_id = resolve_channel_session_id(
+                session,
+                tenant_id,
+                thread.channel,
+                agent_id=agent_id,
+                fallback_channel_session_id=thread.channel_session_id,
+            )
             if thread.channel == "whatsapp" and not channel_session_id:
                 errors.append(f"State {state.id}: no active WhatsApp session available.")
                 skipped += 1

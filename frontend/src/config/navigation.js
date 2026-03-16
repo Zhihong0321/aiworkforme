@@ -10,12 +10,9 @@ export const getNavItems = (isPlatformAdmin) => {
 
   return [
     { label: 'Dashboard', path: '/home', icon: 'dashboard', description: 'Quick access dashboard' },
-    { label: 'Agents', path: '/agents', icon: 'smart_toy', description: 'List, add, edit, and delete agents' },
-    { label: 'Knowledge Base', path: '/knowledge', icon: 'menu_book', description: 'Knowledge base management' },
+    { label: 'Agents', path: '/agents', icon: 'smart_toy', description: 'List agents and open their dashboards' },
     { label: 'Playground', path: '/playground', icon: 'science', description: 'Test agent interactions' },
-    { label: 'Contact Book', path: '/leads', icon: 'contacts', description: 'Lead and customer directory' },
     { label: 'CRM AI', path: '/ai-crm', icon: 'smart_toy', description: 'Automated CRM controls' },
-    { label: 'Inbox', path: '/inbox', icon: 'inbox', description: 'Conversation monitoring' },
     { label: 'Catalog', path: '/catalog', icon: 'storefront', description: 'Products and service catalog' },
     { label: 'Calendar', path: '/calendar', icon: 'calendar_month', description: 'Schedule and booking view' },
     { label: 'Channel Setup', path: '/channels', icon: 'hub', description: 'Messaging channel configuration' },
