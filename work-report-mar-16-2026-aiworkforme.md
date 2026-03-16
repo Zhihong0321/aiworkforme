@@ -14,5 +14,6 @@ REPO NAME : AIworkforMe
 - Fixed backend deploy crash from Voice Note Follow-Up seeding import mismatch.
 - Raised agent sales-material upload limit to 30 MB with backend/frontend validation and regression coverage.
 - Restructured agent UX into per-agent dashboards with WhatsApp routing and agent-scoped contacts, knowledge, and inbox flows
+- Clarified channel setup UI with explicit Add New Channel actions and verified frontend build
 
 =====================
