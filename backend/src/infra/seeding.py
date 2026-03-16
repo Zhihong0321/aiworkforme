@@ -215,3 +215,28 @@ def seed_calendar_mcp(engine: Engine, tenant_id: int):
             )
             session.add(mcp)
             session.commit()
+
+
+def seed_voice_note_followup_mcp(engine: Engine, tenant_id: int):
+    with Session(engine) as session:
+        existing = session.exec(
+            select(MCPServer).where(
+                MCPServer.script == "voice_note_followup.py",
+                MCPServer.tenant_id == tenant_id
+            )
+        ).first()
+
+        if not existing:
+            logger.info("Seeding Voice Note Follow-Up MCP...")
+            mcp = MCPServer(
+                tenant_id=tenant_id,
+                name="Voice Note Follow-Up",
+                script="voice_note_followup.py",
+                command="python",
+                args="[]",
+                cwd="/app",
+                env_vars="{}",
+                status="stopped"
+            )
+            session.add(mcp)
+            session.commit()

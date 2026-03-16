@@ -51,15 +51,7 @@ from src.infra.migrations import (
     apply_lead_agent_id_additive_migration,
 )
 from src.infra.schema_checks import evaluate_message_schema_compat
-from src.infra.seeding import (
-    seed_calendar_mcp,
-    seed_catalog_mcp,
-    seed_default_assets,
-    seed_identity_data,
-    seed_knowledge_retrieval_mcp,
-    seed_mcp_scripts,
-    seed_voice_note_followup_mcp,
-)
+from src.infra import seeding
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +69,7 @@ async def run_startup_sequence() -> None:
         apply_legacy_table_rename_migration(engine)
         SQLModel.metadata.create_all(engine)
 
-        default_tenant_id = seed_identity_data(engine)
+        default_tenant_id = seeding.seed_identity_data(engine)
         apply_multitenant_additive_migration(engine, default_tenant_id)
         apply_message_usage_columns_migration(engine)
 
@@ -107,12 +99,16 @@ async def run_startup_sequence() -> None:
                 schema_check.get("missing_columns"),
             )
 
-        seed_mcp_scripts()
-        seed_knowledge_retrieval_mcp(engine, default_tenant_id)
-        seed_catalog_mcp(engine, default_tenant_id)
-        seed_calendar_mcp(engine, default_tenant_id)
-        seed_voice_note_followup_mcp(engine, default_tenant_id)
-        seed_default_assets(engine)
+        seeding.seed_mcp_scripts()
+        seeding.seed_knowledge_retrieval_mcp(engine, default_tenant_id)
+        seeding.seed_catalog_mcp(engine, default_tenant_id)
+        seeding.seed_calendar_mcp(engine, default_tenant_id)
+        seed_voice_note_followup_mcp = getattr(seeding, "seed_voice_note_followup_mcp", None)
+        if callable(seed_voice_note_followup_mcp):
+            seed_voice_note_followup_mcp(engine, default_tenant_id)
+        else:
+            logger.warning("seed_voice_note_followup_mcp is unavailable; skipping Voice Note Follow-Up MCP seed.")
+        seeding.seed_default_assets(engine)
 
         with Session(engine) as session:
             refresh_provider_keys_from_db(session)

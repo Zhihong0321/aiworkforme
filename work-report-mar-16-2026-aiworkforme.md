@@ -11,5 +11,6 @@ REPO NAME : AIworkforMe
 - Delivered one-page agent management UI with stable selector dropdown and CRUD flow.
 - Shipped backend sales-material upload APIs and public file serving for agent management.
 - Added file-or-URL sales materials with YouTube link support and verified backend/frontend checks.
+- Fixed backend deploy crash from Voice Note Follow-Up seeding import mismatch.
 
 =====================
