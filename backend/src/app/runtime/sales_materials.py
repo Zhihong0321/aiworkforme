@@ -9,7 +9,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -46,6 +46,24 @@ def _slugify_filename(value: str) -> str:
 
 def sales_material_kind(media_type: str) -> str:
     return "image" if str(media_type or "").startswith("image/") else "document"
+
+
+def is_supported_url(value: str) -> bool:
+    parsed = urlparse(str(value or "").strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def is_youtube_url(value: str) -> bool:
+    parsed = urlparse(str(value or "").strip())
+    host = (parsed.netloc or "").lower()
+    return host.endswith("youtube.com") or host.endswith("youtu.be")
+
+
+def sales_material_kind_for_material(material: AgentSalesMaterial) -> str:
+    source_type = str(getattr(material, "source_type", "file") or "file").strip().lower()
+    if source_type == "url":
+        return "youtube" if is_youtube_url(getattr(material, "external_url", "") or getattr(material, "public_url", "")) else "link"
+    return sales_material_kind(getattr(material, "media_type", ""))
 
 
 def detect_sales_material_type(filename: str, content_type: str, content: bytes) -> str:
@@ -95,9 +113,44 @@ def validate_sales_material_upload(filename: str, content_type: str, content: by
     return {
         "filename": sanitized_name,
         "media_type": media_type,
+        "source_type": "file",
+        "external_url": "",
         "file_size_bytes": len(content),
         "suffix": suffix,
         "kind": sales_material_kind(media_type),
+    }
+
+
+def build_url_sales_material(url: str, description: str) -> Dict[str, Any]:
+    normalized_url = str(url or "").strip()
+    if not is_supported_url(normalized_url):
+        raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
+
+    parsed = urlparse(normalized_url)
+    host = (parsed.netloc or "link").lower()
+    path_name = Path(unquote(parsed.path or "")).name.strip()
+    if path_name:
+        title = path_name
+    elif is_youtube_url(normalized_url):
+        title = "youtube-link"
+    else:
+        title = host.replace(".", "-") or "link"
+
+    filename = _slugify_filename(title)
+    if is_youtube_url(normalized_url) and not filename.endswith(".url"):
+        filename = f"{filename}.url"
+    elif "." not in filename:
+        filename = f"{filename}.url"
+
+    return {
+        "filename": filename,
+        "media_type": "text/uri-list",
+        "source_type": "url",
+        "external_url": normalized_url,
+        "file_size_bytes": len(normalized_url.encode("utf-8")),
+        "suffix": "",
+        "kind": "youtube" if is_youtube_url(normalized_url) else "link",
+        "description": str(description or "").strip(),
     }
 
 
@@ -134,10 +187,14 @@ def sales_material_path(material: AgentSalesMaterial) -> Path:
 
 
 def write_sales_material_file(material: AgentSalesMaterial, content: bytes) -> None:
+    if str(getattr(material, "source_type", "file") or "file").strip().lower() != "file":
+        return
     sales_material_path(material).write_bytes(content)
 
 
 def delete_sales_material_file(material: AgentSalesMaterial) -> None:
+    if str(getattr(material, "source_type", "file") or "file").strip().lower() != "file":
+        return
     try:
         sales_material_path(material).unlink(missing_ok=True)
     except Exception:
@@ -145,15 +202,23 @@ def delete_sales_material_file(material: AgentSalesMaterial) -> None:
 
 
 def serialize_sales_material(material: AgentSalesMaterial) -> Dict[str, Any]:
+    source_type = str(getattr(material, "source_type", "file") or "file").strip().lower()
+    resolved_url = (
+        (material.external_url or "").strip()
+        if source_type == "url"
+        else (material.public_url or build_sales_material_public_url(material.public_token))
+    )
     return {
         "id": material.id,
         "agent_id": material.agent_id,
         "filename": material.filename,
         "media_type": material.media_type,
-        "kind": sales_material_kind(material.media_type),
+        "kind": sales_material_kind_for_material(material),
+        "source_type": source_type,
+        "external_url": (material.external_url or "").strip() or None,
         "file_size_bytes": material.file_size_bytes,
         "description": material.description,
-        "public_url": material.public_url or build_sales_material_public_url(material.public_token),
+        "public_url": resolved_url,
         "created_at": material.created_at.isoformat() if material.created_at else None,
         "updated_at": material.updated_at.isoformat() if material.updated_at else None,
     }
@@ -241,6 +306,7 @@ def build_sales_material_prompt_block(
         "- Prefer materials not yet sent in this conversation.",
         "- Do not resend a previously sent material unless the customer clearly asks for it again.",
         "- Never mention internal IDs in your visible reply.",
+        "- Link materials will be sent as a follow-up message containing the URL.",
         "Available materials:",
     ]
     for material in items:
@@ -250,11 +316,18 @@ def build_sales_material_prompt_block(
             if sent_info
             else "no"
         )
+        kind = sales_material_kind_for_material(material)
+        resolved_url = (
+            str(getattr(material, "external_url", "") or getattr(material, "public_url", "")).strip()
+            if str(getattr(material, "source_type", "file") or "file").strip().lower() == "url"
+            else str(getattr(material, "public_url", "") or "").strip()
+        )
         lines.extend(
             [
                 f"- Material ID {material.id}: {material.filename}",
-                f"  Type: {sales_material_kind(material.media_type)} ({material.media_type})",
+                f"  Type: {kind} ({material.media_type})",
                 f"  Description: {material.description or 'No description provided.'}",
+                *( [f"  URL: {resolved_url}"] if resolved_url else [] ),
                 f"  Already sent in this conversation: {sent_label}",
             ]
         )

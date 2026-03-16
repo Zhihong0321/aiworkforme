@@ -42,6 +42,7 @@ from src.app.background_tasks_messaging import background_outbound_dispatch_loop
 from src.infra.database import engine
 from src.infra.migrations import (
     apply_ai_crm_additive_migration,
+    apply_agent_sales_material_links_migration,
     apply_legacy_table_rename_migration,
     apply_message_usage_columns_migration,
     apply_multitenant_additive_migration,
@@ -57,6 +58,7 @@ from src.infra.seeding import (
     seed_identity_data,
     seed_knowledge_retrieval_mcp,
     seed_mcp_scripts,
+    seed_voice_note_followup_mcp,
 )
 
 logger = logging.getLogger(__name__)
@@ -93,6 +95,7 @@ async def run_startup_sequence() -> None:
         apply_ai_crm_additive_migration(engine)
         apply_workspace_decoupling_migration(engine)
         apply_lead_agent_id_additive_migration(engine)
+        apply_agent_sales_material_links_migration(engine)
 
         schema_check = evaluate_message_schema_compat(engine)
         STARTUP_HEALTH["schema"] = schema_check
@@ -108,6 +111,7 @@ async def run_startup_sequence() -> None:
         seed_knowledge_retrieval_mcp(engine, default_tenant_id)
         seed_catalog_mcp(engine, default_tenant_id)
         seed_calendar_mcp(engine, default_tenant_id)
+        seed_voice_note_followup_mcp(engine, default_tenant_id)
         seed_default_assets(engine)
 
         with Session(engine) as session:

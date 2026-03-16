@@ -2,6 +2,7 @@
 import asyncio
 import io
 import importlib
+import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -15,6 +16,8 @@ from sqlmodel import Session, select
 
 from src.app.runtime.agent_runtime import ConversationAgentRuntime
 from src.app.runtime.leads_service import get_or_create_default_workspace
+from src.app.runtime.sales_materials import list_agent_sales_materials, thread_sales_material_state
+from src.app.runtime.sales_materials import sales_material_kind_for_material
 from src.app.inbound_worker_notify import (
     open_inbound_listen_connection,
     wait_for_inbound_notify,
@@ -143,6 +146,9 @@ def _enqueue_outbound_reply(
     inbound_message: Any,
     agent_id: int,
     text: str,
+    message_type: str = "text",
+    media_url: Optional[str] = None,
+    extra_raw_payload: Optional[Dict[str, Any]] = None,
     ai_trace: Optional[Dict[str, Any]] = None,
     llm_provider: Optional[str] = None,
     llm_model: Optional[str] = None,
@@ -161,8 +167,9 @@ def _enqueue_outbound_reply(
         channel=inbound_message.channel,
         external_message_id=f"out_{uuid4().hex}",
         direction="outbound",
-        message_type="text",
+        message_type=message_type,
         text_content=text,
+        media_url=media_url,
         llm_provider=llm_provider,
         llm_model=llm_model,
         llm_prompt_tokens=llm_prompt_tokens,
@@ -174,6 +181,73 @@ def _enqueue_outbound_reply(
             "inbound_message_id": inbound_message.id,
             "agent_id": agent_id,
             "ai_trace": ai_trace or {},
+            **(extra_raw_payload or {}),
+        },
+        delivery_status="queued",
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(outbound)
+    session.commit()
+    session.refresh(outbound)
+
+    queue = OutboundQueue(
+        tenant_id=inbound_message.tenant_id,
+        message_id=outbound.id,
+        channel=inbound_message.channel,
+        channel_session_id=inbound_message.channel_session_id,
+        status="queued",
+        retry_count=0,
+        next_attempt_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(queue)
+    session.commit()
+    return outbound
+
+
+def _enqueue_sales_material_reply(
+    session: Session,
+    inbound_message: Any,
+    agent_id: int,
+    material: Any,
+    planner_trace: Optional[Dict[str, Any]] = None,
+) -> Any:
+    UnifiedMessage, _, OutboundQueue, _, _, _ = _get_db_models()
+    now = datetime.now(timezone.utc)
+    source_type = str(getattr(material, "source_type", "file") or "file").strip().lower()
+    is_link_material = source_type == "url"
+    resolved_url = str(
+        (getattr(material, "external_url", "") or getattr(material, "public_url", "") or "")
+    ).strip()
+    outbound = UnifiedMessage(
+        tenant_id=inbound_message.tenant_id,
+        lead_id=inbound_message.lead_id,
+        thread_id=inbound_message.thread_id,
+        channel_session_id=inbound_message.channel_session_id,
+        channel=inbound_message.channel,
+        external_message_id=f"out_{uuid4().hex}",
+        direction="outbound",
+        message_type=(
+            "text"
+            if is_link_material
+            else ("image" if str(material.media_type).startswith("image/") else "document")
+        ),
+        text_content=resolved_url if is_link_material else None,
+        media_url=None if is_link_material else material.public_url,
+        raw_payload={
+            "source": "ai_agent_sales_material",
+            "inbound_message_id": inbound_message.id,
+            "agent_id": agent_id,
+            "sales_material_id": material.id,
+            "sales_material_ids": [material.id],
+            "file_name": material.filename,
+            "mime_type": material.media_type,
+            "source_type": source_type,
+            "url": resolved_url if is_link_material else None,
+            "kind": sales_material_kind_for_material(material),
+            "planner_trace": planner_trace or {},
         },
         delivery_status="queued",
         created_at=now,
@@ -246,6 +320,133 @@ async def _enqueue_segmented_reply(
             idx + 1, len(segments), outbound.id, segment,
         )
     return enqueued
+
+
+def _extract_json_object(raw_text: str) -> Dict[str, Any]:
+    text = (raw_text or "").strip()
+    if not text:
+        return {}
+    try:
+        parsed = json.loads(text)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        pass
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return {}
+    try:
+        parsed = json.loads(text[start : end + 1])
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
+
+
+async def _plan_sales_material_sends(
+    session: Session,
+    inbound_message: Any,
+    agent: Any,
+    user_message: str,
+    reply_text: str,
+) -> List[Dict[str, Any]]:
+    if inbound_message.channel != "whatsapp" or not inbound_message.thread_id:
+        return []
+
+    materials = list_agent_sales_materials(session, int(inbound_message.tenant_id), int(agent.id))
+    if not materials:
+        return []
+
+    sent_state = thread_sales_material_state(session, int(inbound_message.tenant_id), inbound_message.thread_id)
+    options = [
+        {
+            "id": int(material.id),
+            "filename": material.filename,
+            "description": material.description,
+            "media_type": material.media_type,
+            "kind": sales_material_kind_for_material(material),
+            "source_type": str(getattr(material, "source_type", "file") or "file").strip().lower(),
+            "url": str(getattr(material, "external_url", "") or getattr(material, "public_url", "") or "").strip(),
+            "already_sent": int(material.id) in sent_state,
+            "send_count": int((sent_state.get(int(material.id)) or {}).get("count", 0) or 0),
+            "last_sent_at": (sent_state.get(int(material.id)) or {}).get("last_sent_at"),
+        }
+        for material in materials
+        if material.id is not None
+    ]
+    if not options:
+        return []
+
+    llm_task = importlib.import_module("src.infra.llm.schemas").LLMTask
+    planner_messages = [
+        {
+            "role": "system",
+            "content": (
+                "You decide whether a WhatsApp AI assistant should send any sales materials after its text reply. "
+                "Return JSON only with keys material_ids and reason. "
+                "Rules: choose at most 2 materials, only choose directly relevant materials, "
+                "avoid re-sending already-sent materials unless the user clearly asks to resend/review/download them again."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Agent name: {agent.name}\n"
+                f"Customer message:\n{user_message or '(empty)'}\n\n"
+                f"Assistant reply:\n{reply_text or '(empty)'}\n\n"
+                "Available materials JSON:\n"
+                f"{json.dumps(options, ensure_ascii=True)}\n\n"
+                'Return strict JSON like {"material_ids":[1],"reason":"short reason"}'
+            ),
+        },
+    ]
+
+    try:
+        response = await _get_llm_router().execute(
+            task=llm_task.CONVERSATION,
+            messages=planner_messages,
+            temperature=0.1,
+            max_tokens=180,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Sales material planner failed for inbound message_id=%s: %s",
+            inbound_message.id,
+            exc,
+        )
+        return []
+
+    parsed = _extract_json_object(response.content or "")
+    chosen_ids = parsed.get("material_ids")
+    if not isinstance(chosen_ids, list):
+        return []
+
+    valid_ids = []
+    for item in chosen_ids:
+        if isinstance(item, int):
+            valid_ids.append(item)
+        elif isinstance(item, str) and item.isdigit():
+            valid_ids.append(int(item))
+    valid_ids = list(dict.fromkeys(valid_ids))[:2]
+    if not valid_ids:
+        return []
+
+    selected: List[Dict[str, Any]] = []
+    by_id = {int(item["id"]): item for item in options}
+    for material in materials:
+        material_id = int(material.id or 0)
+        if material_id in valid_ids and material_id in by_id:
+            selected.append(
+                {
+                    "material": material,
+                    "planner_trace": {
+                        "reason": str(parsed.get("reason") or "").strip()[:300],
+                        "selected_material_ids": valid_ids,
+                        "model_output": (response.content or "")[:1200],
+                    },
+                }
+            )
+    return selected
 
 
 
@@ -783,6 +984,22 @@ async def _process_one_inbound(session: Session, message: Any):
         session.commit()
         session.refresh(lead)
 
+    thread_id = getattr(message, "thread_id", None)
+    tenant_id = getattr(message, "tenant_id", None)
+    if thread_id is not None and tenant_id is not None and hasattr(session, "exec"):
+        from routers.ai_crm_helpers import clear_thread_followup_state
+
+        clear_thread_followup_state(
+            session=session,
+            tenant_id=int(tenant_id),
+            thread_id=int(thread_id),
+            reason="customer_replied_inbound",
+        )
+        lead.next_followup_at = None
+        session.add(lead)
+        session.commit()
+        session.refresh(lead)
+
     history = _build_thread_history(session, message)
     prepared = await _prepare_media_inbound_for_runtime(message)
     if prepared.get("processing"):
@@ -819,6 +1036,7 @@ async def _process_one_inbound(session: Session, message: Any):
         workspace_id=lead.workspace_id,
         user_message=prepared.get("user_message") or "",
         agent_id_override=agent.id,
+        thread_id_override=message.thread_id,
         bypass_safety=True,
         history_override=history,
         task_override=prepared.get("task"),
@@ -829,22 +1047,57 @@ async def _process_one_inbound(session: Session, message: Any):
 
     if status == "sent":
         reply_text = result["content"]
-        # Resolve segment delay from the agent's setting (default 800 ms)
-        delay_ms = int(getattr(agent, "segment_delay_ms", 800) or 800)
-        await _enqueue_segmented_reply(
-            session,
-            message,
-            agent.id,
-            reply_text,
-            delay_ms=delay_ms,
-            ai_trace=result.get("ai_trace"),
-            llm_provider=result.get("llm_provider"),
-            llm_model=result.get("llm_model"),
-            llm_prompt_tokens=result.get("llm_prompt_tokens"),
-            llm_completion_tokens=result.get("llm_completion_tokens"),
-            llm_total_tokens=result.get("llm_total_tokens"),
-            llm_estimated_cost_usd=result.get("llm_estimated_cost_usd"),
-        )
+        if str(result.get("message_type") or "text").strip().lower() == "audio":
+            _enqueue_outbound_reply(
+                session=session,
+                inbound_message=message,
+                agent_id=agent.id,
+                text=reply_text,
+                message_type="audio",
+                extra_raw_payload={
+                    "source": "ai_agent_voice_note",
+                    **(result.get("raw_payload") or {}),
+                },
+                ai_trace=result.get("ai_trace"),
+                llm_provider=result.get("llm_provider"),
+                llm_model=result.get("llm_model"),
+                llm_prompt_tokens=result.get("llm_prompt_tokens"),
+                llm_completion_tokens=result.get("llm_completion_tokens"),
+                llm_total_tokens=result.get("llm_total_tokens"),
+                llm_estimated_cost_usd=result.get("llm_estimated_cost_usd"),
+            )
+        else:
+            # Resolve segment delay from the agent's setting (default 800 ms)
+            delay_ms = int(getattr(agent, "segment_delay_ms", 800) or 800)
+            await _enqueue_segmented_reply(
+                session,
+                message,
+                agent.id,
+                reply_text,
+                delay_ms=delay_ms,
+                ai_trace=result.get("ai_trace"),
+                llm_provider=result.get("llm_provider"),
+                llm_model=result.get("llm_model"),
+                llm_prompt_tokens=result.get("llm_prompt_tokens"),
+                llm_completion_tokens=result.get("llm_completion_tokens"),
+                llm_total_tokens=result.get("llm_total_tokens"),
+                llm_estimated_cost_usd=result.get("llm_estimated_cost_usd"),
+            )
+            planned_materials = await _plan_sales_material_sends(
+                session=session,
+                inbound_message=message,
+                agent=agent,
+                user_message=prepared.get("user_message") or "",
+                reply_text=reply_text,
+            )
+            for planned in planned_materials:
+                _enqueue_sales_material_reply(
+                    session=session,
+                    inbound_message=message,
+                    agent_id=agent.id,
+                    material=planned["material"],
+                    planner_trace=planned.get("planner_trace"),
+                )
         message.delivery_status = "inbound_ai_replied"
         logger.info(
             "AI reply enqueued for message_id=%s: %.80s…", message.id, reply_text

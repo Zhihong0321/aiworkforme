@@ -72,6 +72,8 @@ class AgentSalesMaterial(SQLModel, table=True):
     filename: str
     stored_name: str
     media_type: str = Field(index=True)
+    source_type: str = Field(default="file", index=True)
+    external_url: str = Field(default="")
     file_size_bytes: int
     description: str = Field(default="")
     public_token: str = Field(index=True)

@@ -11,8 +11,10 @@ const message = ref('')
 const salesMaterials = ref([])
 const isLoadingSalesMaterials = ref(false)
 const isUploadingSalesMaterial = ref(false)
+const salesMaterialMode = ref('file')
 const salesMaterialDescription = ref('')
 const selectedSalesMaterialFile = ref(null)
+const salesMaterialUrl = ref('')
 const salesMaterialInput = ref(null)
 
 const createDefaultForm = () => ({
@@ -72,6 +74,16 @@ const formatFileSize = (bytes) => {
   return `${value} B`
 }
 
+const resetSalesMaterialDraft = () => {
+  salesMaterialMode.value = 'file'
+  salesMaterialDescription.value = ''
+  selectedSalesMaterialFile.value = null
+  salesMaterialUrl.value = ''
+  if (salesMaterialInput.value) {
+    salesMaterialInput.value.value = ''
+  }
+}
+
 const loadMcpServers = async () => {
   try {
     const data = await request('/mcp/servers')
@@ -114,6 +126,7 @@ const openAgent = async (agentId, options = {}) => {
 
   selectedAgentId.value = agent.id
   applyAgentToForm(agent)
+  resetSalesMaterialDraft()
   if (syncStore) {
     store.setActiveAgent(agent.id)
   }
@@ -124,11 +137,7 @@ const startNewAgent = () => {
   selectedAgentId.value = 'new'
   resetForm()
   salesMaterials.value = []
-  selectedSalesMaterialFile.value = null
-  salesMaterialDescription.value = ''
-  if (salesMaterialInput.value) {
-    salesMaterialInput.value.value = ''
-  }
+  resetSalesMaterialDraft()
 }
 
 const initializePage = async () => {
@@ -248,6 +257,7 @@ const toggleSkill = async (serverId) => {
 }
 
 const chooseSalesMaterialFile = () => {
+  salesMaterialMode.value = 'file'
   salesMaterialInput.value?.click()
 }
 
@@ -268,16 +278,36 @@ const uploadSalesMaterial = async () => {
       body,
     })
 
-    salesMaterialDescription.value = ''
-    selectedSalesMaterialFile.value = null
-    if (salesMaterialInput.value) {
-      salesMaterialInput.value.value = ''
-    }
+    resetSalesMaterialDraft()
     await loadSalesMaterials(form.id)
     setMessage('Sales material uploaded successfully')
   } catch (error) {
     console.error('Sales material upload failed', error)
     setMessage(`Upload failed: ${error.message}`)
+  } finally {
+    isUploadingSalesMaterial.value = false
+  }
+}
+
+const createSalesMaterialLink = async () => {
+  if (!form.id || !salesMaterialUrl.value.trim() || !salesMaterialDescription.value.trim()) return
+
+  isUploadingSalesMaterial.value = true
+  try {
+    await request(`/agents/${form.id}/sales-materials/link`, {
+      method: 'POST',
+      body: JSON.stringify({
+        url: salesMaterialUrl.value.trim(),
+        description: salesMaterialDescription.value.trim(),
+      }),
+    })
+
+    resetSalesMaterialDraft()
+    await loadSalesMaterials(form.id)
+    setMessage('Sales material link saved successfully')
+  } catch (error) {
+    console.error('Sales material link save failed', error)
+    setMessage(`Save failed: ${error.message}`)
   } finally {
     isUploadingSalesMaterial.value = false
   }
@@ -528,7 +558,7 @@ onMounted(() => {
                 <div class="px-1">
                   <h3 class="text-lg font-bold text-slate-900 dark:text-slate-100">Sales Materials</h3>
                   <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Upload PDFs or images for this agent and describe when the AI should send them.
+                    Add either a file or a URL and describe when the AI should send it. YouTube links are supported too.
                   </p>
                 </div>
 
@@ -549,7 +579,33 @@ onMounted(() => {
                       @change="onSalesMaterialSelected"
                     />
 
-                    <div class="flex flex-col gap-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/40 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="grid gap-2 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        @click="salesMaterialMode = 'file'"
+                        class="rounded-xl border px-4 py-2 text-sm font-bold transition-colors"
+                        :class="salesMaterialMode === 'file'
+                          ? 'border-primary bg-primary text-white'
+                          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'"
+                      >
+                        File or PDF
+                      </button>
+                      <button
+                        type="button"
+                        @click="salesMaterialMode = 'url'"
+                        class="rounded-xl border px-4 py-2 text-sm font-bold transition-colors"
+                        :class="salesMaterialMode === 'url'
+                          ? 'border-primary bg-primary text-white'
+                          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'"
+                      >
+                        URL or YouTube
+                      </button>
+                    </div>
+
+                    <div
+                      v-if="salesMaterialMode === 'file'"
+                      class="flex flex-col gap-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/40 sm:flex-row sm:items-center sm:justify-between"
+                    >
                       <div>
                         <p class="font-semibold text-slate-800 dark:text-slate-100">Upload brochure or promo image</p>
                         <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">PDF up to 15MB. Images up to 8MB.</p>
@@ -570,6 +626,22 @@ onMounted(() => {
                       {{ selectedSalesMaterialFile.name }} · {{ formatFileSize(selectedSalesMaterialFile.size) }}
                     </div>
 
+                    <div
+                      v-else-if="salesMaterialMode === 'url'"
+                      class="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-950/40"
+                    >
+                      <label class="mb-2 block text-sm font-semibold text-slate-900 dark:text-slate-100">Target URL</label>
+                      <input
+                        v-model="salesMaterialUrl"
+                        type="url"
+                        class="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-slate-900 placeholder:text-slate-400 focus:border-primary focus:ring-2 focus:ring-primary dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100"
+                        placeholder="https://example.com/brochure or https://youtu.be/..."
+                      />
+                      <p class="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                        Paste any public URL, including YouTube links.
+                      </p>
+                    </div>
+
                     <div class="mt-4 space-y-2">
                       <label class="px-1 text-sm font-semibold text-slate-900 dark:text-slate-100">Description</label>
                       <textarea
@@ -581,11 +653,13 @@ onMounted(() => {
 
                     <button
                       type="button"
-                      @click="uploadSalesMaterial"
-                      :disabled="isUploadingSalesMaterial || !selectedSalesMaterialFile || !salesMaterialDescription.trim()"
+                      @click="salesMaterialMode === 'file' ? uploadSalesMaterial() : createSalesMaterialLink()"
+                      :disabled="isUploadingSalesMaterial || (salesMaterialMode === 'file'
+                        ? (!selectedSalesMaterialFile || !salesMaterialDescription.trim())
+                        : (!salesMaterialUrl.trim() || !salesMaterialDescription.trim()))"
                       class="mt-4 w-full rounded-xl bg-slate-900 py-3 text-sm font-bold text-white disabled:opacity-50 dark:bg-slate-100 dark:text-slate-900"
                     >
-                      {{ isUploadingSalesMaterial ? 'Uploading...' : 'Save Sales Material' }}
+                      {{ isUploadingSalesMaterial ? 'Saving...' : salesMaterialMode === 'file' ? 'Save File Material' : 'Save Link Material' }}
                     </button>
                   </template>
                 </div>
@@ -603,15 +677,17 @@ onMounted(() => {
                       <div class="flex items-start justify-between gap-3">
                         <div class="flex min-w-0 items-start gap-3">
                           <div class="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-                            <span class="material-symbols-outlined text-[20px]">{{ material.kind === 'image' ? 'image' : 'picture_as_pdf' }}</span>
+                            <span class="material-symbols-outlined text-[20px]">{{ material.kind === 'image' ? 'image' : material.kind === 'youtube' ? 'smart_display' : material.kind === 'link' ? 'link' : 'picture_as_pdf' }}</span>
                           </div>
                           <div class="min-w-0">
                             <p class="break-all font-semibold text-slate-800 dark:text-slate-100">{{ material.filename }}</p>
-                            <p class="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">{{ material.kind }} · {{ formatFileSize(material.file_size_bytes) }}</p>
+                            <p class="mt-1 text-xs uppercase tracking-[0.18em] text-slate-400">
+                              {{ material.kind }}<span v-if="material.source_type !== 'url'"> · {{ formatFileSize(material.file_size_bytes) }}</span>
+                            </p>
                             <p class="mt-2 text-sm text-slate-600 dark:text-slate-300">{{ material.description }}</p>
-                            <a :href="material.public_url" target="_blank" class="mt-3 inline-flex items-center gap-2 text-xs font-bold text-primary hover:underline">
+                            <a :href="material.public_url" target="_blank" class="mt-3 inline-flex items-center gap-2 break-all text-xs font-bold text-primary hover:underline">
                               <span class="material-symbols-outlined text-[16px]">open_in_new</span>
-                              Open file
+                              {{ material.source_type === 'url' ? 'Open link' : 'Open file' }}
                             </a>
                           </div>
                         </div>

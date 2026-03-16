@@ -231,6 +231,62 @@ def test_agent_sales_material_upload_and_list_are_tenant_scoped(
     assert exc.value.status_code == 400
 
 
+def test_agent_sales_material_links_accept_urls_and_youtube(
+    session: Session,
+    auth_context: AuthContext,
+):
+    created = agents.create_agent(
+        agents.AgentCreate(name="Link Agent", system_prompt="Helpful"),
+        session=session,
+        auth=auth_context,
+    )
+
+    link_material = agents.create_agent_sales_material_link(
+        agent_id=int(created.id),
+        payload=agents.AgentSalesMaterialLinkCreate(
+            url="https://example.com/pricing",
+            description="Send this when someone wants the pricing page.",
+        ),
+        session=session,
+        auth=auth_context,
+    )
+    youtube_material = agents.create_agent_sales_material_link(
+        agent_id=int(created.id),
+        payload=agents.AgentSalesMaterialLinkCreate(
+            url="https://youtu.be/dQw4w9WgXcQ",
+            description="Send this walkthrough video when someone asks how it works.",
+        ),
+        session=session,
+        auth=auth_context,
+    )
+
+    assert link_material.source_type == "url"
+    assert link_material.kind == "link"
+    assert link_material.public_url == "https://example.com/pricing"
+    assert youtube_material.kind == "youtube"
+    assert youtube_material.public_url == "https://youtu.be/dQw4w9WgXcQ"
+
+    listed = agents.list_agent_sales_materials(
+        agent_id=int(created.id),
+        session=session,
+        auth=auth_context,
+    )
+    assert len(listed) == 2
+    assert {item.kind for item in listed} == {"link", "youtube"}
+
+    with pytest.raises(HTTPException) as exc:
+        agents.create_agent_sales_material_link(
+            agent_id=int(created.id),
+            payload=agents.AgentSalesMaterialLinkCreate(
+                url="ftp://example.com/file",
+                description="Invalid URL",
+            ),
+            session=session,
+            auth=auth_context,
+        )
+    assert exc.value.status_code == 400
+
+
 def _async_return(value):
     async def _inner(*_args, **_kwargs):
         return value

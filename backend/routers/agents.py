@@ -21,6 +21,7 @@ from src.app.runtime.knowledge_processor import KnowledgeProcessor
 from src.app.runtime.sales_materials import (
     build_sales_material_public_url,
     build_sales_material_stored_name,
+    build_url_sales_material,
     delete_sales_material_file,
     list_agent_sales_materials as _list_agent_sales_materials,
     serialize_sales_material,
@@ -49,11 +50,18 @@ class AgentSalesMaterialRead(BaseModel):
     filename: str
     media_type: str
     kind: str
+    source_type: str
+    external_url: Optional[str] = None
     file_size_bytes: int
     description: str
     public_url: str
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
+
+
+class AgentSalesMaterialLinkCreate(BaseModel):
+    url: str
+    description: str
 
 @router.get("/", response_model=List[AgentRead])
 def list_agents(
@@ -310,6 +318,8 @@ async def upload_agent_sales_material(
         filename=validated["filename"],
         stored_name=stored_name,
         media_type=validated["media_type"],
+        source_type=validated.get("source_type") or "file",
+        external_url=validated.get("external_url") or "",
         file_size_bytes=validated["file_size_bytes"],
         description=description_text[:1000],
         public_token=public_token,
@@ -329,6 +339,43 @@ async def upload_agent_sales_material(
         logger.exception("Failed to store sales material for agent_id=%s", agent_id)
         raise HTTPException(status_code=500, detail=f"Failed to store sales material: {exc}") from exc
 
+    return AgentSalesMaterialRead(**serialize_sales_material(material))
+
+
+@router.post("/{agent_id}/sales-materials/link", response_model=AgentSalesMaterialRead)
+def create_agent_sales_material_link(
+    agent_id: int,
+    payload: AgentSalesMaterialLinkCreate,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    agent = session.get(Agent, agent_id)
+    if not agent or agent.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    description_text = (payload.description or "").strip()
+    if not description_text:
+        raise HTTPException(status_code=400, detail="Description is required")
+
+    validated = build_url_sales_material(payload.url, description_text)
+    material = AgentSalesMaterial(
+        tenant_id=auth.tenant.id,
+        agent_id=agent_id,
+        filename=validated["filename"],
+        stored_name="",
+        media_type=validated["media_type"],
+        source_type=validated["source_type"],
+        external_url=validated["external_url"],
+        file_size_bytes=validated["file_size_bytes"],
+        description=description_text[:1000],
+        public_token="",
+        public_url=validated["external_url"],
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    session.add(material)
+    session.commit()
+    session.refresh(material)
     return AgentSalesMaterialRead(**serialize_sales_material(material))
 
 

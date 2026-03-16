@@ -382,3 +382,36 @@ def apply_lead_agent_id_additive_migration(engine: Engine):
                     conn.execute(text("ALTER TABLE et_leads ADD COLUMN agent_id INTEGER REFERENCES zairag_agents(id)"))
                 conn.execute(text("CREATE INDEX IF NOT EXISTS idx_et_leads_agent_id ON et_leads(agent_id)"))
             logger.info("Lead agent_id additive migration applied for SQLite.")
+
+
+def apply_agent_sales_material_links_migration(engine: Engine):
+    """
+    Ensures agent sales materials support both uploaded files and external links.
+    Safe to run repeatedly.
+    """
+    dialect = engine.dialect.name
+    if dialect == "postgresql":
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE zairag_agent_sales_materials ADD COLUMN IF NOT EXISTS source_type VARCHAR(16) DEFAULT 'file'"))
+            conn.execute(text("ALTER TABLE zairag_agent_sales_materials ADD COLUMN IF NOT EXISTS external_url TEXT DEFAULT ''"))
+            conn.execute(text("UPDATE zairag_agent_sales_materials SET source_type = 'file' WHERE source_type IS NULL OR source_type = ''"))
+            conn.execute(text("UPDATE zairag_agent_sales_materials SET external_url = '' WHERE external_url IS NULL"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_agent_sales_materials_source_type ON zairag_agent_sales_materials(source_type)"))
+        logger.info("Agent sales material links migration applied for PostgreSQL.")
+        return
+
+    if dialect == "sqlite":
+        insp = inspect(engine)
+        tables = set(insp.get_table_names())
+        if "zairag_agent_sales_materials" not in tables:
+            return
+        existing_cols = {col["name"] for col in insp.get_columns("zairag_agent_sales_materials")}
+        with engine.begin() as conn:
+            if "source_type" not in existing_cols:
+                conn.execute(text("ALTER TABLE zairag_agent_sales_materials ADD COLUMN source_type VARCHAR(16) DEFAULT 'file'"))
+            if "external_url" not in existing_cols:
+                conn.execute(text("ALTER TABLE zairag_agent_sales_materials ADD COLUMN external_url TEXT DEFAULT ''"))
+            conn.execute(text("UPDATE zairag_agent_sales_materials SET source_type = 'file' WHERE source_type IS NULL OR source_type = ''"))
+            conn.execute(text("UPDATE zairag_agent_sales_materials SET external_url = '' WHERE external_url IS NULL"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_agent_sales_materials_source_type ON zairag_agent_sales_materials(source_type)"))
+        logger.info("Agent sales material links migration applied for SQLite.")
