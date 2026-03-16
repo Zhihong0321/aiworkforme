@@ -32,6 +32,7 @@ from .messaging_helpers import (
     resolve_whatsapp_channel_session_by_phone as _resolve_whatsapp_channel_session_by_phone,
     resolve_whatsapp_channel_session_for_tenant as _resolve_whatsapp_channel_session_for_tenant,
     stage_value as _stage_value,
+    sync_whatsapp_channel_identity as _sync_whatsapp_channel_identity,
     validate_channel_session as _validate_channel_session,
     validate_lead_number_for_whatsapp as _validate_lead_number_for_whatsapp,
     validate_lead_tenant as _validate_lead_tenant,
@@ -60,10 +61,19 @@ def create_outbound_message(
     auth: AuthContext = Depends(require_tenant_access),
 ):
     channel = payload.channel.strip().lower()
+    message_type = (payload.message_type or "text").strip().lower()
     if channel not in {"whatsapp", "email", "telegram"}:
         raise HTTPException(status_code=400, detail="Unsupported channel")
-    if not payload.text_content.strip():
+    if message_type not in {"text", "audio", "image", "document", "pdf"}:
+        raise HTTPException(status_code=400, detail="Unsupported message_type")
+    text_content = (payload.text_content or "").strip()
+    media_url = (payload.media_url or "").strip() or None
+    if message_type == "text" and not text_content:
         raise HTTPException(status_code=400, detail="text_content is required")
+    if message_type == "audio" and not text_content and not media_url:
+        raise HTTPException(status_code=400, detail="Audio outbound requires text_content or media_url")
+    if message_type in {"image", "document", "pdf"} and not media_url:
+        raise HTTPException(status_code=400, detail="media_url is required for image/document outbound")
     if channel == "whatsapp" and payload.channel_session_id is None:
         raise HTTPException(status_code=400, detail="channel_session_id is required for WhatsApp outbound")
 
@@ -82,9 +92,17 @@ def create_outbound_message(
         channel=channel,
         external_message_id=external_message_id,
         direction="outbound",
-        message_type="text",
-        text_content=payload.text_content,
-        raw_payload=payload.raw_payload or {},
+        message_type=message_type,
+        text_content=text_content or None,
+        media_url=media_url,
+        raw_payload={
+            **(payload.raw_payload or {}),
+            "file_name": payload.file_name,
+            "mime_type": payload.mime_type,
+            "tts_model": payload.tts_model,
+            "tts_voice": payload.tts_voice,
+            "tts_instructions": payload.tts_instructions,
+        },
         delivery_status="queued",
         created_at=now,
         updated_at=now,
@@ -300,6 +318,14 @@ def create_inbound_message(
             tenant_id=auth.tenant.id,
             lead_phone=lead_phone,
         )
+        if channel_session is not None:
+            _sync_whatsapp_channel_identity(
+                channel_session,
+                explicit_phone=tenant_whatsapp_phone,
+            )
+            session.add(channel_session)
+            session.commit()
+            session.refresh(channel_session)
     else:
         raise HTTPException(status_code=400, detail="lead_id is required for non-whatsapp inbound")
 

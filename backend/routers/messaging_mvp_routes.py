@@ -8,17 +8,10 @@ SAFE CHANGE: Preserve non-blocking diagnostic semantics.
 """
 
 from datetime import datetime, timedelta
-import os
-import shutil
-import subprocess
-import tempfile
-import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List
 from uuid import uuid4
-from urllib.parse import quote
 
-import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
@@ -27,14 +20,9 @@ from src.adapters.db.agent_models import Agent
 from src.adapters.db.channel_models import ChannelSession, ChannelType, SessionStatus
 from src.adapters.db.crm_models import Lead, Workspace
 from src.adapters.db.messaging_models import OutboundQueue, UnifiedMessage
-from src.adapters.db.tenant_models import SystemSetting
-from src.app.runtime.temp_media_store import create_temp_media, delete_temp_media
 from src.infra.database import get_session
 
 from .messaging_helpers import (
-    extract_whatsapp_recipient as _extract_whatsapp_recipient,
-    provider_headers as _provider_headers,
-    resolve_whatsapp_base_url as _resolve_whatsapp_base_url,
     get_or_create_thread as _get_or_create_thread,
     resolve_whatsapp_channel_session_for_tenant as _resolve_whatsapp_channel_session_for_tenant,
     validate_lead_number_for_whatsapp as _validate_lead_number_for_whatsapp,
@@ -50,6 +38,7 @@ from .messaging_schemas import (
     VoiceNoteTestRequest,
     VoiceNoteTestResponse,
 )
+from .whatsapp_voice_note import dispatch_generated_voice_note
 
 router = APIRouter()
 
@@ -402,7 +391,6 @@ async def simulate_inbound_message(
 @router.post("/mvp/test-voice-note", response_model=VoiceNoteTestResponse)
 def test_voice_note_delivery(
     payload: VoiceNoteTestRequest,
-    request: Request,
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access),
 ):
@@ -416,282 +404,23 @@ def test_voice_note_delivery(
     if channel_session.status != SessionStatus.ACTIVE:
         raise HTTPException(status_code=400, detail="WhatsApp session is not active. Reconnect QR first.")
 
-    uniapi_setting = session.get(SystemSetting, "uniapi_key")
-    uniapi_key = (
-        (uniapi_setting.value if uniapi_setting and uniapi_setting.value else "")
-        or os.getenv("OPENAI_API_KEY")
-        or os.getenv("UNIAPI_API_KEY")
+    voice_result = dispatch_generated_voice_note(
+        session=session,
+        channel_session=channel_session,
+        lead=lead,
+        text_content=payload.text_content,
+        model=payload.model,
+        voice=payload.voice,
+        instructions=payload.instructions,
     )
-    if not uniapi_key:
-        raise HTTPException(
-            status_code=400,
-            detail="UniAPI key is missing. Set /api/v1/settings/uniapi-key or OPENAI_API_KEY.",
-        )
-
-    requested_text = (payload.text_content or "").strip()
-    if not requested_text:
-        raise HTTPException(status_code=400, detail="text_content is required")
-
-    model = (payload.model or "").strip() or "qwen3-tts-flash"
-    voice = (payload.voice or "").strip() or "kiki"
-    instructions = (payload.instructions or "").strip() or None
-    uniapi_base = (os.getenv("UNIAPI_OPENAI_BASE_URL") or "https://api.uniapi.io/v1").rstrip("/")
-
-    tts_url = f"{uniapi_base}/audio/speech"
-    short_fallback_text = "Hi, quick follow-up."
-
-    def _generate_tts_audio(input_text: str) -> Tuple[bytes, str]:
-        tts_payload: Dict[str, Any] = {
-            "model": model,
-            "voice": voice,
-            "input": input_text,
-        }
-        if instructions:
-            tts_payload["instructions"] = instructions
-
-        try:
-            with httpx.Client(timeout=60.0) as client:
-                tts_resp = client.post(
-                    tts_url,
-                    headers={
-                        "Authorization": f"Bearer {uniapi_key}",
-                        "Content-Type": "application/json",
-                    },
-                    json=tts_payload,
-                )
-        except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"TTS request failed: {str(exc)}") from exc
-
-        if tts_resp.status_code >= 400:
-            detail = tts_resp.text[:400]
-            raise HTTPException(status_code=502, detail=f"TTS failed ({tts_resp.status_code}): {detail}")
-
-        body = tts_resp.content or b""
-        if not body:
-            raise HTTPException(status_code=502, detail="TTS returned empty audio content")
-        content_type = (tts_resp.headers.get("content-type") or "audio/wav").split(";")[0].strip() or "audio/wav"
-        return body, content_type
-
-    text_content_used = requested_text
-    audio_bytes, tts_content_type = _generate_tts_audio(text_content_used)
-    if len(audio_bytes) > 300_000:
-        text_content_used = short_fallback_text
-        audio_bytes, tts_content_type = _generate_tts_audio(text_content_used)
-    if len(audio_bytes) > 300_000:
-        raise HTTPException(status_code=502, detail="Generated voice note is too large for this test flow.")
-
-    transcode_note: Optional[str] = None
-    if "ogg" not in tts_content_type.lower() or "opus" not in tts_content_type.lower():
-        ffmpeg_bin = shutil.which("ffmpeg")
-        if ffmpeg_bin:
-            in_suffix = ".wav" if "wav" in tts_content_type.lower() else ".audio"
-            with tempfile.NamedTemporaryFile(suffix=in_suffix, delete=False) as tmp_in:
-                tmp_in.write(audio_bytes)
-                in_path = tmp_in.name
-            out_path = f"{in_path}.ogg"
-            try:
-                cmd = [
-                    ffmpeg_bin,
-                    "-y",
-                    "-i",
-                    in_path,
-                    "-c:a",
-                    "libopus",
-                    "-b:a",
-                    "24k",
-                    "-vbr",
-                    "on",
-                    "-application",
-                    "voip",
-                    out_path,
-                ]
-                proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
-                if proc.returncode == 0 and os.path.exists(out_path):
-                    audio_bytes = open(out_path, "rb").read()
-                    tts_content_type = "audio/ogg; codecs=opus"
-                    transcode_note = "transcoded_to_ogg_opus"
-                else:
-                    transcode_note = "ffmpeg_transcode_failed_using_original_audio"
-            finally:
-                try:
-                    os.remove(in_path)
-                except Exception:
-                    pass
-                try:
-                    os.remove(out_path)
-                except Exception:
-                    pass
-        else:
-            transcode_note = "ffmpeg_not_found_using_original_audio"
-
-    suffix = ".ogg" if "ogg" in tts_content_type else ".wav"
-    temp_token = create_temp_media(
-        content=audio_bytes,
-        mime_type=tts_content_type,
-        suffix=suffix,
-        ttl_seconds=300,
-    )
-    public_base_url = (os.getenv("APP_PUBLIC_BASE_URL") or str(request.base_url)).rstrip("/")
-    if "localhost" in public_base_url or "127.0.0.1" in public_base_url:
-        delete_temp_media(temp_token)
-        raise HTTPException(
-            status_code=400,
-            detail="APP_PUBLIC_BASE_URL must be a public URL reachable by Baileys.",
-        )
-    media_url = f"{public_base_url}/api/v1/public/temp-media/{temp_token}"
-
-    base_url = _resolve_whatsapp_base_url(channel_session)
-    send_url = f"{base_url}/messages/send"
-    base_send_payload = {
-        "sessionId": channel_session.session_identifier,
-        "to": _extract_whatsapp_recipient(lead.external_id),
-    }
-
-    send_variants: List[Tuple[str, Dict[str, Any]]] = [
-        (
-            "audio_url_ptt",
-            {
-                **base_send_payload,
-                "audioUrl": media_url,
-                "mimetype": tts_content_type,
-                "ptt": True,
-                # Optional caption is accepted by this server for media sends.
-                "text": text_content_used,
-            },
-        ),
-    ]
-
-    provider_message_id: Optional[str] = None
-    provider_remote_jid: Optional[str] = None
-    send_variant_used: Optional[str] = None
-    attempts: List[Dict[str, Any]] = []
-    last_error_detail = "Unknown send error"
-
-    with httpx.Client(timeout=45.0) as client:
-        for variant_name, send_payload in send_variants:
-            try:
-                send_resp = client.post(
-                    send_url,
-                    headers=_provider_headers(),
-                    json=send_payload,
-                )
-                body: Dict[str, Any] = {}
-                if send_resp.content:
-                    try:
-                        body = send_resp.json()
-                    except Exception:
-                        body = {"raw": send_resp.text[:400]}
-                attempt_record = {"variant": variant_name, "status_code": send_resp.status_code}
-                if send_resp.status_code >= 400:
-                    attempt_record["error"] = str(body)[:300]
-                    attempts.append(attempt_record)
-                    last_error_detail = f"Variant {variant_name} failed ({send_resp.status_code}): {str(body)[:300]}"
-                    continue
-
-                result = body.get("result") if isinstance(body, dict) else {}
-                key = result.get("key") if isinstance(result, dict) else {}
-                status_text = str(body.get("status") if isinstance(body, dict) else "").strip().lower()
-                msg_id = (
-                    (body.get("provider_message_id") if isinstance(body, dict) else None)
-                    or (body.get("message_id") if isinstance(body, dict) else None)
-                    or (key.get("id") if isinstance(key, dict) else None)
-                )
-                remote_jid = key.get("remoteJid") if isinstance(key, dict) else None
-                attempt_record["provider_status"] = status_text or None
-                attempt_record["provider_message_id"] = msg_id
-                attempt_record["remote_jid"] = remote_jid
-                attempts.append(attempt_record)
-
-                # Accept only explicit success contract from Baileys docs.
-                if status_text != "sent" or not msg_id:
-                    last_error_detail = (
-                        f"Variant {variant_name} returned non-sent status or missing message id: "
-                        f"{str(body)[:300]}"
-                    )
-                    continue
-
-                provider_message_id = str(msg_id)
-                provider_remote_jid = str(remote_jid) if remote_jid else None
-                send_variant_used = variant_name
-                break
-            except Exception as exc:
-                attempts.append({"variant": variant_name, "error": str(exc)[:300]})
-                last_error_detail = f"Variant {variant_name} exception: {str(exc)}"
-
-    if not provider_message_id:
-        delete_temp_media(temp_token)
-        raise HTTPException(
-            status_code=502,
-            detail=f"Voice note send failed on all variants. Last error: {last_error_detail}",
-        )
-
-    # Verify message is visible in provider chat history to avoid false positives.
-    if provider_remote_jid:
-        verified = False
-        verify_error: Optional[str] = None
-        verify_endpoint = f"{base_url}/chats/{quote(provider_remote_jid, safe='')}/messages"
-        with httpx.Client(timeout=20.0) as client:
-            for _ in range(3):
-                try:
-                    verify_resp = client.get(
-                        verify_endpoint,
-                        headers=_provider_headers(),
-                        params={"sessionId": channel_session.session_identifier, "limit": 30},
-                    )
-                    if verify_resp.status_code < 400:
-                        payload = verify_resp.json() if verify_resp.content else {}
-                        messages = []
-                        if isinstance(payload, dict):
-                            if isinstance(payload.get("messages"), list):
-                                messages = payload.get("messages") or []
-                            elif isinstance(payload.get("result"), list):
-                                messages = payload.get("result") or []
-                            elif isinstance(payload.get("result"), dict) and isinstance(payload["result"].get("messages"), list):
-                                messages = payload["result"].get("messages") or []
-
-                        for msg in messages:
-                            if not isinstance(msg, dict):
-                                continue
-                            key = msg.get("key") if isinstance(msg.get("key"), dict) else {}
-                            msg_id = (
-                                key.get("id")
-                                or msg.get("id")
-                                or msg.get("messageId")
-                            )
-                            if str(msg_id or "") == provider_message_id:
-                                verified = True
-                                break
-                        if verified:
-                            break
-                except Exception as exc:
-                    verify_error = str(exc)
-                time.sleep(1.0)
-
-        if not verified:
-            delete_temp_media(temp_token)
-            raise HTTPException(
-                status_code=502,
-                detail=(
-                    "Provider returned sent but message was not found in recent chat history. "
-                    f"message_id={provider_message_id}"
-                    + (f", verify_error={verify_error}" if verify_error else "")
-                ),
-            )
 
     thread = _get_or_create_thread(session, auth.tenant.id, lead.id, "whatsapp")
     now = datetime.utcnow()
     raw_payload = {
         "source": "mvp_voice_note_test",
-        "tts_model": model,
-        "tts_voice": voice,
-        "tts_requested_text": requested_text,
-        "tts_text_used": text_content_used,
-        "tts_content_type": tts_content_type,
-        "tts_transcode_note": transcode_note,
-        "temp_media_url": media_url,
-        "send_variant_used": send_variant_used,
-        "send_attempts": attempts,
+        **voice_result,
     }
+    provider_message_id = str(voice_result.get("provider_message_id") or "")
 
     existing = session.exec(
         select(UnifiedMessage).where(
@@ -720,7 +449,8 @@ def test_voice_note_delivery(
             external_message_id=provider_message_id,
             direction="outbound",
             message_type="audio",
-            text_content=text_content_used,
+            text_content=payload.text_content,
+            media_url=voice_result.get("temp_media_url"),
             raw_payload=raw_payload,
             delivery_status="provider_accepted",
             created_at=now,
@@ -760,9 +490,9 @@ def test_voice_note_delivery(
         recipient=recipient,
         provider_message_id=provider_message_id,
         local_message_id=outbound.id,
-        tts_audio_bytes=len(audio_bytes),
-        tts_content_type=tts_content_type,
-        send_variant_used=send_variant_used,
+        tts_audio_bytes=int(voice_result.get("tts_audio_bytes", 0) or 0),
+        tts_content_type=str(voice_result.get("tts_content_type") or ""),
+        send_variant_used=str(voice_result.get("send_variant_used") or ""),
         detail="Voice note generated and sent to WhatsApp lead.",
-        send_attempts=attempts,
+        send_attempts=list(voice_result.get("send_attempts") or []),
     )

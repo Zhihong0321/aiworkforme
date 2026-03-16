@@ -10,6 +10,8 @@ SAFE CHANGE: Keep side effects equivalent when extracting logic.
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 import logging
+from pathlib import Path
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import HTTPException
@@ -30,8 +32,10 @@ from .messaging_helpers import (
     normalize_usage as _normalize_usage,
     provider_headers as _provider_headers,
     resolve_whatsapp_base_url as _resolve_whatsapp_base_url,
+    whatsapp_provider_session_identifier as _whatsapp_provider_session_identifier,
 )
 from .messaging_schemas import DispatchResponse
+from .whatsapp_voice_note import dispatch_generated_voice_note, send_whatsapp_voice_note, verify_whatsapp_message_visible
 
 logger = logging.getLogger(__name__)
 
@@ -121,10 +125,84 @@ def send_whatsapp_message(session: Session, message: UnifiedMessage) -> str:
     base_url = _resolve_whatsapp_base_url(channel_session)
     endpoint = f"{base_url}/messages/send"
     payload = {
-        "sessionId": channel_session.session_identifier,
+        "sessionId": _whatsapp_provider_session_identifier(channel_session),
         "to": _extract_whatsapp_recipient(lead.external_id),
         "text": message.text_content or "",
     }
+    message_type = (message.message_type or "").strip().lower()
+    raw_payload = dict(message.raw_payload or {})
+
+    if message_type == "audio":
+        public_audio_url = (message.media_url or "").strip() or None
+        if public_audio_url:
+            voice_result = send_whatsapp_voice_note(
+                channel_session=channel_session,
+                lead=lead,
+                audio_url=public_audio_url,
+                mimetype=(raw_payload.get("tts_content_type") or "audio/ogg; codecs=opus"),
+            )
+            verify_whatsapp_message_visible(
+                channel_session=channel_session,
+                remote_jid=str(voice_result.get("remote_jid") or ""),
+                provider_message_id=str(voice_result.get("provider_message_id") or ""),
+            )
+            raw_payload.update(voice_result)
+        else:
+            voice_result = dispatch_generated_voice_note(
+                session=session,
+                channel_session=channel_session,
+                lead=lead,
+                text_content=message.text_content or "",
+                model=raw_payload.get("tts_model"),
+                voice=raw_payload.get("tts_voice"),
+                instructions=raw_payload.get("tts_instructions"),
+            )
+            raw_payload.update(voice_result)
+
+        message.media_url = raw_payload.get("temp_media_url") or message.media_url
+        message.raw_payload = raw_payload
+        return str(raw_payload.get("provider_message_id") or message.external_message_id)
+
+    if message_type in {"image", "document", "pdf"}:
+        media_url = (message.media_url or "").strip()
+        if not media_url:
+            raise RuntimeError("WhatsApp media outbound requires media_url")
+
+        normalized_type = "document" if message_type == "pdf" else message_type
+        file_name = str(
+            raw_payload.get("file_name")
+            or raw_payload.get("filename")
+            or Path(urlparse(media_url).path).name
+            or f"attachment.{ 'pdf' if normalized_type == 'document' else 'bin'}"
+        ).strip()
+        mime_type = str(
+            raw_payload.get("mime_type")
+            or raw_payload.get("mimetype")
+            or ("application/pdf" if normalized_type == "document" else "")
+        ).strip()
+
+        payload.update(
+            {
+                "messageType": normalized_type,
+                "mediaUrl": media_url,
+                "media_url": media_url,
+                "caption": message.text_content or "",
+                "fileName": file_name,
+                "filename": file_name,
+            }
+        )
+        if normalized_type == "image":
+            payload["imageUrl"] = media_url
+        else:
+            payload["documentUrl"] = media_url
+            payload["documentName"] = file_name
+        if mime_type:
+            payload["mimetype"] = mime_type
+            payload["mimeType"] = mime_type
+        raw_payload["file_name"] = file_name
+        if mime_type:
+            raw_payload["mime_type"] = mime_type
+        message.raw_payload = raw_payload
 
     with httpx.Client(timeout=20.0) as client:
         resp = client.post(endpoint, headers=_provider_headers(), json=payload)

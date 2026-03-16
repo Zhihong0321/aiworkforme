@@ -13,6 +13,7 @@ pytest
 pytest-asyncio
 pytz
 requests
+imageio-ffmpeg
 python-multipart
 passlib[bcrypt]
 bcrypt==4.0.1

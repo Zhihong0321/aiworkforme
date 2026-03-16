@@ -17,9 +17,16 @@ from src.adapters.db.messaging_models import UnifiedMessage
 class OutboundCreateRequest(SQLModel):
     lead_id: int
     channel: str
-    text_content: str
+    text_content: Optional[str] = None
+    message_type: str = "text"
+    media_url: Optional[str] = None
+    file_name: Optional[str] = None
+    mime_type: Optional[str] = None
     channel_session_id: Optional[int] = None
     external_message_id: Optional[str] = None
+    tts_model: Optional[str] = None
+    tts_voice: Optional[str] = None
+    tts_instructions: Optional[str] = None
     raw_payload: Dict[str, Any] = {}
 
 
@@ -73,6 +80,7 @@ class LeadWorkStartResponse(SQLModel):
 class WhatsAppConnectRequest(SQLModel):
     session_key: str = "primary"
     display_name: Optional[str] = None
+    description: Optional[str] = None
     provider_base_url: Optional[str] = None
 
 
