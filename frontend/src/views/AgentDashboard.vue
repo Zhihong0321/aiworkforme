@@ -33,6 +33,7 @@ const isLoadingTranscript = ref(false)
 const isUploadingKnowledge = ref(false)
 const isCreatingLead = ref(false)
 const isUploadingSalesMaterial = ref(false)
+const processingLeadId = ref(null)
 
 const knowledgeInput = ref(null)
 const salesMaterialInput = ref(null)
@@ -109,6 +110,13 @@ const formatFollowUp = (lead) => {
   if (!lead?.next_followup_at) return 'No follow-up scheduled'
   const next = new Date(lead.next_followup_at)
   return Number.isNaN(next.getTime()) ? 'No follow-up scheduled' : next.toLocaleString()
+}
+
+const getLeadModeLabel = (lead) => {
+  const tags = Array.isArray(lead?.tags) ? lead.tags : []
+  if (tags.includes('WORKING')) return 'working'
+  if (tags.includes('ON_HOLD')) return 'on_hold'
+  return 'on_hold'
 }
 
 const setTab = (tab) => {
@@ -334,6 +342,31 @@ const createLead = async () => {
     setToast(`Add contact failed: ${error.message}`)
   } finally {
     isCreatingLead.value = false
+  }
+}
+
+const setLeadMode = async (lead, mode) => {
+  processingLeadId.value = lead.id
+  try {
+    if (mode === 'working') {
+      await request(`/messaging/leads/${lead.id}/start-work`, {
+        method: 'POST',
+        body: JSON.stringify({ channel: 'whatsapp' }),
+      })
+      setToast(`AI started for ${lead.name || lead.external_id}`)
+    } else {
+      await request(`/leads/${lead.id}/mode`, {
+        method: 'POST',
+        body: JSON.stringify({ mode }),
+      })
+      setToast(`${lead.name || lead.external_id} moved to on hold`)
+    }
+
+    await Promise.all([loadLeads(), loadThreads()])
+  } catch (error) {
+    setToast(`Lead update failed: ${error.message}`)
+  } finally {
+    processingLeadId.value = null
   }
 }
 
@@ -1024,17 +1057,42 @@ onMounted(loadDashboard)
                   <p class="mt-1 text-sm text-ink-muted">{{ lead.external_id }}</p>
                   <div class="mt-3 flex flex-wrap gap-2 text-xs">
                     <span class="rounded-full bg-surface-muted px-3 py-1 text-ink-subtle">{{ lead.stage }}</span>
+                    <span
+                      class="rounded-full px-3 py-1 font-semibold"
+                      :class="getLeadModeLabel(lead) === 'working'
+                        ? 'bg-emerald-500/10 text-emerald-700'
+                        : 'bg-amber-500/10 text-amber-700'"
+                    >
+                      {{ getLeadModeLabel(lead) === 'working' ? 'Working' : 'On Hold' }}
+                    </span>
                     <span class="rounded-full bg-surface-muted px-3 py-1 text-ink-subtle">{{ formatFollowUp(lead) }}</span>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  @click="openLeadInbox(lead)"
-                  class="inline-flex items-center gap-2 rounded-xl border border-line/80 px-3 py-2 text-xs font-bold text-ink transition-colors hover:border-primary/40 hover:text-primary"
-                >
-                  <span class="material-symbols-outlined text-[16px]">forum</span>
-                  Inbox
-                </button>
+                <div class="flex flex-col items-end gap-2">
+                  <button
+                    type="button"
+                    @click="setLeadMode(lead, getLeadModeLabel(lead) === 'working' ? 'on_hold' : 'working')"
+                    :disabled="processingLeadId === lead.id"
+                    class="inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold text-white transition-colors disabled:opacity-60"
+                    :class="getLeadModeLabel(lead) === 'working'
+                      ? 'bg-amber-500 hover:bg-amber-600'
+                      : 'bg-primary hover:bg-primary/90'"
+                  >
+                    <span v-if="processingLeadId === lead.id" class="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white"></span>
+                    <span v-else class="material-symbols-outlined text-[16px]">
+                      {{ getLeadModeLabel(lead) === 'working' ? 'pause_circle' : 'play_circle' }}
+                    </span>
+                    {{ getLeadModeLabel(lead) === 'working' ? 'Put On Hold' : 'Start Working' }}
+                  </button>
+                  <button
+                    type="button"
+                    @click="openLeadInbox(lead)"
+                    class="inline-flex items-center gap-2 rounded-xl border border-line/80 px-3 py-2 text-xs font-bold text-ink transition-colors hover:border-primary/40 hover:text-primary"
+                  >
+                    <span class="material-symbols-outlined text-[16px]">forum</span>
+                    Inbox
+                  </button>
+                </div>
               </div>
             </div>
           </div>
