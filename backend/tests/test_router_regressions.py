@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+from io import BytesIO
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
 from sqlmodel import SQLModel, Session, create_engine
 from sqlmodel.pool import StaticPool
+from starlette.datastructures import Headers, UploadFile
 
 from routers import agents, mcp
 from src.adapters.api.dependencies import AuthContext
@@ -71,6 +74,56 @@ def test_create_mcp_server_sets_tenant_from_auth_context(session: Session, auth_
     assert int(created.tenant_id) == 1
 
 
+def test_agent_mcp_link_and_unlink_are_tenant_scoped(session: Session, auth_context: AuthContext):
+    created_agent = agents.create_agent(
+        agents.AgentCreate(name="Linked Agent", system_prompt="Helpful"),
+        session=session,
+        auth=auth_context,
+    )
+    own_server = mcp.create_mcp_server(
+        mcp.MCPServerCreate(
+            name="Voice Note Follow-Up",
+            script="voice_note_followup.py",
+            command="python",
+            args="[]",
+            cwd="/app",
+            env_vars="{}",
+        ),
+        session=session,
+        auth=auth_context,
+    )
+
+    link_response = agents.link_mcp_to_agent(
+        agent_id=int(created_agent.id),
+        server_id=int(own_server.id),
+        session=session,
+        auth=auth_context,
+    )
+    assert "Linked" in link_response["message"]
+
+    fetched = agents.get_agent(
+        agent_id=int(created_agent.id),
+        session=session,
+        auth=auth_context,
+    )
+    assert int(own_server.id) in fetched.linked_mcp_ids
+
+    unlink_response = agents.unlink_mcp_from_agent(
+        agent_id=int(created_agent.id),
+        server_id=int(own_server.id),
+        session=session,
+        auth=auth_context,
+    )
+    assert "Unlinked" in unlink_response["message"]
+
+    fetched_after = agents.get_agent(
+        agent_id=int(created_agent.id),
+        session=session,
+        auth=auth_context,
+    )
+    assert int(own_server.id) not in fetched_after.linked_mcp_ids
+
+
 def test_mcp_endpoints_are_tenant_scoped_for_list_and_delete(session: Session, auth_context: AuthContext):
     mock_manager = SimpleNamespace(
         get_mcp_status=_async_return({"status": "not found"}),
@@ -114,6 +167,68 @@ def test_mcp_endpoints_are_tenant_scoped_for_list_and_delete(session: Session, a
             )
         )
     assert exc.value.status_code == 404
+
+
+def test_agent_sales_material_upload_and_list_are_tenant_scoped(
+    session: Session,
+    auth_context: AuthContext,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    monkeypatch.setattr("src.app.runtime.sales_materials.SALES_MATERIALS_DIR", tmp_path)
+    tmp_path.mkdir(parents=True, exist_ok=True)
+
+    created = agents.create_agent(
+        agents.AgentCreate(name="Sales Agent", system_prompt="Helpful"),
+        session=session,
+        auth=auth_context,
+    )
+    upload = UploadFile(
+        file=BytesIO(b"%PDF-1.4 brochure body"),
+        filename="brochure.pdf",
+        headers=Headers({"content-type": "application/pdf"}),
+    )
+    request = SimpleNamespace(base_url="https://app.example.test/")
+
+    material = asyncio.run(
+        agents.upload_agent_sales_material(
+            agent_id=int(created.id),
+            request=request,
+            file=upload,
+            description="Use when customer asks for product brochure.",
+            session=session,
+            auth=auth_context,
+        )
+    )
+
+    assert material.filename == "brochure.pdf"
+    assert material.kind == "document"
+    assert material.public_url == f"https://app.example.test/api/v1/public/sales-materials/{session.get(agents.AgentSalesMaterial, material.id).public_token}"
+
+    listed = agents.list_agent_sales_materials(
+        agent_id=int(created.id),
+        session=session,
+        auth=auth_context,
+    )
+    assert len(listed) == 1
+    assert listed[0].description.startswith("Use when customer asks")
+
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            agents.upload_agent_sales_material(
+                agent_id=int(created.id),
+                request=request,
+                file=UploadFile(
+                    file=BytesIO(b"not allowed"),
+                    filename="notes.txt",
+                    headers=Headers({"content-type": "text/plain"}),
+                ),
+                description="Invalid file",
+                session=session,
+                auth=auth_context,
+            )
+        )
+    assert exc.value.status_code == 400
 
 
 def _async_return(value):

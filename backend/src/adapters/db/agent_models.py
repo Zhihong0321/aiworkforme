@@ -42,6 +42,10 @@ class Agent(SQLModel, table=True):
         back_populates="agent",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
+    sales_materials: List["AgentSalesMaterial"] = Relationship(
+        back_populates="agent",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
 
 class AgentKnowledgeFile(SQLModel, table=True):
     __tablename__ = "zairag_agent_knowledge_files"
@@ -57,6 +61,28 @@ class AgentKnowledgeFile(SQLModel, table=True):
     last_trigger_inputs: str = Field(default="[]") # JSON Array of last 10 queries that matched this file
     
     agent: "Agent" = Relationship(back_populates="knowledge_files")
+
+
+class AgentSalesMaterial(SQLModel, table=True):
+    __tablename__ = "zairag_agent_sales_materials"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
+    agent_id: int = Field(foreign_key="zairag_agents.id", index=True)
+    filename: str
+    stored_name: str
+    media_type: str = Field(index=True)
+    file_size_bytes: int
+    description: str = Field(default="")
+    public_token: str = Field(index=True)
+    public_url: str = Field(default="")
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    updated_at: datetime = Field(
+        default_factory=datetime.utcnow,
+        sa_column_kwargs={"onupdate": datetime.utcnow},
+    )
+
+    agent: "Agent" = Relationship(back_populates="sales_materials")
 
 # DTOs / Read Models
 class AgentRead(SQLModel):

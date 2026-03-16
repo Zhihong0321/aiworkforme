@@ -9,5 +9,6 @@ REPO NAME : AIworkforMe
 - Patched messaging helper facade to restore WhatsApp channel identity imports and verified router startup/tests.
 - Patched messaging helper facade to restore WhatsApp provider session identifier export and verified startup imports.
 - Delivered one-page agent management UI with stable selector dropdown and CRUD flow.
+- Shipped backend sales-material upload APIs and public file serving for agent management.
 
 =====================

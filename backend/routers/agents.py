@@ -1,16 +1,32 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Request
 from sqlmodel import Session, select
 from typing import List, Optional
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
-import json
+from uuid import uuid4
 from pydantic import BaseModel
 
 from src.infra.database import get_session
 from src.adapters.api.dependencies import require_tenant_access, AuthContext, get_llm_router
-from src.adapters.db.agent_models import Agent, AgentMCPServer, AgentKnowledgeFile, AgentRead, AgentUpdate
+from src.adapters.db.agent_models import (
+    Agent,
+    AgentKnowledgeFile,
+    AgentMCPServer,
+    AgentRead,
+    AgentSalesMaterial,
+    AgentUpdate,
+)
 from src.adapters.db.mcp_models import MCPServer
 from src.app.runtime.knowledge_processor import KnowledgeProcessor
+from src.app.runtime.sales_materials import (
+    build_sales_material_public_url,
+    build_sales_material_stored_name,
+    delete_sales_material_file,
+    list_agent_sales_materials as _list_agent_sales_materials,
+    serialize_sales_material,
+    validate_sales_material_upload,
+    write_sales_material_file,
+)
 from src.infra.llm.router import LLMRouter
 from src.adapters.db.crm_models import Lead
 import logging
@@ -25,6 +41,19 @@ class AgentCreate(BaseModel):
     mimic_human_typing: Optional[bool] = False
     emoji_level: Optional[str] = "none"
     segment_delay_ms: Optional[int] = 800
+
+
+class AgentSalesMaterialRead(BaseModel):
+    id: int
+    agent_id: int
+    filename: str
+    media_type: str
+    kind: str
+    file_size_bytes: int
+    description: str
+    public_url: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
 
 @router.get("/", response_model=List[AgentRead])
 def list_agents(
@@ -47,7 +76,7 @@ def list_agents(
 
             # Use model_dump in Pydantic v2 or dict in v1
             agent_data = agent.model_dump(
-                exclude={"chat_sessions", "mcp_servers", "knowledge_files", "model", "reasoning_enabled"}
+                exclude={"chat_sessions", "mcp_servers", "knowledge_files", "sales_materials", "model", "reasoning_enabled"}
             )
             results.append(
                 AgentRead(
@@ -135,7 +164,7 @@ def update_agent(
     ).all()
     return AgentRead(
         **agent.model_dump(
-            exclude={"chat_sessions", "mcp_servers", "knowledge_files", "model", "reasoning_enabled"}
+            exclude={"chat_sessions", "mcp_servers", "knowledge_files", "sales_materials", "model", "reasoning_enabled"}
         ),
         linked_mcp_ids=list(linked_ids),
         linked_mcp_count=len(linked_ids),
@@ -157,7 +186,7 @@ def get_agent(
 
     return AgentRead(
         **agent.model_dump(
-            exclude={"chat_sessions", "mcp_servers", "knowledge_files", "model", "reasoning_enabled"}
+            exclude={"chat_sessions", "mcp_servers", "knowledge_files", "sales_materials", "model", "reasoning_enabled"}
         ),
         linked_mcp_ids=list(linked_ids),
         linked_mcp_count=len(linked_ids)
@@ -173,6 +202,9 @@ def delete_agent(
     if not agent or agent.tenant_id != auth.tenant.id:
         raise HTTPException(status_code=404, detail="Agent not found")
 
+    materials = _list_agent_sales_materials(session, auth.tenant.id, agent_id)
+    for material in materials:
+        delete_sales_material_file(material)
     session.delete(agent)
     session.commit()
     return {"message": "Agent deleted"}
@@ -189,7 +221,7 @@ def link_mcp_to_agent(
         raise HTTPException(status_code=404, detail="Agent not found")
     
     server = session.get(MCPServer, server_id)
-    if not server:
+    if not server or server.tenant_id != auth.tenant.id:
         raise HTTPException(status_code=404, detail="MCP Server not found")
 
     existing_link = session.get(AgentMCPServer, (agent_id, server_id))
@@ -205,6 +237,116 @@ def link_mcp_to_agent(
         return {"message": "MCP already linked to agent"}
 
     return {"message": "Linked successfully"}
+
+
+@router.delete("/{agent_id}/link-mcp/{server_id}")
+def unlink_mcp_from_agent(
+    agent_id: int,
+    server_id: int,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access)
+):
+    agent = session.get(Agent, agent_id)
+    if not agent or agent.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    server = session.get(MCPServer, server_id)
+    if not server or server.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="MCP Server not found")
+
+    link = session.get(AgentMCPServer, (agent_id, server_id))
+    if not link:
+        return {"message": "MCP already unlinked"}
+
+    session.delete(link)
+    session.commit()
+    return {"message": "Unlinked successfully"}
+
+
+@router.get("/{agent_id}/sales-materials", response_model=List[AgentSalesMaterialRead])
+def list_agent_sales_materials(
+    agent_id: int,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    agent = session.get(Agent, agent_id)
+    if not agent or agent.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    materials = _list_agent_sales_materials(session, auth.tenant.id, agent_id)
+    return [AgentSalesMaterialRead(**serialize_sales_material(item)) for item in materials]
+
+
+@router.post("/{agent_id}/sales-materials", response_model=AgentSalesMaterialRead)
+async def upload_agent_sales_material(
+    agent_id: int,
+    request: Request,
+    file: UploadFile = File(...),
+    description: str = Form(...),
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    agent = session.get(Agent, agent_id)
+    if not agent or agent.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    description_text = (description or "").strip()
+    if not description_text:
+        raise HTTPException(status_code=400, detail="Description is required")
+
+    content = await file.read()
+    validated = validate_sales_material_upload(file.filename or "material", file.content_type or "", content)
+    public_token = uuid4().hex
+    stored_name = build_sales_material_stored_name(
+        validated["filename"],
+        validated["suffix"],
+        public_token=public_token,
+    )
+    public_url = build_sales_material_public_url(public_token, request=request)
+
+    material = AgentSalesMaterial(
+        tenant_id=auth.tenant.id,
+        agent_id=agent_id,
+        filename=validated["filename"],
+        stored_name=stored_name,
+        media_type=validated["media_type"],
+        file_size_bytes=validated["file_size_bytes"],
+        description=description_text[:1000],
+        public_token=public_token,
+        public_url=public_url,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow(),
+    )
+    session.add(material)
+    session.commit()
+    session.refresh(material)
+
+    try:
+        write_sales_material_file(material, content)
+    except Exception as exc:
+        session.delete(material)
+        session.commit()
+        logger.exception("Failed to store sales material for agent_id=%s", agent_id)
+        raise HTTPException(status_code=500, detail=f"Failed to store sales material: {exc}") from exc
+
+    return AgentSalesMaterialRead(**serialize_sales_material(material))
+
+
+@router.delete("/{agent_id}/sales-materials/{material_id}")
+def delete_agent_sales_material(
+    agent_id: int,
+    material_id: int,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    material = session.get(AgentSalesMaterial, material_id)
+    if not material or material.agent_id != agent_id or material.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Sales material not found")
+
+    delete_sales_material_file(material)
+    session.delete(material)
+    session.commit()
+    return {"message": "Sales material deleted"}
 
 @router.post("/{agent_id}/knowledge")
 async def upload_agent_knowledge(
