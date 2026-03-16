@@ -103,6 +103,7 @@ async def scan_agent_threads(
         .join(Lead, Lead.id == UnifiedThread.lead_id)
         .where(
             UnifiedThread.tenant_id == tenant_id,
+            UnifiedThread.status == "active",
             Lead.tenant_id == tenant_id,
             Lead.agent_id == agent_id,
         )
@@ -334,6 +335,18 @@ async def trigger_due_followups(
             lead = session.get(Lead, state.lead_id)
             thread = session.get(UnifiedThread, state.thread_id)
             if not lead or not thread:
+                skipped += 1
+                continue
+            if (thread.status or "").strip().lower() != "active":
+                clear_thread_followup_state(
+                    session=session,
+                    tenant_id=tenant_id,
+                    thread_id=thread.id,
+                    reason="thread_archived_or_reset",
+                )
+                lead.next_followup_at = None
+                session.add(lead)
+                session.commit()
                 skipped += 1
                 continue
 

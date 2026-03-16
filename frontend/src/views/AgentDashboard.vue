@@ -30,6 +30,7 @@ const salesMaterials = ref([])
 const isSavingAgent = ref(false)
 const isDeletingAgent = ref(false)
 const isLoadingTranscript = ref(false)
+const isResettingThread = ref(false)
 const isUploadingKnowledge = ref(false)
 const isCreatingLead = ref(false)
 const isUploadingSalesMaterial = ref(false)
@@ -384,6 +385,35 @@ const openThread = async (thread) => {
     setToast(`Transcript failed: ${error.message}`)
   } finally {
     isLoadingTranscript.value = false
+  }
+}
+
+const resetActiveThread = async () => {
+  if (!activeThread.value?.thread_id) return
+  if (!window.confirm(`Reset the conversation with "${activeThread.value.lead_name || activeThread.value.lead_external_id || 'this contact'}"? This will archive the current thread and start a fresh one.`)) {
+    return
+  }
+
+  isResettingThread.value = true
+  try {
+    const result = await request(`/messaging/threads/${activeThread.value.thread_id}/reset`, {
+      method: 'POST',
+    })
+    await loadThreads()
+    const nextThread = threads.value.find((item) => Number(item.thread_id) === Number(result?.new_thread_id))
+      || threads.value.find((item) => Number(item.lead_id) === Number(activeThread.value?.lead_id))
+
+    if (nextThread) {
+      await openThread(nextThread)
+    } else {
+      activeThread.value = null
+      messages.value = []
+    }
+    setToast('Conversation reset. A fresh thread is ready.')
+  } catch (error) {
+    setToast(`Reset failed: ${error.message}`)
+  } finally {
+    isResettingThread.value = false
   }
 }
 
@@ -1145,6 +1175,16 @@ onMounted(loadDashboard)
                 {{ activeThread?.lead_external_id || 'Choose a thread on the left to inspect the transcript.' }}
               </p>
             </div>
+            <button
+              v-if="activeThread"
+              type="button"
+              class="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+              :disabled="isResettingThread"
+              @click="resetActiveThread"
+            >
+              <span class="material-symbols-outlined text-[16px]">restart_alt</span>
+              {{ isResettingThread ? 'Resetting...' : 'Reset Thread' }}
+            </button>
           </div>
 
           <div v-if="!activeThread" class="mt-5 rounded-2xl border border-dashed border-line/80 px-4 py-12 text-center text-sm text-ink-muted">

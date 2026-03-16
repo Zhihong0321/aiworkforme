@@ -99,6 +99,14 @@ class LeadThreadDetailResponse(SQLModel):
     messages: List[UnifiedMessage]
 
 
+class ThreadResetResponse(SQLModel):
+    old_thread_id: int
+    new_thread_id: int
+    lead_id: int
+    channel: str
+    status: str = "reset"
+
+
 class MVPOperationalCheckResponse(SQLModel):
     ready: bool
     checks: Dict[str, Any]

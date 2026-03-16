@@ -49,6 +49,7 @@ from .messaging_schemas import (
     LeadWorkStartResponse,
     MessageCreateResponse,
     OutboundCreateRequest,
+    ThreadResetResponse,
 )
 
 router = APIRouter()
@@ -397,6 +398,96 @@ def list_thread_messages(
         )
         .order_by(UnifiedMessage.created_at.asc())
     ).all()
+
+
+@router.post("/threads/{thread_id}/reset", response_model=ThreadResetResponse)
+def reset_thread(
+    thread_id: int,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    thread = session.get(UnifiedThread, thread_id)
+    if not thread or thread.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    if (thread.status or "").strip().lower() != "active":
+        raise HTTPException(status_code=400, detail="Only active threads can be reset")
+
+    lead = _validate_lead_tenant(session, thread.lead_id, auth.tenant.id)
+    now = datetime.utcnow()
+
+    queued_rows = session.exec(
+        select(OutboundQueue, UnifiedMessage)
+        .join(UnifiedMessage, UnifiedMessage.id == OutboundQueue.message_id)
+        .where(
+            OutboundQueue.tenant_id == auth.tenant.id,
+            OutboundQueue.status == "queued",
+            UnifiedMessage.thread_id == thread.id,
+        )
+    ).all()
+    for queue, message in queued_rows:
+        queue.status = "cancelled"
+        queue.last_error = "Cancelled because the conversation thread was reset"
+        queue.updated_at = now
+        message.delivery_status = "cancelled"
+        message.updated_at = now
+        session.add(queue)
+        session.add(message)
+
+    thread.status = "archived"
+    thread.updated_at = now
+    session.add(thread)
+
+    try:
+        from routers.ai_crm_helpers import clear_thread_followup_state
+
+        clear_thread_followup_state(
+            session=session,
+            tenant_id=auth.tenant.id,
+            thread_id=thread.id,
+            reason="thread_reset",
+        )
+    except Exception as exc:
+        session.rollback()
+        logger.warning(
+            "Failed to clear AI CRM follow-up state during thread reset tenant_id=%s thread_id=%s: %s",
+            auth.tenant.id,
+            thread.id,
+            exc,
+        )
+        thread.status = "archived"
+        thread.updated_at = now
+        session.add(thread)
+        for queue, message in queued_rows:
+            queue.status = "cancelled"
+            queue.last_error = "Cancelled because the conversation thread was reset"
+            queue.updated_at = now
+            message.delivery_status = "cancelled"
+            message.updated_at = now
+            session.add(queue)
+            session.add(message)
+
+    lead.next_followup_at = None
+    session.add(lead)
+
+    new_thread = UnifiedThread(
+        tenant_id=thread.tenant_id,
+        lead_id=thread.lead_id,
+        agent_id=thread.agent_id,
+        channel=thread.channel,
+        status="active",
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(new_thread)
+    session.commit()
+    session.refresh(new_thread)
+
+    return ThreadResetResponse(
+        old_thread_id=thread.id,
+        new_thread_id=new_thread.id,
+        lead_id=thread.lead_id,
+        channel=thread.channel,
+    )
 
 
 @router.get("/leads/{lead_id}/thread", response_model=LeadThreadDetailResponse)

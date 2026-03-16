@@ -19,5 +19,7 @@ REPO NAME : AIworkforMe
 - Fixed per-agent WhatsApp routing so manual starts and AI CRM follow-ups use the assigned channel, with backend regression tests and frontend build
 - Fixed customer-reply auto-response regressions by hardening inbound runtime compatibility and AI CRM state recovery, then validated with targeted tests.
 - Fixed agent deletion by cleaning up dependent CRM, workspace, lead, thread, and MCP link records before removing the agent, then validated with router regression tests.
+- Added a conversation-thread reset action that archives the current inbox thread, cancels stale queued sends, starts a fresh active thread, filters AI CRM to active threads, and validated with backend tests plus a frontend build.
+- Fixed duplicate WhatsApp sales-material sends by tracing them to ambiguous provider read-timeouts, then suppressing retries after a sent request and validating with focused backend regressions.
 
 =====================

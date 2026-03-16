@@ -247,6 +247,16 @@ def send_to_channel(session: Session, message: UnifiedMessage) -> str:
     return str(provider_message_id)
 
 
+def _is_ambiguous_whatsapp_send_timeout(exc: Exception, message: UnifiedMessage) -> bool:
+    if message.channel != "whatsapp":
+        return False
+    if isinstance(exc, httpx.ReadTimeout):
+        return True
+
+    detail = str(exc or "").strip().lower()
+    return "read operation timed out" in detail or "read timeout" in detail
+
+
 def dispatch_next_outbound_for_tenant(session: Session, tenant_id: int) -> Optional[DispatchResponse]:
     now = datetime.utcnow()
     queue = session.exec(
@@ -317,6 +327,40 @@ def dispatch_next_outbound_for_tenant(session: Session, tenant_id: int) -> Optio
         )
         return result
     except Exception as exc:
+        if _is_ambiguous_whatsapp_send_timeout(exc, message):
+            queue.status = "accepted"
+            queue.updated_at = datetime.utcnow()
+            queue.last_error = str(exc)
+
+            message.delivery_status = "provider_accepted"
+            message.updated_at = datetime.utcnow()
+            merged_payload = dict(message.raw_payload or {})
+            merged_payload["provider_status"] = "timeout_assumed_pending"
+            merged_payload["dispatch_warning"] = (
+                "WhatsApp provider response timed out after request submission; retry suppressed to avoid duplicate delivery."
+            )
+            message.raw_payload = merged_payload
+
+            session.add(queue)
+            session.add(message)
+            session.commit()
+            logger.warning(
+                "Outbound dispatch timed out after WhatsApp send attempt; suppressing retry to avoid duplicates "
+                "(tenant_id=%s queue_id=%s message_id=%s error=%s)",
+                tenant_id,
+                queue.id,
+                message.id,
+                str(exc),
+            )
+            return DispatchResponse(
+                queue_id=queue.id,
+                message_id=message.id,
+                channel=message.channel,
+                status=queue.status,
+                retry_count=queue.retry_count,
+                detail="WhatsApp provider read timed out after send attempt; retry suppressed to avoid duplicate delivery.",
+            )
+
         _mark_retry(queue, message, str(exc))
         session.add(queue)
         session.add(message)

@@ -99,6 +99,7 @@ def list_ai_crm_threads(
         .join(Lead, Lead.id == UnifiedThread.lead_id)
         .where(
             UnifiedThread.tenant_id == auth.tenant.id,
+            UnifiedThread.status == "active",
             Lead.tenant_id == auth.tenant.id,
             Lead.agent_id == agent_id,
         )
