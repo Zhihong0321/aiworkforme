@@ -8,5 +8,6 @@ REPO NAME : AIworkforMe
 - Fixed agent-scoped CRM AI routes and delivered dormant-lead follow-up logic with verified backend tests and frontend build.
 - Patched messaging helper facade to restore WhatsApp channel identity imports and verified router startup/tests.
 - Patched messaging helper facade to restore WhatsApp provider session identifier export and verified startup imports.
+- Delivered one-page agent management UI with stable selector dropdown and CRUD flow.
 
 =====================

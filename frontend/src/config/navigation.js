@@ -10,7 +10,7 @@ export const getNavItems = (isPlatformAdmin) => {
 
   return [
     { label: 'Dashboard', path: '/home', icon: 'dashboard', description: 'Quick access dashboard' },
-    { label: 'Configuration', path: '/agents', icon: 'settings_suggest', description: 'Configure your primary agent' },
+    { label: 'Agents', path: '/agents', icon: 'smart_toy', description: 'List, add, edit, and delete agents' },
     { label: 'Knowledge Base', path: '/knowledge', icon: 'menu_book', description: 'Knowledge base management' },
     { label: 'Playground', path: '/playground', icon: 'science', description: 'Test agent interactions' },
     { label: 'Contact Book', path: '/leads', icon: 'contacts', description: 'Lead and customer directory' },
@@ -23,4 +23,3 @@ export const getNavItems = (isPlatformAdmin) => {
     { label: 'Analytics', path: '/analytics', icon: 'analytics', description: 'Business and AI metrics' }
   ]
 }
-

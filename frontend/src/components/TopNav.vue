@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { store } from '../store'
 import { getNavItems } from '../config/navigation'
@@ -8,12 +8,33 @@ const route = useRoute()
 const router = useRouter()
 
 const isMobileMenuOpen = ref(false)
+const isAgentMenuOpen = ref(false)
+const agentMenuRef = ref(null)
 const isPlatformAdmin = computed(() => localStorage.getItem('is_platform_admin') === 'true')
 
 const navItems = computed(() => getNavItems(isPlatformAdmin.value))
 
 const toggleMobileMenu = () => {
   isMobileMenuOpen.value = !isMobileMenuOpen.value
+}
+
+const toggleAgentMenu = () => {
+  if (isPlatformAdmin.value) return
+  isAgentMenuOpen.value = !isAgentMenuOpen.value
+}
+
+const closeAgentMenu = () => {
+  isAgentMenuOpen.value = false
+}
+
+const goToAgents = () => {
+  closeAgentMenu()
+  router.push('/agents')
+}
+
+const selectAgent = (agentId) => {
+  store.setActiveAgent(agentId)
+  closeAgentMenu()
 }
 
 const handleLogout = () => {
@@ -30,13 +51,25 @@ watch(
   () => route.path,
   () => {
     isMobileMenuOpen.value = false
+    closeAgentMenu()
   }
 )
+
+const handleDocumentClick = (event) => {
+  if (!agentMenuRef.value?.contains(event.target)) {
+    closeAgentMenu()
+  }
+}
 
 onMounted(() => {
   if (!isPlatformAdmin.value) {
     store.fetchAgents()
   }
+  document.addEventListener('click', handleDocumentClick)
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', handleDocumentClick)
 })
 
 // Quick compute of the active agent initial
@@ -71,7 +104,12 @@ const pageTitle = computed(() => {
               <span class="material-symbols-outlined">close</span>
             </button>
           </div>
-          <div class="group relative flex cursor-pointer items-center gap-3 rounded-[1.5rem] border border-line/90 bg-surface-muted/80 p-3.5 transition-colors hover:border-line-strong hover:bg-surface-muted">
+          <div ref="agentMenuRef" class="relative">
+          <button
+            type="button"
+            class="flex w-full items-center gap-3 rounded-[1.5rem] border border-line/90 bg-surface-muted/80 p-3.5 text-left transition-colors hover:border-line-strong hover:bg-surface-muted"
+            @click.stop="toggleAgentMenu"
+          >
             <div class="flex size-11 items-center justify-center rounded-full border border-primary/20 bg-primary/10 text-sm font-bold text-primary">
                 {{ activeAgentName.charAt(0).toUpperCase() }}
             </div>
@@ -83,18 +121,33 @@ const pageTitle = computed(() => {
                <p class="truncate font-bold text-ink">Platform Admin</p>
                <p class="text-xs text-ink-muted">Global controls</p>
             </div>
-            <span class="material-symbols-outlined text-ink-subtle">unfold_more</span>
-            
-            <div class="absolute left-0 top-[110%] z-50 hidden w-full rounded-2xl border border-line bg-surface-elevated p-1 shadow-panel group-hover:block" v-if="!isPlatformAdmin && store.agents.length > 1">
-                <div 
-                    v-for="agent in store.agents" 
-                    :key="agent.id"
-                    @click="store.setActiveAgent(agent.id)"
-                    class="cursor-pointer truncate rounded-xl px-4 py-2.5 text-sm transition-colors hover:bg-primary/10"
-                    :class="store.activeAgentId == agent.id ? 'font-bold text-primary' : 'text-ink-muted'"
-                >
-                    {{ agent.name }}
-                </div>
+            <span class="material-symbols-outlined text-ink-subtle">{{ isAgentMenuOpen ? 'expand_less' : 'unfold_more' }}</span>
+          </button>
+
+            <div
+              v-if="!isPlatformAdmin && isAgentMenuOpen"
+              class="absolute left-0 top-[calc(100%+12px)] z-50 w-full rounded-2xl border border-line bg-surface-elevated p-1 shadow-panel"
+            >
+              <button
+                v-for="agent in store.agents"
+                :key="agent.id"
+                type="button"
+                @click="selectAgent(agent.id)"
+                class="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-2.5 text-left text-sm transition-colors hover:bg-primary/10"
+                :class="store.activeAgentId == agent.id ? 'font-bold text-primary' : 'text-ink-muted'"
+              >
+                <span class="truncate">{{ agent.name }}</span>
+                <span v-if="store.activeAgentId == agent.id" class="material-symbols-outlined text-base">check</span>
+              </button>
+
+              <button
+                type="button"
+                @click="goToAgents"
+                class="mt-1 flex w-full items-center gap-2 rounded-xl border border-dashed border-line px-4 py-2.5 text-left text-sm font-semibold text-ink transition-colors hover:border-primary/40 hover:bg-primary/5"
+              >
+                <span class="material-symbols-outlined text-base">settings</span>
+                <span>Manage agents</span>
+              </button>
             </div>
           </div>
         </div>
