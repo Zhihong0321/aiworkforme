@@ -23,8 +23,7 @@ SALES_MATERIALS_DIR = Path(
 )
 SALES_MATERIALS_DIR.mkdir(parents=True, exist_ok=True)
 
-PDF_MAX_BYTES = 15 * 1024 * 1024
-IMAGE_MAX_BYTES = 8 * 1024 * 1024
+SALES_MATERIAL_MAX_BYTES = 30 * 1024 * 1024
 
 ALLOWED_IMAGE_TYPES = {
     "image/jpeg": ".jpg",
@@ -93,7 +92,7 @@ def validate_sales_material_upload(filename: str, content_type: str, content: by
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
     media_type = detect_sales_material_type(filename, content_type, content)
-    size_limit = IMAGE_MAX_BYTES if media_type.startswith("image/") else PDF_MAX_BYTES
+    size_limit = SALES_MATERIAL_MAX_BYTES
     if len(content) > size_limit:
         label = "image" if media_type.startswith("image/") else "PDF"
         raise HTTPException(

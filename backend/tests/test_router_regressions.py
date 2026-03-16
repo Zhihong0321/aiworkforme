@@ -17,6 +17,7 @@ from src.adapters.db.mcp_models import MCPServer
 from src.adapters.db.tenant_models import Tenant
 from src.adapters.db.user_models import User
 from src.domain.entities.enums import Role
+from src.app.runtime.sales_materials import validate_sales_material_upload
 
 
 @pytest.fixture()
@@ -285,6 +286,32 @@ def test_agent_sales_material_links_accept_urls_and_youtube(
             auth=auth_context,
         )
     assert exc.value.status_code == 400
+
+
+def test_sales_material_upload_limit_accepts_up_to_30mb():
+    accepted_pdf = validate_sales_material_upload(
+        filename="brochure.pdf",
+        content_type="application/pdf",
+        content=b"%PDF" + (b"x" * ((30 * 1024 * 1024) - 4)),
+    )
+    accepted_image = validate_sales_material_upload(
+        filename="banner.png",
+        content_type="image/png",
+        content=b"\x89PNG" + (b"x" * ((30 * 1024 * 1024) - 4)),
+    )
+
+    assert accepted_pdf["file_size_bytes"] == 30 * 1024 * 1024
+    assert accepted_image["file_size_bytes"] == 30 * 1024 * 1024
+
+    with pytest.raises(HTTPException) as exc:
+        validate_sales_material_upload(
+            filename="too-large.pdf",
+            content_type="application/pdf",
+            content=b"%PDF" + (b"x" * ((30 * 1024 * 1024) - 3)),
+        )
+
+    assert exc.value.status_code == 400
+    assert exc.value.detail == "PDF exceeds upload limit of 30MB"
 
 
 def _async_return(value):

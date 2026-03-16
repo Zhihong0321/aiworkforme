@@ -16,6 +16,7 @@ const salesMaterialDescription = ref('')
 const selectedSalesMaterialFile = ref(null)
 const salesMaterialUrl = ref('')
 const salesMaterialInput = ref(null)
+const SALES_MATERIAL_MAX_BYTES = 30 * 1024 * 1024
 
 const createDefaultForm = () => ({
   id: null,
@@ -262,7 +263,16 @@ const chooseSalesMaterialFile = () => {
 }
 
 const onSalesMaterialSelected = (event) => {
-  selectedSalesMaterialFile.value = event.target.files?.[0] ?? null
+  const nextFile = event.target.files?.[0] ?? null
+  if (nextFile && nextFile.size > SALES_MATERIAL_MAX_BYTES) {
+    selectedSalesMaterialFile.value = null
+    if (salesMaterialInput.value) {
+      salesMaterialInput.value.value = ''
+    }
+    setMessage('Upload failed: sales material exceeds 30 MB limit')
+    return
+  }
+  selectedSalesMaterialFile.value = nextFile
 }
 
 const uploadSalesMaterial = async () => {
@@ -608,7 +618,7 @@ onMounted(() => {
                     >
                       <div>
                         <p class="font-semibold text-slate-800 dark:text-slate-100">Upload brochure or promo image</p>
-                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">PDF up to 15MB. Images up to 8MB.</p>
+                        <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">PDF and images up to 30 MB.</p>
                       </div>
                       <button
                         type="button"
