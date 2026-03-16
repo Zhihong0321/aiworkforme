@@ -7,12 +7,14 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
-from sqlmodel import SQLModel, Session, create_engine
+from sqlmodel import SQLModel, Session, create_engine, select
 from sqlmodel.pool import StaticPool
 from starlette.datastructures import Headers, UploadFile
 
 from routers import agents, mcp
 from src.adapters.api.dependencies import AuthContext
+from src.adapters.db.crm_models import AICRMThreadState, AgentCRMProfile, Lead, Workspace
+from src.adapters.db.messaging_models import UnifiedThread
 from src.adapters.db.mcp_models import MCPServer
 from src.adapters.db.tenant_models import Tenant
 from src.adapters.db.user_models import User
@@ -56,6 +58,101 @@ def test_create_agent_accepts_frontend_payload(session: Session, auth_context: A
     assert created.system_prompt == "You are helpful."
     assert created.linked_mcp_ids == []
     assert created.linked_mcp_count == 0
+
+
+def test_delete_agent_cleans_up_dependent_records(session: Session, auth_context: AuthContext):
+    created_agent = agents.create_agent(
+        agents.AgentCreate(name="Delete Me", system_prompt="Helpful"),
+        session=session,
+        auth=auth_context,
+    )
+    agent_id = int(created_agent.id)
+
+    workspace = Workspace(tenant_id=1, name="Workspace A", agent_id=agent_id)
+    session.add(workspace)
+    session.commit()
+    session.refresh(workspace)
+
+    lead = Lead(
+        tenant_id=1,
+        workspace_id=workspace.id,
+        external_id="+15550001111",
+        name="Lead A",
+        agent_id=agent_id,
+    )
+    session.add(lead)
+    session.commit()
+    session.refresh(lead)
+
+    thread = UnifiedThread(
+        tenant_id=1,
+        lead_id=int(lead.id),
+        agent_id=agent_id,
+        channel="whatsapp",
+    )
+    session.add(thread)
+    session.commit()
+    session.refresh(thread)
+
+    profile = AgentCRMProfile(
+        tenant_id=1,
+        agent_id=agent_id,
+    )
+    session.add(profile)
+
+    state = AICRMThreadState(
+        tenant_id=1,
+        workspace_id=int(workspace.id),
+        agent_id=agent_id,
+        thread_id=int(thread.id),
+        lead_id=int(lead.id),
+    )
+    session.add(state)
+
+    server = mcp.create_mcp_server(
+        mcp.MCPServerCreate(
+            name="Cleanup MCP",
+            script="cleanup.py",
+            command="python",
+            args="[]",
+            cwd="/app",
+            env_vars="{}",
+        ),
+        session=session,
+        auth=auth_context,
+    )
+    agents.link_mcp_to_agent(
+        agent_id=agent_id,
+        server_id=int(server.id),
+        session=session,
+        auth=auth_context,
+    )
+    session.commit()
+
+    deleted = agents.delete_agent(
+        agent_id=agent_id,
+        session=session,
+        auth=auth_context,
+    )
+
+    session.refresh(workspace)
+    session.refresh(lead)
+    session.refresh(thread)
+
+    assert deleted["message"] == "Agent deleted"
+    assert session.get(agents.Agent, agent_id) is None
+    assert workspace.agent_id is None
+    assert lead.agent_id is None
+    assert thread.agent_id is None
+    assert session.exec(
+        select(AgentCRMProfile).where(AgentCRMProfile.agent_id == agent_id)
+    ).first() is None
+    assert session.exec(
+        select(AICRMThreadState).where(AICRMThreadState.agent_id == agent_id)
+    ).first() is None
+    assert session.exec(
+        select(agents.AgentMCPServer).where(agents.AgentMCPServer.agent_id == agent_id)
+    ).first() is None
 
 
 def test_create_mcp_server_sets_tenant_from_auth_context(session: Session, auth_context: AuthContext):

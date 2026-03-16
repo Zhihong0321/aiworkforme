@@ -18,5 +18,6 @@ REPO NAME : AIworkforMe
 - Added Start Working and On Hold controls to agent dashboard contacts and verified frontend build
 - Fixed per-agent WhatsApp routing so manual starts and AI CRM follow-ups use the assigned channel, with backend regression tests and frontend build
 - Fixed customer-reply auto-response regressions by hardening inbound runtime compatibility and AI CRM state recovery, then validated with targeted tests.
+- Fixed agent deletion by cleaning up dependent CRM, workspace, lead, thread, and MCP link records before removing the agent, then validated with router regression tests.
 
 =====================

@@ -30,7 +30,8 @@ from src.app.runtime.sales_materials import (
     write_sales_material_file,
 )
 from src.infra.llm.router import LLMRouter
-from src.adapters.db.crm_models import Lead
+from src.adapters.db.crm_models import AICRMThreadState, AgentCRMProfile, Lead, Workspace
+from src.adapters.db.messaging_models import UnifiedThread
 import logging
 logger = logging.getLogger(__name__)
 
@@ -247,6 +248,61 @@ def delete_agent(
     materials = _list_agent_sales_materials(session, auth.tenant.id, agent_id)
     for material in materials:
         delete_sales_material_file(material)
+
+    links = session.exec(
+        select(AgentMCPServer).where(AgentMCPServer.agent_id == agent_id)
+    ).all()
+    for link in links:
+        session.delete(link)
+
+    crm_profiles = session.exec(
+        select(AgentCRMProfile).where(
+            AgentCRMProfile.tenant_id == auth.tenant.id,
+            AgentCRMProfile.agent_id == agent_id,
+        )
+    ).all()
+    for profile in crm_profiles:
+        session.delete(profile)
+
+    crm_thread_states = session.exec(
+        select(AICRMThreadState).where(
+            AICRMThreadState.tenant_id == auth.tenant.id,
+            AICRMThreadState.agent_id == agent_id,
+        )
+    ).all()
+    for state in crm_thread_states:
+        session.delete(state)
+
+    workspaces = session.exec(
+        select(Workspace).where(
+            Workspace.tenant_id == auth.tenant.id,
+            Workspace.agent_id == agent_id,
+        )
+    ).all()
+    for workspace in workspaces:
+        workspace.agent_id = None
+        session.add(workspace)
+
+    leads = session.exec(
+        select(Lead).where(
+            Lead.tenant_id == auth.tenant.id,
+            Lead.agent_id == agent_id,
+        )
+    ).all()
+    for lead in leads:
+        lead.agent_id = None
+        session.add(lead)
+
+    threads = session.exec(
+        select(UnifiedThread).where(
+            UnifiedThread.tenant_id == auth.tenant.id,
+            UnifiedThread.agent_id == agent_id,
+        )
+    ).all()
+    for thread in threads:
+        thread.agent_id = None
+        session.add(thread)
+
     session.delete(agent)
     session.commit()
     return {"message": "Agent deleted"}
