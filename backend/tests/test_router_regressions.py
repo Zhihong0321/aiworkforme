@@ -13,6 +13,7 @@ from starlette.datastructures import Headers, UploadFile
 
 from routers import agents, mcp
 from src.adapters.api.dependencies import AuthContext
+from src.adapters.db.channel_models import ChannelSession, ChannelType, SessionStatus
 from src.adapters.db.crm_models import AICRMThreadState, AgentCRMProfile, Lead, Workspace
 from src.adapters.db.messaging_models import UnifiedThread
 from src.adapters.db.mcp_models import MCPServer
@@ -58,6 +59,99 @@ def test_create_agent_accepts_frontend_payload(session: Session, auth_context: A
     assert created.system_prompt == "You are helpful."
     assert created.linked_mcp_ids == []
     assert created.linked_mcp_count == 0
+
+
+def test_create_agent_rejects_channel_already_claimed_by_another_agent(session: Session, auth_context: AuthContext):
+    channel = ChannelSession(
+        tenant_id=1,
+        channel_type=ChannelType.WHATSAPP,
+        session_identifier="wa-1",
+        display_name="Primary WA",
+        status=SessionStatus.ACTIVE,
+        session_metadata={},
+    )
+    session.add(channel)
+    session.commit()
+    session.refresh(channel)
+
+    first = agents.create_agent(
+        agents.AgentCreate(
+            name="Agent One",
+            system_prompt="Helpful",
+            preferred_channel_session_id=int(channel.id),
+        ),
+        session=session,
+        auth=auth_context,
+    )
+    assert first.preferred_channel_session_id == channel.id
+
+    with pytest.raises(HTTPException) as exc:
+        agents.create_agent(
+            agents.AgentCreate(
+                name="Agent Two",
+                system_prompt="Helpful",
+                preferred_channel_session_id=int(channel.id),
+            ),
+            session=session,
+            auth=auth_context,
+        )
+
+    assert exc.value.status_code == 400
+    assert "already assigned" in str(exc.value.detail)
+
+
+def test_update_agent_rejects_channel_already_claimed_by_another_agent(session: Session, auth_context: AuthContext):
+    channel_a = ChannelSession(
+        tenant_id=1,
+        channel_type=ChannelType.WHATSAPP,
+        session_identifier="wa-a",
+        display_name="WA A",
+        status=SessionStatus.ACTIVE,
+        session_metadata={},
+    )
+    channel_b = ChannelSession(
+        tenant_id=1,
+        channel_type=ChannelType.WHATSAPP,
+        session_identifier="wa-b",
+        display_name="WA B",
+        status=SessionStatus.ACTIVE,
+        session_metadata={},
+    )
+    session.add(channel_a)
+    session.add(channel_b)
+    session.commit()
+    session.refresh(channel_a)
+    session.refresh(channel_b)
+
+    first = agents.create_agent(
+        agents.AgentCreate(
+            name="Agent One",
+            system_prompt="Helpful",
+            preferred_channel_session_id=int(channel_a.id),
+        ),
+        session=session,
+        auth=auth_context,
+    )
+    second = agents.create_agent(
+        agents.AgentCreate(
+            name="Agent Two",
+            system_prompt="Helpful",
+            preferred_channel_session_id=int(channel_b.id),
+        ),
+        session=session,
+        auth=auth_context,
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        agents.update_agent(
+            agent_id=int(second.id),
+            payload=agents.AgentUpdate(preferred_channel_session_id=int(channel_a.id)),
+            session=session,
+            auth=auth_context,
+        )
+
+    assert exc.value.status_code == 400
+    assert "already assigned" in str(exc.value.detail)
 
 
 def test_delete_agent_cleans_up_dependent_records(session: Session, auth_context: AuthContext):

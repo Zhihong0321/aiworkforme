@@ -31,6 +31,7 @@ const isSavingAgent = ref(false)
 const isDeletingAgent = ref(false)
 const isLoadingTranscript = ref(false)
 const isResettingThread = ref(false)
+const resettingLeadId = ref(null)
 const isUploadingKnowledge = ref(false)
 const isCreatingLead = ref(false)
 const isUploadingSalesMaterial = ref(false)
@@ -69,6 +70,15 @@ const agentId = computed(() => Number(route.params.agentId))
 const assignedChannel = computed(() => (
   channels.value.find((session) => Number(session.id) === Number(form.preferred_channel_session_id || 0)) || null
 ))
+const channelOwnerById = computed(() => {
+  const owners = new Map()
+  for (const agent of store.agents) {
+    const preferredId = Number(agent?.preferred_channel_session_id || 0)
+    if (!preferredId || Number(agent.id) === Number(form.id || 0)) continue
+    owners.set(preferredId, agent)
+  }
+  return owners
+})
 
 const setToast = (text) => {
   toast.value = text
@@ -79,6 +89,8 @@ const setToast = (text) => {
   }, 3200)
 }
 setToast.timeoutId = null
+
+const getChannelOwner = (sessionId) => channelOwnerById.value.get(Number(sessionId || 0)) || null
 
 const extractLinkedMcpIds = (agent) => {
   if (!agent) return []
@@ -388,6 +400,10 @@ const openThread = async (thread) => {
   }
 }
 
+const getLeadThread = (lead) => (
+  threads.value.find((item) => Number(item.lead_id) === Number(lead?.id || 0)) || null
+)
+
 const resetActiveThread = async () => {
   if (!activeThread.value?.thread_id) return
   if (!window.confirm(`Reset the conversation with "${activeThread.value.lead_name || activeThread.value.lead_external_id || 'this contact'}"? This will archive the current thread and start a fresh one.`)) {
@@ -395,6 +411,7 @@ const resetActiveThread = async () => {
   }
 
   isResettingThread.value = true
+  resettingLeadId.value = activeThread.value?.lead_id ?? null
   try {
     const result = await request(`/messaging/threads/${activeThread.value.thread_id}/reset`, {
       method: 'POST',
@@ -414,12 +431,52 @@ const resetActiveThread = async () => {
     setToast(`Reset failed: ${error.message}`)
   } finally {
     isResettingThread.value = false
+    resettingLeadId.value = null
+  }
+}
+
+const resetLeadThread = async (lead) => {
+  const thread = getLeadThread(lead)
+  if (!thread?.thread_id) {
+    setToast('No conversation thread exists for this contact yet')
+    return
+  }
+  if (!window.confirm(`Reset the conversation with "${lead.name || lead.external_id || 'this contact'}"? This will archive the current thread and start a fresh one.`)) {
+    return
+  }
+
+  isResettingThread.value = true
+  resettingLeadId.value = lead.id
+  try {
+    const result = await request(`/messaging/threads/${thread.thread_id}/reset`, {
+      method: 'POST',
+    })
+    await Promise.all([loadThreads(), loadLeads()])
+
+    if (activeThread.value?.thread_id && Number(activeThread.value.thread_id) === Number(thread.thread_id)) {
+      const nextThread = threads.value.find((item) => Number(item.thread_id) === Number(result?.new_thread_id))
+        || threads.value.find((item) => Number(item.lead_id) === Number(lead.id))
+
+      if (nextThread) {
+        await openThread(nextThread)
+      } else {
+        activeThread.value = null
+        messages.value = []
+      }
+    }
+
+    setToast('Conversation reset. A fresh thread is ready.')
+  } catch (error) {
+    setToast(`Reset failed: ${error.message}`)
+  } finally {
+    isResettingThread.value = false
+    resettingLeadId.value = null
   }
 }
 
 const openLeadInbox = async (lead) => {
   setTab('inbox')
-  const thread = threads.value.find((item) => Number(item.lead_id) === Number(lead.id))
+  const thread = getLeadThread(lead)
   if (!thread) {
     setToast('No conversation thread exists for this contact yet')
     return
@@ -877,7 +934,7 @@ onMounted(loadDashboard)
           <div class="flex items-center justify-between gap-4 border-b border-line/70 pb-4">
             <div>
               <h2 class="text-xl font-bold text-ink">WhatsApp Routing</h2>
-              <p class="mt-1 text-sm text-ink-muted">Choose which connected WhatsApp number this agent owns.</p>
+              <p class="mt-1 text-sm text-ink-muted">Choose which connected WhatsApp number this agent owns. Each WhatsApp number can belong to only one agent.</p>
             </div>
             <button
               type="button"
@@ -894,7 +951,7 @@ onMounted(loadDashboard)
               <input v-model="form.preferred_channel_session_id" :value="null" type="radio" name="preferredChannel" class="mt-1 h-4 w-4" />
               <div>
                 <p class="font-semibold text-ink">No WhatsApp assigned</p>
-                <p class="mt-1 text-sm text-ink-muted">Inbound messages will fall back to lead assignment or workspace defaults.</p>
+                <p class="mt-1 text-sm text-ink-muted">Agent-driven outbound work stays blocked until one exact WhatsApp channel is assigned.</p>
               </div>
             </label>
 
@@ -902,20 +959,34 @@ onMounted(loadDashboard)
               v-for="session in channels"
               :key="session.id"
               class="flex items-start gap-3 rounded-[1.4rem] border p-4"
-              :class="Number(form.preferred_channel_session_id) === Number(session.id) ? 'border-primary/40 bg-primary/5' : 'border-line/80 bg-surface'"
+              :class="getChannelOwner(session.id)
+                ? 'cursor-not-allowed border-line/80 bg-surface-muted/70 opacity-70'
+                : (Number(form.preferred_channel_session_id) === Number(session.id) ? 'border-primary/40 bg-primary/5' : 'border-line/80 bg-surface')"
             >
-              <input v-model="form.preferred_channel_session_id" :value="session.id" type="radio" name="preferredChannel" class="mt-1 h-4 w-4" />
+              <input
+                v-model="form.preferred_channel_session_id"
+                :value="session.id"
+                :disabled="Boolean(getChannelOwner(session.id))"
+                type="radio"
+                name="preferredChannel"
+                class="mt-1 h-4 w-4"
+              />
               <div class="min-w-0 flex-1">
                 <div class="flex items-start justify-between gap-3">
                   <div class="min-w-0">
                     <p class="font-semibold text-ink">{{ getChannelIdentity(session) }}</p>
                     <p class="mt-1 text-sm text-ink-muted">{{ getChannelDescription(session) || 'No description saved.' }}</p>
+                    <p v-if="getChannelOwner(session.id)" class="mt-2 text-xs font-semibold text-amber-700">
+                      Already assigned to {{ getChannelOwner(session.id).name || `Agent #${getChannelOwner(session.id).id}` }}
+                    </p>
                   </div>
                   <span
                     class="rounded-full px-3 py-1 text-xs font-bold"
-                    :class="isConnectedChannelStatus(session.status) ? 'bg-emerald-500/10 text-emerald-700' : 'bg-amber-500/10 text-amber-700'"
+                    :class="getChannelOwner(session.id)
+                      ? 'bg-amber-500/10 text-amber-700'
+                      : (isConnectedChannelStatus(session.status) ? 'bg-emerald-500/10 text-emerald-700' : 'bg-amber-500/10 text-amber-700')"
                   >
-                    {{ isConnectedChannelStatus(session.status) ? 'Connected' : 'Needs setup' }}
+                    {{ getChannelOwner(session.id) ? 'In Use' : (isConnectedChannelStatus(session.status) ? 'Connected' : 'Needs setup') }}
                   </span>
                 </div>
                 <div class="mt-3 flex flex-wrap gap-2 text-xs text-ink-muted">
@@ -1116,6 +1187,16 @@ onMounted(loadDashboard)
                       {{ getLeadModeLabel(lead) === 'working' ? 'pause_circle' : 'play_circle' }}
                     </span>
                     {{ getLeadModeLabel(lead) === 'working' ? 'Put On Hold' : 'Start Working' }}
+                  </button>
+                  <button
+                    type="button"
+                    @click="resetLeadThread(lead)"
+                    :disabled="isResettingThread || !getLeadThread(lead)"
+                    class="inline-flex items-center gap-2 rounded-xl border border-red-200 px-3 py-2 text-xs font-bold text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span v-if="isResettingThread && Number(resettingLeadId || 0) === Number(lead.id)" class="h-4 w-4 animate-spin rounded-full border-2 border-red-300 border-t-red-600"></span>
+                    <span v-else class="material-symbols-outlined text-[16px]">restart_alt</span>
+                    Reset Thread
                   </button>
                   <button
                     type="button"

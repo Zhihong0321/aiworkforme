@@ -71,6 +71,7 @@ def _validate_preferred_channel_session(
     session: Session,
     tenant_id: int,
     preferred_channel_session_id: Optional[int],
+    current_agent_id: Optional[int] = None,
 ) -> Optional[int]:
     if preferred_channel_session_id is None:
         return None
@@ -82,6 +83,20 @@ def _validate_preferred_channel_session(
         or channel_session.channel_type != ChannelType.WHATSAPP
     ):
         raise HTTPException(status_code=400, detail="Preferred WhatsApp channel is invalid")
+
+    conflict = session.exec(
+        select(Agent).where(
+            Agent.tenant_id == tenant_id,
+            Agent.preferred_channel_session_id == preferred_channel_session_id,
+            Agent.id != current_agent_id,
+        )
+    ).first()
+    if conflict:
+        conflict_name = (conflict.name or "").strip() or f"Agent #{conflict.id}"
+        raise HTTPException(
+            status_code=400,
+            detail=f"WhatsApp channel is already assigned to {conflict_name}. One channel can only belong to one agent.",
+        )
 
     return int(channel_session.id)
 
@@ -143,6 +158,7 @@ def create_agent(
             session,
             auth.tenant.id,
             agent_in.preferred_channel_session_id,
+            current_agent_id=None,
         ),
     )
     
@@ -197,6 +213,7 @@ def update_agent(
             session,
             auth.tenant.id,
             payload.preferred_channel_session_id,
+            current_agent_id=agent.id,
         )
 
     session.add(agent)
