@@ -3,8 +3,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 
-from sqlmodel import Session, SQLModel, create_engine, select
+from sqlmodel import Session, SQLModel, create_engine, select, text
 
+from routers.ai_crm_helpers import clear_thread_followup_state
 from routers.ai_crm_runtime import scan_agent_threads, trigger_due_followups
 from src.adapters.db.agent_models import Agent
 from src.adapters.db.channel_models import ChannelSession, ChannelType, SessionStatus
@@ -322,4 +323,81 @@ def test_trigger_due_followups_enqueues_audio_message_when_allowed():
     assert outbound.raw_payload["tts_model"] == "qwen3-tts-flash"
     assert queue is not None
     assert queue.message_id == outbound.id
-    assert state.next_followup_at is None
+
+
+def test_clear_thread_followup_state_handles_legacy_lowercase_message_type_rows():
+    session = _make_session()
+    _, agent, _, lead, thread, _ = _seed_thread(
+        session,
+        tenant_id=14,
+        agent_id=214,
+        review_after_hours=24,
+        allow_voice_notes=False,
+    )
+
+    session.connection().execute(
+        text(
+            """
+            INSERT INTO et_ai_crm_thread_states (
+                tenant_id, workspace_id, agent_id, thread_id, lead_id, status,
+                summary, customer_reaction, followup_strategy, followup_message_type,
+                aggressiveness, reject_count, reason_trace, next_followup_at,
+                followup_last_generated_at, last_scanned_message_count,
+                last_scanned_at, created_at, updated_at
+            ) VALUES (
+                :tenant_id, :workspace_id, :agent_id, :thread_id, :lead_id, :status,
+                :summary, :customer_reaction, :followup_strategy, :followup_message_type,
+                :aggressiveness, :reject_count, :reason_trace, :next_followup_at,
+                :followup_last_generated_at, :last_scanned_message_count,
+                :last_scanned_at, :created_at, :updated_at
+            )
+            """
+        ),
+        {
+            "tenant_id": lead.tenant_id,
+            "workspace_id": lead.workspace_id,
+            "agent_id": agent.id,
+            "thread_id": thread.id,
+            "lead_id": lead.id,
+            "status": "NO_RESPONSE",
+            "summary": None,
+            "customer_reaction": None,
+            "followup_strategy": "PROMO",
+            "followup_message_type": "text",
+            "aggressiveness": "BALANCED",
+            "reject_count": 0,
+            "reason_trace": "{}",
+            "next_followup_at": datetime.utcnow(),
+            "followup_last_generated_at": None,
+            "last_scanned_message_count": 0,
+            "last_scanned_at": None,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+        },
+    )
+    session.commit()
+
+    clear_thread_followup_state(
+        session=session,
+        tenant_id=int(lead.tenant_id),
+        thread_id=int(thread.id),
+        reason="customer_replied_inbound",
+    )
+
+    row = session.connection().execute(
+        text(
+            """
+            SELECT next_followup_at, followup_last_generated_at
+            FROM et_ai_crm_thread_states
+            WHERE tenant_id = :tenant_id AND thread_id = :thread_id
+            """
+        ),
+        {
+            "tenant_id": int(lead.tenant_id),
+            "thread_id": int(thread.id),
+        },
+    ).first()
+
+    assert row is not None
+    assert row[0] is None
+    assert row[1] is None

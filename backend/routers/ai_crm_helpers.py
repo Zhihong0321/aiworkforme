@@ -8,11 +8,12 @@ SAFE CHANGE: Keep helper outputs backward-compatible for existing workflows.
 """
 
 import json
+import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
-from sqlmodel import Session, select
+from sqlmodel import Session, select, text
 
 from src.adapters.db.agent_models import Agent
 from src.adapters.db.channel_models import ChannelSession, ChannelType, SessionStatus
@@ -26,6 +27,9 @@ from src.adapters.db.crm_models import (
 )
 
 from .ai_crm_schemas import AICRMControlResponse
+
+
+logger = logging.getLogger(__name__)
 
 
 def validate_agent(session: Session, tenant_id: int, agent_id: int) -> Agent:
@@ -463,21 +467,50 @@ def clear_thread_followup_state(
     if thread_id is None:
         return
 
-    state = session.exec(
-        select(AICRMThreadState).where(
-            AICRMThreadState.tenant_id == tenant_id,
-            AICRMThreadState.thread_id == thread_id,
-        )
-    ).first()
-    if not state:
-        return
+    try:
+        state = session.exec(
+            select(AICRMThreadState).where(
+                AICRMThreadState.tenant_id == tenant_id,
+                AICRMThreadState.thread_id == thread_id,
+            )
+        ).first()
+        if not state:
+            return
 
-    trace = dict(state.reason_trace or {})
-    trace["last_reset_reason"] = reason
-    trace["last_reset_at"] = datetime.utcnow().isoformat()
-    state.next_followup_at = None
-    state.followup_last_generated_at = None
-    state.updated_at = datetime.utcnow()
-    state.reason_trace = trace
-    session.add(state)
+        trace = dict(state.reason_trace or {})
+        trace["last_reset_reason"] = reason
+        trace["last_reset_at"] = datetime.utcnow().isoformat()
+        state.next_followup_at = None
+        state.followup_last_generated_at = None
+        state.updated_at = datetime.utcnow()
+        state.reason_trace = trace
+        session.add(state)
+        session.commit()
+        return
+    except Exception as exc:
+        session.rollback()
+        logger.warning(
+            "Falling back to raw AI CRM state reset for tenant_id=%s thread_id=%s: %s",
+            tenant_id,
+            thread_id,
+            exc,
+        )
+
+    session.connection().execute(
+        text(
+            """
+            UPDATE et_ai_crm_thread_states
+            SET next_followup_at = NULL,
+                followup_last_generated_at = NULL,
+                updated_at = :updated_at
+            WHERE tenant_id = :tenant_id
+              AND thread_id = :thread_id
+            """
+        ),
+        {
+            "tenant_id": tenant_id,
+            "thread_id": thread_id,
+            "updated_at": datetime.utcnow(),
+        },
+    )
     session.commit()

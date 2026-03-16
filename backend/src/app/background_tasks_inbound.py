@@ -2,6 +2,7 @@
 import asyncio
 import io
 import importlib
+import inspect
 import json
 import logging
 import os
@@ -286,6 +287,30 @@ def _enqueue_sales_material_reply(
     session.add(queue)
     session.commit()
     return outbound
+
+
+def _filter_supported_run_turn_kwargs(run_turn_callable: Any, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Keep inbound processing resilient during rolling deploys where the worker and
+    runtime signatures may not be upgraded in lockstep yet.
+    """
+    try:
+        signature = inspect.signature(run_turn_callable)
+    except (TypeError, ValueError):
+        return kwargs
+
+    parameters = signature.parameters
+    if any(param.kind == inspect.Parameter.VAR_KEYWORD for param in parameters.values()):
+        return kwargs
+
+    supported = {key: value for key, value in kwargs.items() if key in parameters}
+    skipped = sorted(set(kwargs) - set(supported))
+    if skipped:
+        logger.warning(
+            "ConversationAgentRuntime.run_turn does not accept kwargs=%s; skipping them for compatibility",
+            ",".join(skipped),
+        )
+    return supported
 
 
 async def _enqueue_segmented_reply(
@@ -1046,16 +1071,22 @@ async def _process_one_inbound(session: Session, message: Any):
         agent.id, agent.name, message.id, message.lead_id,
     )
     runtime = ConversationAgentRuntime(session, _get_llm_router())
+    runtime_kwargs = _filter_supported_run_turn_kwargs(
+        runtime.run_turn,
+        {
+            "lead_id": message.lead_id,
+            "workspace_id": lead.workspace_id,
+            "user_message": prepared.get("user_message") or "",
+            "agent_id_override": agent.id,
+            "thread_id_override": message.thread_id,
+            "bypass_safety": True,
+            "history_override": history,
+            "task_override": prepared.get("task"),
+            "llm_extra_params": prepared.get("llm_extra_params"),
+        },
+    )
     result = await runtime.run_turn(
-        lead_id=message.lead_id,
-        workspace_id=lead.workspace_id,
-        user_message=prepared.get("user_message") or "",
-        agent_id_override=agent.id,
-        thread_id_override=message.thread_id,
-        bypass_safety=True,
-        history_override=history,
-        task_override=prepared.get("task"),
-        llm_extra_params=prepared.get("llm_extra_params"),
+        **runtime_kwargs,
     )
 
     status = result.get("status")

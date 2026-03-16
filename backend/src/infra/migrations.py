@@ -339,6 +339,56 @@ def apply_ai_crm_additive_migration(engine: Engine):
     logger.warning("Skipping AI CRM additive migration for unsupported dialect: %s", dialect)
 
 
+def apply_ai_crm_followup_message_type_normalization(engine: Engine):
+    """
+    Normalizes legacy lowercase AI CRM message-type values to the uppercase enum
+    names expected by the current ORM layer.
+    """
+    dialect = engine.dialect.name
+
+    if dialect == "postgresql":
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE et_ai_crm_thread_states
+                    SET followup_message_type = CASE lower(coalesce(followup_message_type, ''))
+                        WHEN 'audio' THEN 'AUDIO'
+                        ELSE 'TEXT'
+                    END
+                    WHERE followup_message_type IS NULL
+                       OR followup_message_type IN ('text', 'audio')
+                    """
+                )
+            )
+        logger.info("AI CRM followup_message_type normalization applied for PostgreSQL.")
+        return
+
+    if dialect == "sqlite":
+        insp = inspect(engine)
+        tables = set(insp.get_table_names())
+        if "et_ai_crm_thread_states" not in tables:
+            return
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    UPDATE et_ai_crm_thread_states
+                    SET followup_message_type = CASE lower(coalesce(followup_message_type, ''))
+                        WHEN 'audio' THEN 'AUDIO'
+                        ELSE 'TEXT'
+                    END
+                    WHERE followup_message_type IS NULL
+                       OR followup_message_type IN ('text', 'audio')
+                    """
+                )
+            )
+        logger.info("AI CRM followup_message_type normalization applied for SQLite.")
+        return
+
+    logger.warning("Skipping AI CRM followup_message_type normalization for unsupported dialect: %s", dialect)
+
+
 def apply_workspace_decoupling_migration(engine: Engine):
     """
     Allows leads/legacy threads to exist without workspace linkage.

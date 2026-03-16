@@ -17,5 +17,6 @@ REPO NAME : AIworkforMe
 - Clarified channel setup UI with explicit Add New Channel actions and verified frontend build
 - Added Start Working and On Hold controls to agent dashboard contacts and verified frontend build
 - Fixed per-agent WhatsApp routing so manual starts and AI CRM follow-ups use the assigned channel, with backend regression tests and frontend build
+- Fixed customer-reply auto-response regressions by hardening inbound runtime compatibility and AI CRM state recovery, then validated with targeted tests.
 
 =====================
