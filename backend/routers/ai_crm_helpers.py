@@ -29,7 +29,7 @@ from src.adapters.db.crm_models import (
 from src.adapters.db.messaging_models import UnifiedMessage, UnifiedThread
 
 from .ai_crm_schemas import AICRMControlResponse
-from .messaging_helpers_validation import sync_whatsapp_thread_assignment
+from .messaging_helpers_validation import resolve_agent_for_lead, sync_whatsapp_thread_assignment
 
 
 logger = logging.getLogger(__name__)
@@ -138,6 +138,21 @@ def synchronize_active_thread_assignments(session: Session, tenant_id: int) -> i
                 channel_session_id=int(latest_channel_session_id),
             ):
                 changed += 1
+                continue
+
+        if thread.agent_id is None:
+            try:
+                repaired_agent_id = resolve_agent_for_lead(session, tenant_id, int(lead.id))
+            except HTTPException:
+                repaired_agent_id = None
+            if repaired_agent_id is not None:
+                thread.agent_id = repaired_agent_id
+                thread.updated_at = datetime.utcnow()
+                session.add(thread)
+                changed += 1
+                if lead.agent_id != repaired_agent_id:
+                    lead.agent_id = repaired_agent_id
+                    session.add(lead)
                 continue
 
         if thread.agent_id is not None and lead.agent_id != thread.agent_id:

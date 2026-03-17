@@ -137,3 +137,69 @@ def test_list_ai_crm_threads_repairs_legacy_thread_owner_from_latest_channel_mes
     assert rows_for_agent_a == []
     assert lead.agent_id == agent_b.id
     assert thread.agent_id == agent_b.id
+
+
+def test_list_ai_crm_threads_repairs_ownerless_thread_from_lead_assignment():
+    session = _make_session()
+    auth = _auth_context()
+    now = datetime.utcnow()
+
+    agent = Agent(
+        id=103,
+        tenant_id=1,
+        name="Agent C",
+        system_prompt="Prompt C",
+    )
+    workspace = Workspace(id=202, tenant_id=1, name="Main", agent_id=agent.id)
+    lead = Lead(
+        id=302,
+        tenant_id=1,
+        workspace_id=workspace.id,
+        agent_id=agent.id,
+        external_id="601188888888",
+        name="Ownerless Lead",
+    )
+    thread = UnifiedThread(
+        id=402,
+        tenant_id=1,
+        lead_id=lead.id,
+        agent_id=None,
+        channel="whatsapp",
+        status="active",
+        created_at=now,
+        updated_at=now,
+    )
+    inbound = UnifiedMessage(
+        id=502,
+        tenant_id=1,
+        lead_id=lead.id,
+        thread_id=thread.id,
+        channel_session_id=None,
+        channel="whatsapp",
+        external_message_id="ownerless_inbound_1",
+        direction="inbound",
+        message_type="text",
+        text_content="hello",
+        delivery_status="received",
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(agent)
+    session.add(workspace)
+    session.add(lead)
+    session.add(thread)
+    session.add(inbound)
+    session.commit()
+
+    rows = list_ai_crm_threads(
+        agent_id=agent.id,
+        session=session,
+        auth=auth,
+    )
+
+    session.refresh(thread)
+    session.refresh(lead)
+
+    assert [row.thread_id for row in rows] == [thread.id]
+    assert thread.agent_id == agent.id
+    assert lead.agent_id == agent.id

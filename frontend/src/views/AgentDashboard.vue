@@ -404,6 +404,47 @@ const getLeadThread = (lead) => (
   threads.value.find((item) => Number(item.lead_id) === Number(lead?.id || 0)) || null
 )
 
+const resolveLeadThread = async (lead) => {
+  const cachedThread = getLeadThread(lead)
+  if (cachedThread?.thread_id) {
+    return cachedThread
+  }
+
+  try {
+    const data = await request(`/messaging/leads/${lead.id}/thread?channel=whatsapp`)
+    if (!data?.thread_id) {
+      return null
+    }
+
+    const lastMessage = Array.isArray(data.messages) && data.messages.length > 0
+      ? data.messages[data.messages.length - 1]
+      : null
+    const resolvedThread = {
+      thread_id: data.thread_id,
+      lead_id: lead.id,
+      lead_name: lead.name,
+      lead_external_id: lead.external_id,
+      status: data.status,
+      channel: data.channel,
+      pending_scan: false,
+      last_message_preview: lastMessage?.text_content || null,
+      last_message_direction: lastMessage?.direction || null,
+      last_message_at: lastMessage?.created_at || null,
+    }
+
+    threads.value = [
+      resolvedThread,
+      ...threads.value.filter((item) => Number(item.lead_id) !== Number(lead.id)),
+    ]
+    return resolvedThread
+  } catch (error) {
+    if ((error?.message || '').includes('No thread found for this lead yet')) {
+      return null
+    }
+    throw error
+  }
+}
+
 const resetActiveThread = async () => {
   if (!activeThread.value?.thread_id) return
   if (!window.confirm(`Reset the conversation with "${activeThread.value.lead_name || activeThread.value.lead_external_id || 'this contact'}"? This will archive the current thread and start a fresh one.`)) {
@@ -436,7 +477,7 @@ const resetActiveThread = async () => {
 }
 
 const resetLeadThread = async (lead) => {
-  const thread = getLeadThread(lead)
+  const thread = await resolveLeadThread(lead)
   if (!thread?.thread_id) {
     setToast('No conversation thread exists for this contact yet')
     return
@@ -476,7 +517,7 @@ const resetLeadThread = async (lead) => {
 
 const openLeadInbox = async (lead) => {
   setTab('inbox')
-  const thread = getLeadThread(lead)
+  const thread = await resolveLeadThread(lead)
   if (!thread) {
     setToast('No conversation thread exists for this contact yet')
     return
