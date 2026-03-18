@@ -6,6 +6,7 @@ import inspect
 import json
 import logging
 import os
+import re
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from urllib.parse import urlparse
@@ -17,8 +18,13 @@ from sqlmodel import Session, select
 
 from src.app.runtime.agent_runtime import ConversationAgentRuntime
 from src.app.runtime.leads_service import get_or_create_default_workspace
-from src.app.runtime.sales_materials import list_agent_sales_materials, thread_sales_material_state
-from src.app.runtime.sales_materials import sales_material_kind_for_material
+from src.app.runtime.sales_materials import (
+    SALES_MATERIAL_MAX_BYTES,
+    list_agent_sales_materials,
+    resolve_sales_material_public_url,
+    sales_material_kind_for_material,
+    thread_sales_material_state,
+)
 from src.app.inbound_worker_notify import (
     open_inbound_listen_connection,
     wait_for_inbound_notify,
@@ -234,9 +240,7 @@ def _enqueue_sales_material_reply(
     now = datetime.now(timezone.utc)
     source_type = str(getattr(material, "source_type", "file") or "file").strip().lower()
     is_link_material = source_type == "url"
-    resolved_url = str(
-        (getattr(material, "external_url", "") or getattr(material, "public_url", "") or "")
-    ).strip()
+    resolved_url = resolve_sales_material_public_url(material)
     outbound = UnifiedMessage(
         tenant_id=inbound_message.tenant_id,
         lead_id=inbound_message.lead_id,
@@ -383,6 +387,96 @@ def _extract_json_object(raw_text: str) -> Dict[str, Any]:
         return {}
 
 
+def _material_text_blob(item: Dict[str, Any]) -> str:
+    return " ".join(
+        str(item.get(key) or "").strip().lower()
+        for key in ("filename", "description", "kind", "media_type", "url")
+    )
+
+
+def _explicit_sales_material_terms(*texts: str) -> List[str]:
+    combined = " ".join(str(text or "").lower() for text in texts)
+    patterns = [
+        ("brochure", r"\bbrochure\b"),
+        ("catalog", r"\bcatalog(?:ue)?\b"),
+        ("pdf", r"\bpdf\b"),
+        ("deck", r"\bdeck\b"),
+        ("company profile", r"\bcompany profile\b"),
+        ("pricing", r"\bpricing\b|\bprice list\b"),
+        ("spec", r"\bspec(?:s)?\b|\bdatasheet\b|\bdata sheet\b"),
+        ("manual", r"\bmanual\b"),
+        ("proposal", r"\bproposal\b"),
+        ("image", r"\bimage\b|\bphoto\b|\bpicture\b"),
+        ("flyer", r"\bflyer\b|\bleaflet\b"),
+    ]
+    found = [label for label, pattern in patterns if re.search(pattern, combined)]
+    if re.search(r"\b(send|share|attach|upload|show|give)\b", combined) and re.search(
+        r"\b(file|document|material|brochure|catalog(?:ue)?|pdf|image|photo|picture)\b",
+        combined,
+    ):
+        found.append("attachment")
+    return list(dict.fromkeys(found))
+
+
+def _heuristic_sales_material_ids(
+    options: List[Dict[str, Any]],
+    user_message: str,
+    reply_text: str,
+) -> List[int]:
+    terms = _explicit_sales_material_terms(user_message, reply_text)
+    if not terms:
+        return []
+
+    combined = " ".join([str(user_message or "").lower(), str(reply_text or "").lower()])
+    allows_resend = bool(re.search(r"\b(again|resend|re-send|another copy|download again|review again)\b", combined))
+    wants_image = any(term in {"image", "flyer"} for term in terms)
+    wants_document = any(
+        term in {"brochure", "catalog", "pdf", "deck", "company profile", "pricing", "spec", "manual", "proposal"}
+        for term in terms
+    )
+
+    scored: List[tuple[int, int]] = []
+    for item in options:
+        already_sent = bool(item.get("already_sent"))
+        if already_sent and not allows_resend:
+            continue
+
+        base_score = 0
+        text_blob = _material_text_blob(item)
+        kind = str(item.get("kind") or "").strip().lower()
+        for term in terms:
+            if term == "attachment":
+                continue
+            if term in text_blob:
+                base_score += 5
+        if wants_image and kind == "image":
+            base_score += 4
+        if wants_document and kind == "document":
+            base_score += 4
+        if str(item.get("filename") or "").strip().lower().endswith(".pdf") and wants_document:
+            base_score += 2
+
+        score = base_score
+        if base_score > 0 and not already_sent:
+            score += 1
+
+        if score > 0 and item.get("id") is not None:
+            scored.append((int(item["id"]), score))
+
+    if scored:
+        scored.sort(key=lambda row: (-row[1], row[0]))
+        return [material_id for material_id, _score in scored[:2]]
+
+    eligible = [
+        int(item["id"])
+        for item in options
+        if item.get("id") is not None and (allows_resend or not item.get("already_sent"))
+    ]
+    if len(eligible) == 1 and "attachment" in terms:
+        return eligible
+    return []
+
+
 async def _plan_sales_material_sends(
     session: Session,
     inbound_message: Any,
@@ -416,6 +510,25 @@ async def _plan_sales_material_sends(
     ]
     if not options:
         return []
+
+    heuristic_ids = _heuristic_sales_material_ids(options, user_message, reply_text)
+    if heuristic_ids:
+        selected: List[Dict[str, Any]] = []
+        for material in materials:
+            material_id = int(material.id or 0)
+            if material_id in heuristic_ids:
+                selected.append(
+                    {
+                        "material": material,
+                        "planner_trace": {
+                            "reason": "heuristic explicit sales-material request",
+                            "selected_material_ids": heuristic_ids,
+                            "selection_mode": "heuristic",
+                        },
+                    }
+                )
+        if selected:
+            return selected
 
     llm_task = importlib.import_module("src.infra.llm.schemas").LLMTask
     planner_messages = [

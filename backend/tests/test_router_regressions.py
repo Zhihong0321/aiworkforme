@@ -20,7 +20,7 @@ from src.adapters.db.mcp_models import MCPServer
 from src.adapters.db.tenant_models import Tenant
 from src.adapters.db.user_models import User
 from src.domain.entities.enums import Role
-from src.app.runtime.sales_materials import validate_sales_material_upload
+from src.app.runtime.sales_materials import serialize_sales_material, validate_sales_material_upload
 
 
 @pytest.fixture()
@@ -503,6 +503,28 @@ def test_sales_material_upload_limit_accepts_up_to_30mb():
 
     assert exc.value.status_code == 400
     assert exc.value.detail == "PDF exceeds upload limit of 30MB"
+
+
+def test_serialize_sales_material_prefers_runtime_public_base(monkeypatch):
+    monkeypatch.setenv("APP_PUBLIC_BASE_URL", "https://public.example.com")
+    material = agents.AgentSalesMaterial(
+        id=10,
+        tenant_id=1,
+        agent_id=5,
+        filename="brochure.pdf",
+        stored_name="token-brochure.pdf",
+        media_type="application/pdf",
+        source_type="file",
+        external_url="",
+        file_size_bytes=123,
+        description="Brochure",
+        public_token="abc123",
+        public_url="http://127.0.0.1:8080/api/v1/public/sales-materials/abc123",
+    )
+
+    serialized = serialize_sales_material(material)
+
+    assert serialized["public_url"] == "https://public.example.com/api/v1/public/sales-materials/abc123"
 
 
 def _async_return(value):

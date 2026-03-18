@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import re
+from ipaddress import ip_address
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -50,6 +51,34 @@ def sales_material_kind(media_type: str) -> str:
 def is_supported_url(value: str) -> bool:
     parsed = urlparse(str(value or "").strip())
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _host_is_probably_local(host: str) -> bool:
+    normalized = str(host or "").strip().lower().strip("[]")
+    if not normalized:
+        return True
+    if normalized in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}:
+        return True
+    if normalized.endswith(".local"):
+        return True
+    try:
+        parsed_ip = ip_address(normalized)
+    except ValueError:
+        return False
+    return bool(
+        parsed_ip.is_private
+        or parsed_ip.is_loopback
+        or parsed_ip.is_link_local
+        or parsed_ip.is_unspecified
+        or parsed_ip.is_reserved
+    )
+
+
+def is_public_http_url(value: str) -> bool:
+    parsed = urlparse(str(value or "").strip())
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return False
+    return not _host_is_probably_local(parsed.hostname or "")
 
 
 def is_youtube_url(value: str) -> bool:
@@ -168,6 +197,35 @@ def build_sales_material_public_url(public_token: str, request: Optional[Any] = 
     return f"{build_public_base_url(request)}/api/v1/public/sales-materials/{public_token}"
 
 
+def resolve_sales_material_public_url(
+    material: AgentSalesMaterial,
+    request: Optional[Any] = None,
+) -> str:
+    source_type = str(getattr(material, "source_type", "file") or "file").strip().lower()
+    if source_type == "url":
+        return str(getattr(material, "external_url", "") or getattr(material, "public_url", "") or "").strip()
+
+    public_token = str(getattr(material, "public_token", "") or "").strip()
+    stored_url = str(getattr(material, "public_url", "") or "").strip()
+
+    configured_base = (os.getenv("APP_PUBLIC_BASE_URL") or "").strip().rstrip("/")
+    if public_token and configured_base:
+        parsed = urlparse(configured_base)
+        if parsed.scheme in {"http", "https"} and parsed.netloc:
+            return build_sales_material_public_url(public_token, request=request)
+
+    if request is not None and public_token:
+        return build_sales_material_public_url(public_token, request=request)
+
+    if stored_url and is_supported_url(stored_url):
+        return stored_url
+
+    if public_token:
+        return build_sales_material_public_url(public_token, request=request)
+
+    return stored_url
+
+
 def build_sales_material_stored_name(filename: str, suffix: str, public_token: Optional[str] = None) -> str:
     token = public_token or uuid4().hex
     stem = _slugify_filename(Path(filename).stem)
@@ -202,11 +260,7 @@ def delete_sales_material_file(material: AgentSalesMaterial) -> None:
 
 def serialize_sales_material(material: AgentSalesMaterial) -> Dict[str, Any]:
     source_type = str(getattr(material, "source_type", "file") or "file").strip().lower()
-    resolved_url = (
-        (material.external_url or "").strip()
-        if source_type == "url"
-        else (material.public_url or build_sales_material_public_url(material.public_token))
-    )
+    resolved_url = resolve_sales_material_public_url(material)
     return {
         "id": material.id,
         "agent_id": material.agent_id,
@@ -316,11 +370,7 @@ def build_sales_material_prompt_block(
             else "no"
         )
         kind = sales_material_kind_for_material(material)
-        resolved_url = (
-            str(getattr(material, "external_url", "") or getattr(material, "public_url", "")).strip()
-            if str(getattr(material, "source_type", "file") or "file").strip().lower() == "url"
-            else str(getattr(material, "public_url", "") or "").strip()
-        )
+        resolved_url = resolve_sales_material_public_url(material)
         lines.extend(
             [
                 f"- Material ID {material.id}: {material.filename}",

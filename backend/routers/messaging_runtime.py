@@ -21,6 +21,7 @@ from src.adapters.db.agent_models import Agent
 from src.adapters.db.channel_models import ChannelSession, SessionStatus
 from src.adapters.db.crm_models import Lead
 from src.adapters.db.messaging_models import OutboundQueue, UnifiedMessage
+from src.app.runtime.sales_materials import is_public_http_url, resolve_sales_material_public_url
 from src.infra.llm.costs import estimate_llm_cost_usd
 from src.infra.llm.router import LLMRouter
 from src.infra.llm.schemas import LLMTask
@@ -164,9 +165,28 @@ def send_whatsapp_message(session: Session, message: UnifiedMessage) -> str:
         return str(raw_payload.get("provider_message_id") or message.external_message_id)
 
     if message_type in {"image", "document", "pdf"}:
+        sales_material_id = raw_payload.get("sales_material_id")
+        if sales_material_id is not None:
+            try:
+                material_id = int(sales_material_id)
+            except (TypeError, ValueError):
+                material_id = 0
+            if material_id > 0:
+                from src.adapters.db.agent_models import AgentSalesMaterial
+
+                material = session.get(AgentSalesMaterial, material_id)
+                if material and material.tenant_id == message.tenant_id:
+                    resolved_media_url = resolve_sales_material_public_url(material)
+                    if resolved_media_url:
+                        message.media_url = resolved_media_url
+
         media_url = (message.media_url or "").strip()
         if not media_url:
             raise RuntimeError("WhatsApp media outbound requires media_url")
+        if not is_public_http_url(media_url):
+            raise RuntimeError(
+                f"WhatsApp media outbound requires a public media_url reachable by Baileys, got: {media_url}"
+            )
 
         normalized_type = "document" if message_type == "pdf" else message_type
         file_name = str(
