@@ -1,6 +1,7 @@
 import { store } from '../store'
 
 const API_BASE = `${window.location.origin}/api/v1`
+const DEFAULT_REQUEST_TIMEOUT_MS = 15000
 
 export async function request(path, options = {}) {
     // Determine the full URL
@@ -28,10 +29,29 @@ export async function request(path, options = {}) {
         headers['X-Tenant-Id'] = tenantIdStr
     }
 
-    const response = await fetch(url, {
-        ...options,
-        headers
-    })
+    const controller = new AbortController()
+    const timeoutMs = Number(options.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS)
+    const timeoutId = Number.isFinite(timeoutMs) && timeoutMs > 0
+        ? window.setTimeout(() => controller.abort(), timeoutMs)
+        : null
+
+    let response
+    try {
+        response = await fetch(url, {
+            ...options,
+            headers,
+            signal: options.signal ?? controller.signal,
+        })
+    } catch (error) {
+        if (error?.name === 'AbortError') {
+            throw new Error('Request timed out')
+        }
+        throw error
+    } finally {
+        if (timeoutId !== null) {
+            window.clearTimeout(timeoutId)
+        }
+    }
 
     if (response.status === 401) {
         localStorage.removeItem('token')

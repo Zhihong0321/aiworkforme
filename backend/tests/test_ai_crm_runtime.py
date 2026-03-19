@@ -220,6 +220,69 @@ def test_scan_agent_threads_uses_thread_agent_assignment_even_when_lead_agent_is
     assert lead.agent_id == agent.id
 
 
+def test_scan_agent_threads_repairs_missing_lead_workspace_before_upsert():
+    session = _make_session()
+    _, agent, workspace, lead, thread, _ = _seed_thread(
+        session,
+        tenant_id=16,
+        agent_id=216,
+        review_after_hours=12,
+        allow_voice_notes=False,
+    )
+    lead.workspace_id = None
+    session.add(lead)
+    now = datetime.utcnow()
+    session.add(
+        UnifiedMessage(
+            tenant_id=lead.tenant_id,
+            lead_id=lead.id,
+            thread_id=thread.id,
+            channel="whatsapp",
+            external_message_id="m16_1",
+            direction="inbound",
+            text_content="Please check back tomorrow.",
+            created_at=now - timedelta(hours=30),
+            updated_at=now - timedelta(hours=30),
+        )
+    )
+    session.add(
+        UnifiedMessage(
+            tenant_id=lead.tenant_id,
+            lead_id=lead.id,
+            thread_id=thread.id,
+            channel="whatsapp",
+            external_message_id="m16_2",
+            direction="outbound",
+            text_content="Sure, I will follow up.",
+            created_at=now - timedelta(hours=29),
+            updated_at=now - timedelta(hours=29),
+        )
+    )
+    session.commit()
+
+    router = _FakeRouter(
+        '{"status":"CONSIDERING","customer_reaction":"waiting","summary":"Lead asked for another follow-up.","should_follow_up":true,"recommended_wait_hours":24,"recommended_message_type":"text"}'
+    )
+
+    result = __import__("asyncio").run(
+        scan_agent_threads(
+            session=session,
+            router=router,
+            tenant_id=int(lead.tenant_id),
+            agent_id=int(agent.id),
+            force_all=False,
+        )
+    )
+
+    state = session.exec(select(AICRMThreadState).where(AICRMThreadState.thread_id == thread.id)).first()
+    session.refresh(lead)
+
+    assert result.scanned_threads == 1
+    assert state is not None
+    assert state.workspace_id == workspace.id
+    assert lead.workspace_id == workspace.id
+
+
 def test_trigger_due_followups_skips_and_clears_state_when_customer_already_replied():
     session = _make_session()
     _, agent, _, lead, thread, _ = _seed_thread(

@@ -25,6 +25,7 @@ from src.adapters.db.crm_models import (
     AICRMLeadStatus,
     AICRMThreadState,
     Lead,
+    Workspace,
 )
 from src.adapters.db.messaging_models import UnifiedMessage, UnifiedThread
 from src.app.conversation_skills import (
@@ -32,6 +33,7 @@ from src.app.conversation_skills import (
     compose_conversation_prompt,
     get_default_conversation_skill_registry,
 )
+from src.app.runtime.leads_service import get_or_create_default_workspace
 
 from .ai_crm_schemas import AICRMControlResponse
 from .messaging_helpers_validation import resolve_agent_for_lead, sync_whatsapp_thread_assignment
@@ -465,6 +467,13 @@ def upsert_thread_state(
     lead_id: int,
     workspace_id: Optional[int] = None,
 ) -> AICRMThreadState:
+    workspace_id = resolve_thread_state_workspace_id(
+        session=session,
+        tenant_id=tenant_id,
+        agent_id=agent_id,
+        lead_id=lead_id,
+        workspace_id=workspace_id,
+    )
     state = session.exec(
         select(AICRMThreadState).where(
             AICRMThreadState.tenant_id == tenant_id,
@@ -508,6 +517,46 @@ def upsert_thread_state(
     session.commit()
     session.refresh(state)
     return state
+
+
+def resolve_thread_state_workspace_id(
+    session: Session,
+    tenant_id: int,
+    agent_id: int,
+    lead_id: int,
+    workspace_id: Optional[int],
+) -> int:
+    if workspace_id is not None:
+        return int(workspace_id)
+
+    lead = session.get(Lead, lead_id)
+    if not lead or int(lead.tenant_id or 0) != int(tenant_id):
+        raise HTTPException(status_code=404, detail="Lead not found for AI CRM thread state")
+
+    if lead.workspace_id is not None:
+        return int(lead.workspace_id)
+
+    workspace = session.exec(
+        select(Workspace)
+        .where(
+            Workspace.tenant_id == tenant_id,
+            Workspace.agent_id == agent_id,
+        )
+        .order_by(Workspace.id.asc())
+    ).first()
+    if workspace is None:
+        workspace = get_or_create_default_workspace(session, tenant_id)
+
+    lead.workspace_id = int(workspace.id)
+    session.add(lead)
+    session.commit()
+    session.refresh(lead)
+    logger.info(
+        "AI CRM assigned workspace %s to lead %s before creating thread state",
+        workspace.id,
+        lead.id,
+    )
+    return int(workspace.id)
 
 
 def resolve_channel_session_id(
