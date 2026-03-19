@@ -95,15 +95,8 @@ def delete_lead_and_children(session: Session, tenant_id: int, lead: Lead) -> di
                 ThreadInsight.thread_id.in_(thread_ids),
             )
         ).all()
-        for row in insight_rows:
-            session.delete(row)
     else:
         insight_rows = []
-
-    for row in unified_messages:
-        session.delete(row)
-    for row in thread_rows:
-        session.delete(row)
 
     # Legacy conversation cleanup.
     legacy_threads = session.exec(
@@ -152,7 +145,13 @@ def delete_lead_and_children(session: Session, tenant_id: int, lead: Lead) -> di
             AICRMThreadState.lead_id == lead.id,
         )
     ).all()
+    for row in insight_rows:
+        session.delete(row)
     for row in aicrm_state_rows:
+        session.delete(row)
+    for row in unified_messages:
+        session.delete(row)
+    for row in thread_rows:
         session.delete(row)
 
     calendar_rows = session.exec(

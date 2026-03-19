@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from sqlalchemy import text
 from sqlmodel import SQLModel, Session, create_engine, select
 from sqlmodel.pool import StaticPool
 
 from routers.leads import delete_lead
 from src.adapters.api.dependencies import AuthContext
+from src.adapters.db.agent_models import Agent
 from src.adapters.db.calendar_models import CalendarEvent
 from src.adapters.db.crm_models import (
     AICRMThreadState,
@@ -31,7 +33,11 @@ def _make_session() -> Session:
     )
     SQLModel.metadata.create_all(engine)
     session = Session(engine)
+    session.exec(text("PRAGMA foreign_keys=ON"))
     session.add(Tenant(id=1, name="Tenant A"))
+    session.commit()
+    session.add(User(id=1, email="calendar-owner@test.local", password_hash="x", is_active=True))
+    session.add(Agent(id=1, tenant_id=1, name="Delete Agent", system_prompt="Helpful"))
     session.commit()
     return session
 
