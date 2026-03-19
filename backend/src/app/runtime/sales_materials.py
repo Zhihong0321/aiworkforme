@@ -36,6 +36,7 @@ ALLOWED_DOC_TYPES = {
     "application/pdf": ".pdf",
 }
 ALLOWED_TYPES = {**ALLOWED_IMAGE_TYPES, **ALLOWED_DOC_TYPES}
+DEFAULT_STORAGE_MOUNT_PATH = "/storage"
 
 
 def _slugify_filename(value: str) -> str:
@@ -230,6 +231,55 @@ def build_sales_material_stored_name(filename: str, suffix: str, public_token: O
     token = public_token or uuid4().hex
     stem = _slugify_filename(Path(filename).stem)
     return f"{token}-{stem}{suffix}"
+
+
+def _path_is_within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def get_sales_material_storage_health() -> Dict[str, Any]:
+    storage_dir = Path(SALES_MATERIALS_DIR)
+    mount_root = Path(os.getenv("STORAGE_MOUNT_PATH") or DEFAULT_STORAGE_MOUNT_PATH)
+    warnings: List[str] = []
+    error = ""
+
+    try:
+        storage_dir.mkdir(parents=True, exist_ok=True)
+        probe_path = storage_dir / f".probe-{uuid4().hex}.tmp"
+        probe_path.write_text("ok", encoding="utf-8")
+        probe_path.unlink(missing_ok=True)
+        writable = True
+    except Exception as exc:
+        writable = False
+        error = str(exc)
+        warnings.append(f"Storage directory is not writable: {exc}")
+
+    mount_exists = mount_root.exists()
+    using_persistent_mount = _path_is_within(storage_dir, mount_root) if mount_exists else False
+
+    if mount_exists and not using_persistent_mount:
+        warnings.append(
+            f"Sales materials directory {storage_dir} is not under mounted persistent path {mount_root}"
+        )
+    if not mount_exists:
+        warnings.append(f"Persistent mount path {mount_root} was not found")
+
+    status = "ok" if writable and using_persistent_mount else ("warn" if writable else "error")
+    return {
+        "status": status,
+        "configured_path": str(storage_dir),
+        "configured_path_exists": storage_dir.exists(),
+        "configured_path_writable": writable,
+        "persistent_mount_path": str(mount_root),
+        "persistent_mount_exists": mount_exists,
+        "using_persistent_mount": using_persistent_mount,
+        "warnings": warnings,
+        "error": error or None,
+    }
 
 
 def agent_sales_material_dir(tenant_id: int, agent_id: int) -> Path:

@@ -29,7 +29,17 @@ def read_root() -> dict:
 
 @router.get("/api/v1/health")
 def health_check() -> dict:
-    return {"status": "ok", "service": "aiworkforme-backend", "version": "1.0.0-soc"}
+    startup_health = importlib.import_module("src.infra.lifecycle").STARTUP_HEALTH
+    return {
+        "status": "ok",
+        "service": "aiworkforme-backend",
+        "version": "1.0.0-soc",
+        "startup": {
+            "ready": bool(startup_health.get("ready")),
+            "checked_at": startup_health.get("checked_at"),
+            "storage": startup_health.get("storage") or {},
+        },
+    }
 
 
 @router.get("/api/v1/ready")
@@ -59,6 +69,7 @@ def readiness_check(db_session: Session = Depends(_get_session)) -> dict:
             "database": "connected",
             "timestamp": datetime.utcnow().isoformat(),
             "schema": {"ok": True},
+            "storage": startup_health.get("storage") or {},
         }
     except HTTPException:
         raise

@@ -39,6 +39,7 @@ from src.app.background_tasks import background_crm_loop
 from src.app.background_tasks_ai_crm import background_ai_crm_loop
 from src.app.background_tasks_inbound import background_inbound_worker_loop
 from src.app.background_tasks_messaging import background_outbound_dispatch_loop
+from src.app.runtime.sales_materials import get_sales_material_storage_health
 from src.infra.database import engine
 from src.infra.migrations import (
     apply_ai_crm_additive_migration,
@@ -60,6 +61,7 @@ logger = logging.getLogger(__name__)
 STARTUP_HEALTH: Dict[str, Any] = {
     "ready": False,
     "schema": {},
+    "storage": {},
     "checked_at": None,
 }
 
@@ -68,6 +70,23 @@ async def run_startup_sequence() -> None:
     """Initialize schema, seed baseline data, then start background loops."""
     logger.info("Initializing system...")
     try:
+        storage_health = get_sales_material_storage_health()
+        STARTUP_HEALTH["storage"] = storage_health
+        if storage_health.get("status") == "ok":
+            logger.info(
+                "Storage health OK: path=%s mount=%s",
+                storage_health.get("configured_path"),
+                storage_health.get("persistent_mount_path"),
+            )
+        else:
+            logger.warning(
+                "Storage health warning: status=%s path=%s warnings=%s error=%s",
+                storage_health.get("status"),
+                storage_health.get("configured_path"),
+                storage_health.get("warnings"),
+                storage_health.get("error"),
+            )
+
         apply_legacy_table_rename_migration(engine)
         SQLModel.metadata.create_all(engine)
 

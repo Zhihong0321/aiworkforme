@@ -10,5 +10,8 @@ REPO NAME : AIworkforMe
 - Shipped lead delete action on the agent dashboard contacts tab
 - Fixed lead deletion 500 by deleting AI CRM thread state before unified threads and added FK-enforced regression coverage
 - Fixed live inbound WhatsApp trigger and patched unified messaging schema SQL to restore AI replies
+- Built an internal prompt optimizer for agents with feedback intake, thread analysis, and a reviewed prompt rewrite flow, then verified it with tests and a frontend build.
+- Moved the new prompt optimizer into the live agent dashboard with an accessible Optimizer tab and direct launch from System Instructions, then verified the frontend build.
+- Added non-blocking storage health checks for persistent sales-material storage
 
 =====================
