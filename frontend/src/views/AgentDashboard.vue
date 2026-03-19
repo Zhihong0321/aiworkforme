@@ -75,6 +75,9 @@ const agentId = computed(() => Number(route.params.agentId))
 const assignedChannel = computed(() => (
   channels.value.find((session) => Number(session.id) === Number(form.preferred_channel_session_id || 0)) || null
 ))
+const selectedOptimizerThread = computed(() => (
+  threads.value.find((thread) => Number(thread.thread_id) === Number(optimizerThreadId.value || 0)) || null
+))
 const channelOwnerById = computed(() => {
   const owners = new Map()
   for (const agent of store.agents) {
@@ -558,6 +561,28 @@ const openLeadInbox = async (lead) => {
   await openThread(thread)
 }
 
+const useThreadForOptimizer = (thread, options = {}) => {
+  if (!thread?.thread_id) {
+    setToast('Select a real inbox thread first')
+    return
+  }
+
+  optimizerThreadId.value = String(thread.thread_id)
+  optimizerHistory.value = ''
+  optimizerResult.value = null
+
+  if (options.openTab !== false) {
+    setTab('optimizer')
+  }
+
+  setToast(`Attached thread #${thread.thread_id} to the optimizer`)
+}
+
+const clearOptimizerThreadSelection = () => {
+  optimizerThreadId.value = ''
+  optimizerResult.value = null
+}
+
 const chooseSalesMaterialFile = () => {
   salesMaterialMode.value = 'file'
   salesMaterialInput.value?.click()
@@ -668,6 +693,13 @@ const deleteSalesMaterial = async (materialId) => {
 }
 
 watch(() => route.params.agentId, loadDashboard)
+watch(optimizerThreadId, (next, previous) => {
+  if (next === previous) return
+  optimizerResult.value = null
+  if (next) {
+    optimizerHistory.value = ''
+  }
+})
 onMounted(loadDashboard)
 </script>
 
@@ -1049,10 +1081,28 @@ onMounted(loadDashboard)
           <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-ink-subtle">Prompt Optimizer</p>
           <h2 class="mt-2 text-xl font-bold text-ink">Improve this agent from a failed conversation</h2>
           <p class="mt-2 text-sm leading-6 text-ink-muted">
-            Describe what went wrong, optionally attach a real thread, then let the model propose stronger instructions.
+            Choose a real Inbox thread first when possible. Paste history only if the conversation is not available inside this app.
           </p>
 
           <div class="mt-6 space-y-4">
+            <div v-if="activeThread?.thread_id" class="rounded-[1.4rem] border border-primary/20 bg-primary/5 p-4">
+              <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-primary">Open Inbox Thread</p>
+              <p class="mt-2 text-sm font-semibold text-ink">
+                {{ activeThread.lead_name || activeThread.lead_external_id || `Thread #${activeThread.thread_id}` }}
+              </p>
+              <p class="mt-1 text-xs text-ink-muted">
+                Thread #{{ activeThread.thread_id }}{{ activeThread.last_message_preview ? ` · ${activeThread.last_message_preview}` : '' }}
+              </p>
+              <button
+                type="button"
+                @click="useThreadForOptimizer(activeThread)"
+                class="mt-3 inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-white"
+              >
+                <span class="material-symbols-outlined text-[18px]">auto_fix_high</span>
+                Use Open Inbox Thread
+              </button>
+            </div>
+
             <div class="space-y-2">
               <label class="px-1 text-sm font-semibold text-ink">What was not good?</label>
               <textarea
@@ -1063,12 +1113,12 @@ onMounted(loadDashboard)
             </div>
 
             <div class="space-y-2">
-              <label class="px-1 text-sm font-semibold text-ink">Use a recent real thread</label>
+              <label class="px-1 text-sm font-semibold text-ink">Choose from Inbox threads</label>
               <select
                 v-model="optimizerThreadId"
                 class="h-12 w-full rounded-xl border border-line/80 bg-surface px-4 text-sm text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
               >
-                <option value="">No stored thread selected</option>
+                <option value="">No Inbox thread selected</option>
                 <option
                   v-for="thread in threads"
                   :key="thread.thread_id"
@@ -1077,17 +1127,48 @@ onMounted(loadDashboard)
                   #{{ thread.thread_id }} · {{ thread.lead_name || thread.lead_external_id || 'Lead' }} · {{ thread.last_message_preview || 'No preview' }}
                 </option>
               </select>
-              <p class="text-xs text-ink-muted">If selected, this real thread is used instead of pasted history below.</p>
+              <p class="text-xs text-ink-muted">This is the same conversation list used in the Inbox tab.</p>
             </div>
 
-            <button
-              type="button"
-              @click="loadThreads"
-              class="inline-flex items-center gap-2 rounded-xl border border-line/80 bg-surface px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-primary/40 hover:text-primary"
-            >
-              <span class="material-symbols-outlined text-[18px]">refresh</span>
-              Refresh Threads
-            </button>
+            <div v-if="selectedOptimizerThread" class="rounded-[1.4rem] border border-emerald-200 bg-emerald-50 p-4">
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">Selected Thread</p>
+                  <p class="mt-2 text-sm font-semibold text-ink">
+                    {{ selectedOptimizerThread.lead_name || selectedOptimizerThread.lead_external_id || `Thread #${selectedOptimizerThread.thread_id}` }}
+                  </p>
+                  <p class="mt-1 text-xs text-ink-muted">
+                    Thread #{{ selectedOptimizerThread.thread_id }}{{ selectedOptimizerThread.last_message_preview ? ` · ${selectedOptimizerThread.last_message_preview}` : '' }}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  @click="clearOptimizerThreadSelection"
+                  class="rounded-lg border border-emerald-300 px-3 py-2 text-xs font-bold text-emerald-700 hover:bg-emerald-100"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                @click="loadThreads"
+                class="inline-flex items-center gap-2 rounded-xl border border-line/80 bg-surface px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-primary/40 hover:text-primary"
+              >
+                <span class="material-symbols-outlined text-[18px]">refresh</span>
+                Refresh Threads
+              </button>
+              <button
+                type="button"
+                @click="setTab('inbox')"
+                class="inline-flex items-center gap-2 rounded-xl border border-line/80 bg-surface px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-primary/40 hover:text-primary"
+              >
+                <span class="material-symbols-outlined text-[18px]">inbox</span>
+                Open Inbox
+              </button>
+            </div>
           </div>
         </aside>
 
@@ -1110,12 +1191,16 @@ onMounted(loadDashboard)
           </div>
 
           <div class="mt-5 space-y-4">
-            <div class="space-y-2">
-              <label class="px-1 text-sm font-semibold text-ink">Optional pasted chat history</label>
+            <div v-if="selectedOptimizerThread" class="rounded-[1.5rem] border border-emerald-200 bg-emerald-50 px-4 py-4 text-sm text-emerald-700">
+              The optimizer will use the selected Inbox thread. Pasted history is not needed unless you clear that selection.
+            </div>
+
+            <div v-else class="space-y-2">
+              <label class="px-1 text-sm font-semibold text-ink">Manual pasted history fallback</label>
               <textarea
                 v-model="optimizerHistory"
                 class="min-h-[180px] w-full rounded-2xl border border-line/80 bg-surface p-4 text-ink placeholder:text-ink-subtle focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-                placeholder="Paste a problematic chat here when it is not already in your stored threads."
+                placeholder="Paste a problematic chat here only when the conversation is not available in your Inbox."
               ></textarea>
             </div>
 
@@ -1533,6 +1618,15 @@ onMounted(loadDashboard)
                 {{ activeThread?.lead_external_id || 'Choose a thread on the left to inspect the transcript.' }}
               </p>
             </div>
+            <button
+              v-if="activeThread"
+              type="button"
+              class="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-primary transition hover:bg-primary/10"
+              @click="useThreadForOptimizer(activeThread)"
+            >
+              <span class="material-symbols-outlined text-[16px]">auto_fix_high</span>
+              Optimize This Thread
+            </button>
             <button
               v-if="activeThread"
               type="button"
