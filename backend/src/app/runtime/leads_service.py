@@ -60,7 +60,7 @@ def set_lead_mode_value(lead: Lead, mode_raw: str) -> Lead:
     return lead
 
 
-def delete_lead_and_children(session: Session, tenant_id: int, lead: Lead) -> None:
+def delete_lead_and_children(session: Session, tenant_id: int, lead: Lead) -> dict:
     # Unified messaging cleanup.
     unified_messages = session.exec(
         select(UnifiedMessage).where(
@@ -78,6 +78,8 @@ def delete_lead_and_children(session: Session, tenant_id: int, lead: Lead) -> No
         ).all()
         for row in queue_rows:
             session.delete(row)
+    else:
+        queue_rows = []
 
     thread_rows = session.exec(
         select(UnifiedThread).where(
@@ -95,6 +97,8 @@ def delete_lead_and_children(session: Session, tenant_id: int, lead: Lead) -> No
         ).all()
         for row in insight_rows:
             session.delete(row)
+    else:
+        insight_rows = []
 
     for row in unified_messages:
         session.delete(row)
@@ -118,6 +122,8 @@ def delete_lead_and_children(session: Session, tenant_id: int, lead: Lead) -> No
         ).all()
         for row in legacy_messages:
             session.delete(row)
+    else:
+        legacy_messages = []
     for row in legacy_threads:
         session.delete(row)
 
@@ -158,5 +164,20 @@ def delete_lead_and_children(session: Session, tenant_id: int, lead: Lead) -> No
     for row in calendar_rows:
         session.delete(row)
 
+    summary = {
+        "lead_id": int(lead.id or 0),
+        "unified_messages": len(unified_messages),
+        "outbound_queue_rows": len(queue_rows),
+        "unified_threads": len(thread_rows),
+        "thread_insights": len(insight_rows),
+        "legacy_messages": len(legacy_messages),
+        "legacy_threads": len(legacy_threads),
+        "policy_decisions": len(policy_rows),
+        "lead_memories": 1 if memory_row else 0,
+        "ai_crm_thread_states": len(aicrm_state_rows),
+        "calendar_events": len(calendar_rows),
+    }
+
     session.delete(lead)
     session.commit()
+    return summary

@@ -46,8 +46,8 @@ def delete_lead(
     auth: AuthContext = Depends(require_tenant_access),
 ):
     lead = get_tenant_lead_or_404(session, auth.tenant.id, lead_id)
-    delete_lead_and_children(session, auth.tenant.id, lead)
-    return {"status": "deleted", "lead_id": lead_id}
+    deleted = delete_lead_and_children(session, auth.tenant.id, lead)
+    return {"status": "deleted", **deleted}
 
 
 @router.post("/{lead_id}/mode", response_model=Lead)
