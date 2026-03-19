@@ -113,3 +113,24 @@ class AgentUpdate(SQLModel):
     emoji_level: Optional[str] = None
     segment_delay_ms: Optional[int] = None
     preferred_channel_session_id: Optional[int] = None
+
+
+class AgentInstructionOptimizeRequest(SQLModel):
+    feedback: str
+    chat_history: Optional[str] = None
+    thread_id: Optional[int] = None
+    max_thread_messages: int = 20
+
+
+class AgentInstructionOptimizeResponse(SQLModel):
+    agent_id: int
+    context_source: str
+    used_thread_id: Optional[int] = None
+    provider: str
+    model: str
+    summary: str
+    diagnosis: List[str] = Field(default_factory=list)
+    instruction_changes: List[str] = Field(default_factory=list)
+    knowledge_updates: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    optimized_system_prompt: str

@@ -13,7 +13,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 
-const validTabs = ['settings', 'channels', 'knowledge', 'inbox', 'contacts']
+const validTabs = ['settings', 'optimizer', 'channels', 'knowledge', 'inbox', 'contacts']
 const loading = ref(true)
 const missingAgent = ref(false)
 const toast = ref('')
@@ -36,6 +36,7 @@ const isUploadingKnowledge = ref(false)
 const isCreatingLead = ref(false)
 const isUploadingSalesMaterial = ref(false)
 const processingLeadId = ref(null)
+const isOptimizingPrompt = ref(false)
 
 const knowledgeInput = ref(null)
 const salesMaterialInput = ref(null)
@@ -43,6 +44,10 @@ const selectedSalesMaterialFile = ref(null)
 const salesMaterialMode = ref('file')
 const salesMaterialDescription = ref('')
 const salesMaterialUrl = ref('')
+const optimizerFeedback = ref('')
+const optimizerHistory = ref('')
+const optimizerThreadId = ref('')
+const optimizerResult = ref(null)
 
 const leadDraft = reactive({
   name: '',
@@ -197,6 +202,10 @@ const loadDashboard = async () => {
   missingAgent.value = false
   activeThread.value = null
   messages.value = []
+  optimizerFeedback.value = ''
+  optimizerHistory.value = ''
+  optimizerThreadId.value = ''
+  optimizerResult.value = null
 
   await store.fetchAgents()
   const agent = store.agents.find((item) => Number(item.id) === agentId.value)
@@ -566,6 +575,41 @@ const resetSalesMaterialDraft = () => {
   if (salesMaterialInput.value) salesMaterialInput.value.value = ''
 }
 
+const runInstructionOptimizer = async () => {
+  if (!form.id) return
+  if (!optimizerFeedback.value.trim()) {
+    setToast('Add feedback describing what went wrong before running the optimizer')
+    return
+  }
+
+  isOptimizingPrompt.value = true
+  optimizerResult.value = null
+  try {
+    const data = await request(`/agents/${form.id}/instruction-optimizer`, {
+      method: 'POST',
+      body: JSON.stringify({
+        feedback: optimizerFeedback.value.trim(),
+        chat_history: optimizerHistory.value.trim() || null,
+        thread_id: optimizerThreadId.value ? Number(optimizerThreadId.value) : null,
+        max_thread_messages: 20,
+      }),
+    })
+    optimizerResult.value = data
+    setToast('Prompt optimizer finished. Review the suggestion before saving.')
+  } catch (error) {
+    setToast(`Optimizer failed: ${error.message}`)
+  } finally {
+    isOptimizingPrompt.value = false
+  }
+}
+
+const applyOptimizedPrompt = () => {
+  if (!optimizerResult.value?.optimized_system_prompt) return
+  form.system_prompt = optimizerResult.value.optimized_system_prompt
+  setTab('settings')
+  setToast('Suggested prompt copied into System Instructions. Save settings to keep it.')
+}
+
 const uploadSalesMaterial = async () => {
   if (!form.id || !selectedSalesMaterialFile.value || !salesMaterialDescription.value.trim()) return
 
@@ -696,6 +740,7 @@ onMounted(loadDashboard)
           <button
             v-for="tab in [
               { id: 'settings', label: 'Settings', icon: 'tune' },
+              { id: 'optimizer', label: 'Optimizer', icon: 'auto_fix_high' },
               { id: 'channels', label: 'Channels', icon: 'hub' },
               { id: 'knowledge', label: 'Knowledge', icon: 'menu_book' },
               { id: 'inbox', label: 'Inbox', icon: 'inbox' },
@@ -745,9 +790,14 @@ onMounted(loadDashboard)
               <div class="space-y-2">
                 <div class="flex items-center justify-between px-1">
                   <label class="text-sm font-semibold text-ink">System Instructions</label>
-                  <button type="button" @click="setTab('channels')" class="text-xs font-semibold text-primary hover:underline">
-                    Manage WhatsApp
-                  </button>
+                  <div class="flex items-center gap-3">
+                    <button type="button" @click="setTab('optimizer')" class="text-xs font-semibold text-primary hover:underline">
+                      Open Optimizer
+                    </button>
+                    <button type="button" @click="setTab('channels')" class="text-xs font-semibold text-primary hover:underline">
+                      Manage WhatsApp
+                    </button>
+                  </div>
                 </div>
                 <textarea
                   v-model="form.system_prompt"
@@ -992,6 +1042,158 @@ onMounted(loadDashboard)
             </div>
           </article>
         </aside>
+      </section>
+
+      <section v-else-if="activeTab === 'optimizer'" class="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <aside class="rounded-[1.75rem] border border-line/80 bg-surface-elevated/90 p-5 shadow-shell sm:p-6">
+          <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-ink-subtle">Prompt Optimizer</p>
+          <h2 class="mt-2 text-xl font-bold text-ink">Improve this agent from a failed conversation</h2>
+          <p class="mt-2 text-sm leading-6 text-ink-muted">
+            Describe what went wrong, optionally attach a real thread, then let the model propose stronger instructions.
+          </p>
+
+          <div class="mt-6 space-y-4">
+            <div class="space-y-2">
+              <label class="px-1 text-sm font-semibold text-ink">What was not good?</label>
+              <textarea
+                v-model="optimizerFeedback"
+                class="min-h-[180px] w-full rounded-2xl border border-line/80 bg-surface p-4 text-ink placeholder:text-ink-subtle focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                placeholder="Example: The AI sounded robotic, ignored the customer’s real objection, and did not know when to escalate."
+              ></textarea>
+            </div>
+
+            <div class="space-y-2">
+              <label class="px-1 text-sm font-semibold text-ink">Use a recent real thread</label>
+              <select
+                v-model="optimizerThreadId"
+                class="h-12 w-full rounded-xl border border-line/80 bg-surface px-4 text-sm text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              >
+                <option value="">No stored thread selected</option>
+                <option
+                  v-for="thread in threads"
+                  :key="thread.thread_id"
+                  :value="String(thread.thread_id)"
+                >
+                  #{{ thread.thread_id }} · {{ thread.lead_name || thread.lead_external_id || 'Lead' }} · {{ thread.last_message_preview || 'No preview' }}
+                </option>
+              </select>
+              <p class="text-xs text-ink-muted">If selected, this real thread is used instead of pasted history below.</p>
+            </div>
+
+            <button
+              type="button"
+              @click="loadThreads"
+              class="inline-flex items-center gap-2 rounded-xl border border-line/80 bg-surface px-4 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-primary/40 hover:text-primary"
+            >
+              <span class="material-symbols-outlined text-[18px]">refresh</span>
+              Refresh Threads
+            </button>
+          </div>
+        </aside>
+
+        <article class="rounded-[1.75rem] border border-line/80 bg-surface-elevated/90 p-5 shadow-shell sm:p-6">
+          <div class="flex items-center justify-between gap-4 border-b border-line/70 pb-4">
+            <div>
+              <h2 class="text-xl font-bold text-ink">Optimization Workspace</h2>
+              <p class="mt-1 text-sm text-ink-muted">Review the diagnosis first, then decide whether to copy the suggested prompt.</p>
+            </div>
+            <button
+              type="button"
+              @click="runInstructionOptimizer"
+              :disabled="isOptimizingPrompt"
+              class="inline-flex items-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-bold text-white disabled:opacity-60"
+            >
+              <span v-if="isOptimizingPrompt" class="h-5 w-5 animate-spin rounded-full border-2 border-white/30 border-t-white"></span>
+              <span v-else class="material-symbols-outlined text-[18px]">auto_fix_high</span>
+              {{ isOptimizingPrompt ? 'Optimizing...' : 'Analyze and Rewrite' }}
+            </button>
+          </div>
+
+          <div class="mt-5 space-y-4">
+            <div class="space-y-2">
+              <label class="px-1 text-sm font-semibold text-ink">Optional pasted chat history</label>
+              <textarea
+                v-model="optimizerHistory"
+                class="min-h-[180px] w-full rounded-2xl border border-line/80 bg-surface p-4 text-ink placeholder:text-ink-subtle focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                placeholder="Paste a problematic chat here when it is not already in your stored threads."
+              ></textarea>
+            </div>
+
+            <div class="rounded-[1.5rem] border border-dashed border-line/80 bg-surface px-4 py-4 text-sm text-ink-muted">
+              The optimizer does not save automatically. Use the suggested prompt, then click Save Settings on the main settings tab.
+            </div>
+          </div>
+
+          <div v-if="!optimizerResult" class="mt-5 rounded-2xl border border-dashed border-line/80 px-4 py-12 text-center text-sm text-ink-muted">
+            Run the optimizer to generate a diagnosis and a rewritten prompt for this agent.
+          </div>
+
+          <div v-else class="mt-5 space-y-5">
+            <div class="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-[0.18em] text-ink-subtle">
+              <span>{{ optimizerResult.context_source }}</span>
+              <span>·</span>
+              <span>{{ optimizerResult.provider }}</span>
+              <span>·</span>
+              <span>{{ optimizerResult.model }}</span>
+              <span v-if="optimizerResult.used_thread_id">· Thread #{{ optimizerResult.used_thread_id }}</span>
+            </div>
+
+            <div class="rounded-[1.5rem] border border-line/80 bg-surface p-4">
+              <p class="text-sm font-semibold text-ink">{{ optimizerResult.summary }}</p>
+            </div>
+
+            <div v-if="optimizerResult.diagnosis?.length" class="rounded-[1.5rem] border border-line/80 bg-surface p-4">
+              <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-subtle">Diagnosis</p>
+              <ul class="mt-3 space-y-2 text-sm text-ink-muted">
+                <li v-for="item in optimizerResult.diagnosis" :key="`diag-${item}`">• {{ item }}</li>
+              </ul>
+            </div>
+
+            <div v-if="optimizerResult.instruction_changes?.length" class="rounded-[1.5rem] border border-line/80 bg-surface p-4">
+              <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-subtle">Instruction Changes</p>
+              <ul class="mt-3 space-y-2 text-sm text-ink-muted">
+                <li v-for="item in optimizerResult.instruction_changes" :key="`change-${item}`">• {{ item }}</li>
+              </ul>
+            </div>
+
+            <div v-if="optimizerResult.knowledge_updates?.length" class="rounded-[1.5rem] border border-line/80 bg-surface p-4">
+              <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-ink-subtle">Knowledge Updates</p>
+              <ul class="mt-3 space-y-2 text-sm text-ink-muted">
+                <li v-for="item in optimizerResult.knowledge_updates" :key="`knowledge-${item}`">• {{ item }}</li>
+              </ul>
+            </div>
+
+            <div v-if="optimizerResult.warnings?.length" class="rounded-[1.5rem] border border-amber-200 bg-amber-50 p-4">
+              <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-amber-700">Warnings</p>
+              <ul class="mt-3 space-y-2 text-sm text-amber-700">
+                <li v-for="item in optimizerResult.warnings" :key="`warning-${item}`">• {{ item }}</li>
+              </ul>
+            </div>
+
+            <div class="space-y-3 rounded-[1.5rem] border border-primary/20 bg-primary/5 p-4">
+              <div class="flex items-center justify-between gap-4">
+                <div>
+                  <p class="text-[11px] font-bold uppercase tracking-[0.18em] text-primary">Suggested Prompt</p>
+                  <p class="mt-1 text-sm text-ink-muted">Copy this into the live system instructions, then save.</p>
+                </div>
+                <button
+                  type="button"
+                  @click="applyOptimizedPrompt"
+                  class="inline-flex items-center gap-2 rounded-xl border border-primary/30 bg-white px-4 py-2.5 text-sm font-bold text-primary transition-colors hover:bg-primary/10"
+                >
+                  <span class="material-symbols-outlined text-[18px]">assignment_turned_in</span>
+                  Use Suggested Prompt
+                </button>
+              </div>
+
+              <textarea
+                :value="optimizerResult.optimized_system_prompt"
+                readonly
+                class="min-h-[260px] w-full rounded-2xl border border-line/80 bg-white p-4 text-sm text-ink"
+              ></textarea>
+            </div>
+          </div>
+        </article>
       </section>
 
       <section v-else-if="activeTab === 'channels'" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">

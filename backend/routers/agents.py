@@ -10,6 +10,8 @@ from src.infra.database import get_session
 from src.adapters.api.dependencies import require_tenant_access, AuthContext, get_llm_router
 from src.adapters.db.agent_models import (
     Agent,
+    AgentInstructionOptimizeRequest,
+    AgentInstructionOptimizeResponse,
     AgentKnowledgeFile,
     AgentMCPServer,
     AgentRead,
@@ -19,6 +21,7 @@ from src.adapters.db.agent_models import (
 from src.adapters.db.channel_models import ChannelSession, ChannelType
 from src.adapters.db.mcp_models import MCPServer
 from src.app.runtime.knowledge_processor import KnowledgeProcessor
+from src.app.runtime.instruction_optimizer import optimize_agent_instruction as run_instruction_optimizer
 from src.app.runtime.sales_materials import (
     build_sales_material_public_url,
     build_sales_material_stored_name,
@@ -251,6 +254,35 @@ def get_agent(
         linked_mcp_ids=list(linked_ids),
         linked_mcp_count=len(linked_ids)
     )
+
+
+@router.post("/{agent_id}/instruction-optimizer", response_model=AgentInstructionOptimizeResponse)
+async def optimize_agent_instruction(
+    agent_id: int,
+    payload: AgentInstructionOptimizeRequest,
+    session: Session = Depends(get_session),
+    llm_router: LLMRouter = Depends(get_llm_router),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    agent = session.get(Agent, agent_id)
+    if not agent or agent.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    feedback = (payload.feedback or "").strip()
+    if not feedback:
+        raise HTTPException(status_code=400, detail="feedback is required")
+
+    result = await run_instruction_optimizer(
+        session=session,
+        llm_router=llm_router,
+        tenant_id=int(auth.tenant.id),
+        agent=agent,
+        feedback=feedback,
+        chat_history=payload.chat_history,
+        thread_id=payload.thread_id,
+        max_thread_messages=payload.max_thread_messages,
+    )
+    return AgentInstructionOptimizeResponse(**result)
 
 @router.delete("/{agent_id}")
 def delete_agent(
