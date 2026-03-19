@@ -41,7 +41,9 @@ INBOUND_BATCH_SIZE = int(os.getenv("MESSAGING_INBOUND_BATCH_SIZE", "5"))
 INBOUND_NOTIFY_CHANNEL = os.getenv("MESSAGING_INBOUND_NOTIFY_CHANNEL", "inbound_new_message")
 PDF_MAX_PAGES = 5
 PDF_MAX_CHARS = 12000
-PDF_MAX_DOWNLOAD_BYTES = 15 * 1024 * 1024
+# Keep inbound PDF processing aligned with the same 30 MB limit used for
+# agent sales-material uploads so the UX stays consistent.
+PDF_MAX_DOWNLOAD_BYTES = SALES_MATERIAL_MAX_BYTES
 IMAGE_MAX_DOWNLOAD_BYTES = 12 * 1024 * 1024
 AUDIO_MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024
 _ENGINE = None
@@ -239,8 +241,10 @@ def _enqueue_sales_material_reply(
     UnifiedMessage, _, OutboundQueue, _, _, _ = _get_db_models()
     now = datetime.now(timezone.utc)
     source_type = str(getattr(material, "source_type", "file") or "file").strip().lower()
-    is_link_material = source_type == "url"
     resolved_url = resolve_sales_material_public_url(material)
+    if not resolved_url:
+        raise RuntimeError(f"Sales material {getattr(material, 'id', '?')} has no delivery URL")
+
     outbound = UnifiedMessage(
         tenant_id=inbound_message.tenant_id,
         lead_id=inbound_message.lead_id,
@@ -249,13 +253,9 @@ def _enqueue_sales_material_reply(
         channel=inbound_message.channel,
         external_message_id=f"out_{uuid4().hex}",
         direction="outbound",
-        message_type=(
-            "text"
-            if is_link_material
-            else ("image" if str(material.media_type).startswith("image/") else "document")
-        ),
-        text_content=resolved_url if is_link_material else None,
-        media_url=None if is_link_material else material.public_url,
+        message_type="text",
+        text_content=resolved_url,
+        media_url=None,
         raw_payload={
             "source": "ai_agent_sales_material",
             "inbound_message_id": inbound_message.id,
@@ -265,8 +265,9 @@ def _enqueue_sales_material_reply(
             "file_name": material.filename,
             "mime_type": material.media_type,
             "source_type": source_type,
-            "url": resolved_url if is_link_material else None,
+            "url": resolved_url,
             "kind": sales_material_kind_for_material(material),
+            "delivery_mode": "url_only",
             "planner_trace": planner_trace or {},
         },
         delivery_status="queued",
@@ -500,7 +501,7 @@ async def _plan_sales_material_sends(
             "media_type": material.media_type,
             "kind": sales_material_kind_for_material(material),
             "source_type": str(getattr(material, "source_type", "file") or "file").strip().lower(),
-            "url": str(getattr(material, "external_url", "") or getattr(material, "public_url", "") or "").strip(),
+            "url": resolve_sales_material_public_url(material),
             "already_sent": int(material.id) in sent_state,
             "send_count": int((sent_state.get(int(material.id)) or {}).get("count", 0) or 0),
             "last_sent_at": (sent_state.get(int(material.id)) or {}).get("last_sent_at"),

@@ -3,7 +3,6 @@ from sqlmodel import Session, select
 from typing import List, Optional
 from sqlalchemy.exc import IntegrityError
 from datetime import datetime
-from uuid import uuid4
 from pydantic import BaseModel
 
 from src.infra.database import get_session
@@ -23,13 +22,11 @@ from src.adapters.db.mcp_models import MCPServer
 from src.app.runtime.knowledge_processor import KnowledgeProcessor
 from src.app.runtime.instruction_optimizer import optimize_agent_instruction as run_instruction_optimizer
 from src.app.runtime.sales_materials import (
-    build_sales_material_public_url,
-    build_sales_material_stored_name,
+    build_uploaded_sales_material,
     build_url_sales_material,
     delete_sales_material_file,
     list_agent_sales_materials as _list_agent_sales_materials,
     serialize_sales_material,
-    validate_sales_material_upload,
     write_sales_material_file,
 )
 from src.infra.llm.router import LLMRouter
@@ -442,27 +439,25 @@ async def upload_agent_sales_material(
         raise HTTPException(status_code=400, detail="Description is required")
 
     content = await file.read()
-    validated = validate_sales_material_upload(file.filename or "material", file.content_type or "", content)
-    public_token = uuid4().hex
-    stored_name = build_sales_material_stored_name(
-        validated["filename"],
-        validated["suffix"],
-        public_token=public_token,
+    prepared = build_uploaded_sales_material(
+        file.filename or "material",
+        file.content_type or "",
+        content,
+        request=request,
     )
-    public_url = build_sales_material_public_url(public_token, request=request)
 
     material = AgentSalesMaterial(
         tenant_id=auth.tenant.id,
         agent_id=agent_id,
-        filename=validated["filename"],
-        stored_name=stored_name,
-        media_type=validated["media_type"],
-        source_type=validated.get("source_type") or "file",
-        external_url=validated.get("external_url") or "",
-        file_size_bytes=validated["file_size_bytes"],
+        filename=prepared["filename"],
+        stored_name=prepared["stored_name"],
+        media_type=prepared["media_type"],
+        source_type=prepared.get("source_type") or "file",
+        external_url=prepared.get("external_url") or "",
+        file_size_bytes=prepared["file_size_bytes"],
         description=description_text[:1000],
-        public_token=public_token,
-        public_url=public_url,
+        public_token=prepared["public_token"],
+        public_url=prepared["public_url"],
         created_at=datetime.utcnow(),
         updated_at=datetime.utcnow(),
     )

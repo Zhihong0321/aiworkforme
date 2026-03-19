@@ -14,5 +14,9 @@ REPO NAME : AIworkforMe
 - Moved the new prompt optimizer into the live agent dashboard with an accessible Optimizer tab and direct launch from System Instructions, then verified the frontend build.
 - Added non-blocking storage health checks for persistent sales-material storage
 - Fixed sales-material storage startup crash by removing import-time directory creation
+- Fixed AI CRM thread-state workspace repair to stop null workspace deploy failures
+- Added frontend API timeout guard to prevent deployed pages from hanging on stalled backend requests
+- Improved optimizer UX to use Inbox threads directly with one-click thread selection
+- Reworked sales material handling so uploads save public URLs, WhatsApp sends URL-only materials, and agent saves no longer hang on refresh.
 
 =====================

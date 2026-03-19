@@ -44,6 +44,7 @@ const selectedSalesMaterialFile = ref(null)
 const salesMaterialMode = ref('file')
 const salesMaterialDescription = ref('')
 const salesMaterialUrl = ref('')
+const SALES_MATERIAL_MAX_BYTES = 30 * 1024 * 1024
 const optimizerFeedback = ref('')
 const optimizerHistory = ref('')
 const optimizerThreadId = ref('')
@@ -127,6 +128,27 @@ const formatFileSize = (bytes) => {
   return `${value} B`
 }
 
+const sortSalesMaterials = (items) => (
+  [...(Array.isArray(items) ? items : [])].sort((left, right) => {
+    const leftTime = new Date(left?.created_at || 0).getTime()
+    const rightTime = new Date(right?.created_at || 0).getTime()
+    if (leftTime !== rightTime) return rightTime - leftTime
+    return Number(right?.id || 0) - Number(left?.id || 0)
+  })
+)
+
+const upsertSalesMaterial = (material) => {
+  if (!material?.id) return
+  salesMaterials.value = sortSalesMaterials([
+    material,
+    ...salesMaterials.value.filter((item) => Number(item?.id || 0) !== Number(material.id)),
+  ])
+}
+
+const removeSalesMaterialById = (materialId) => {
+  salesMaterials.value = salesMaterials.value.filter((item) => Number(item?.id || 0) !== Number(materialId || 0))
+}
+
 const formatFollowUp = (lead) => {
   if (!lead?.next_followup_at) return 'No follow-up scheduled'
   const next = new Date(lead.next_followup_at)
@@ -170,7 +192,7 @@ const loadSalesMaterials = async () => {
     return
   }
   const data = await request(`/agents/${form.id}/sales-materials`).catch(() => [])
-  salesMaterials.value = Array.isArray(data) ? data : []
+  salesMaterials.value = sortSalesMaterials(data)
 }
 
 const loadKnowledge = async () => {
@@ -589,7 +611,14 @@ const chooseSalesMaterialFile = () => {
 }
 
 const onSalesMaterialSelected = (event) => {
-  selectedSalesMaterialFile.value = event.target.files?.[0] ?? null
+  const nextFile = event.target.files?.[0] ?? null
+  if (nextFile && nextFile.size > SALES_MATERIAL_MAX_BYTES) {
+    selectedSalesMaterialFile.value = null
+    if (salesMaterialInput.value) salesMaterialInput.value.value = ''
+    setToast('Upload failed: sales material exceeds 30 MB limit')
+    return
+  }
+  selectedSalesMaterialFile.value = nextFile
 }
 
 const resetSalesMaterialDraft = () => {
@@ -643,12 +672,12 @@ const uploadSalesMaterial = async () => {
     const body = new FormData()
     body.append('file', selectedSalesMaterialFile.value)
     body.append('description', salesMaterialDescription.value.trim())
-    await request(`/agents/${form.id}/sales-materials`, {
+    const savedMaterial = await request(`/agents/${form.id}/sales-materials`, {
       method: 'POST',
       body,
     })
+    upsertSalesMaterial(savedMaterial)
     resetSalesMaterialDraft()
-    await loadSalesMaterials()
     setToast('Sales material uploaded')
   } catch (error) {
     setToast(`Upload failed: ${error.message}`)
@@ -662,15 +691,15 @@ const createSalesMaterialLink = async () => {
 
   isUploadingSalesMaterial.value = true
   try {
-    await request(`/agents/${form.id}/sales-materials/link`, {
+    const savedMaterial = await request(`/agents/${form.id}/sales-materials/link`, {
       method: 'POST',
       body: JSON.stringify({
         url: salesMaterialUrl.value.trim(),
         description: salesMaterialDescription.value.trim(),
       }),
     })
+    upsertSalesMaterial(savedMaterial)
     resetSalesMaterialDraft()
-    await loadSalesMaterials()
     setToast('Sales material link saved')
   } catch (error) {
     setToast(`Save failed: ${error.message}`)
@@ -685,7 +714,7 @@ const deleteSalesMaterial = async (materialId) => {
 
   try {
     await request(`/agents/${form.id}/sales-materials/${materialId}`, { method: 'DELETE' })
-    await loadSalesMaterials()
+    removeSalesMaterialById(materialId)
     setToast('Sales material deleted')
   } catch (error) {
     setToast(`Delete failed: ${error.message}`)

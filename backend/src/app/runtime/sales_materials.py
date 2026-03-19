@@ -149,6 +149,26 @@ def validate_sales_material_upload(filename: str, content_type: str, content: by
     }
 
 
+def build_uploaded_sales_material(
+    filename: str,
+    content_type: str,
+    content: bytes,
+    request: Optional[Any] = None,
+) -> Dict[str, Any]:
+    validated = validate_sales_material_upload(filename, content_type, content)
+    public_token = uuid4().hex
+    return {
+        **validated,
+        "public_token": public_token,
+        "stored_name": build_sales_material_stored_name(
+            validated["filename"],
+            validated["suffix"],
+            public_token=public_token,
+        ),
+        "public_url": build_sales_material_public_url(public_token, request=request),
+    }
+
+
 def build_url_sales_material(url: str, description: str) -> Dict[str, Any]:
     normalized_url = str(url or "").strip()
     if not is_supported_url(normalized_url):
@@ -409,7 +429,7 @@ def build_sales_material_prompt_block(
         "- Prefer materials not yet sent in this conversation.",
         "- Do not resend a previously sent material unless the customer clearly asks for it again.",
         "- Never mention internal IDs in your visible reply.",
-        "- Link materials will be sent as a follow-up message containing the URL.",
+        "- Every sales material is delivered as a follow-up message containing only its URL.",
         "Available materials:",
     ]
     for material in items:
