@@ -191,8 +191,8 @@ BEGIN
     LIMIT 1;
 
     IF v_thread_id IS NULL THEN
-        INSERT INTO et_threads (tenant_id, lead_id, channel, status)
-        VALUES (NEW.tenant_id, NEW.lead_id, NEW.channel, 'active')
+        INSERT INTO et_threads (tenant_id, lead_id, channel, status, created_at, updated_at)
+        VALUES (NEW.tenant_id, NEW.lead_id, NEW.channel, 'active', NOW(), NOW())
         RETURNING id INTO v_thread_id;
     END IF;
 

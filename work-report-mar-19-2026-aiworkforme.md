@@ -4,5 +4,11 @@ REPO NAME : AIworkforMe
 - Built and validated a UniAPI Gemini self-play conversation skill test harness with customer simulation and A/B transcript comparison output.
 - Updated UniAPI Gemini defaults and validation to use gemini-3.1-flash-lite-preview and removed old gemini-3-flash naming.
 - Integrated a default human conversation skill layer across live agent runtimes with reusable skill files, debug trace, tests, and self-play harness alignment.
+- Shipped missing agent tooling runtime module to fix production startup import error
+- Shipped lead deletion reset flow that removes a lead and its chat memory with regression coverage
+- Shipped Leads UI delete button for zero-reset lead cleanup
+- Shipped lead delete action on the agent dashboard contacts tab
+- Fixed lead deletion 500 by deleting AI CRM thread state before unified threads and added FK-enforced regression coverage
+- Fixed live inbound WhatsApp trigger and patched unified messaging schema SQL to restore AI replies
 
 =====================
