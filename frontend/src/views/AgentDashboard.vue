@@ -386,6 +386,30 @@ const setLeadMode = async (lead, mode) => {
   }
 }
 
+const deleteLead = async (lead) => {
+  if (!lead?.id) return
+  const leadLabel = lead.name || lead.external_id || `Lead #${lead.id}`
+  const confirmed = window.confirm(
+    `Delete "${leadLabel}" permanently?\n\nThis will remove the contact, chat history, memory, thread state, and related follow-up data.`
+  )
+  if (!confirmed) return
+
+  processingLeadId.value = lead.id
+  try {
+    await request(`/leads/${lead.id}`, { method: 'DELETE' })
+    if (activeThread.value?.lead_id && Number(activeThread.value.lead_id) === Number(lead.id)) {
+      activeThread.value = null
+      messages.value = []
+    }
+    await Promise.all([loadLeads(), loadThreads()])
+    setToast(`${leadLabel} deleted permanently`)
+  } catch (error) {
+    setToast(`Delete failed: ${error.message}`)
+  } finally {
+    processingLeadId.value = null
+  }
+}
+
 const openThread = async (thread) => {
   activeThread.value = thread
   messages.value = []
@@ -1238,6 +1262,16 @@ onMounted(loadDashboard)
                     <span v-if="isResettingThread && Number(resettingLeadId || 0) === Number(lead.id)" class="h-4 w-4 animate-spin rounded-full border-2 border-red-300 border-t-red-600"></span>
                     <span v-else class="material-symbols-outlined text-[16px]">restart_alt</span>
                     Reset Thread
+                  </button>
+                  <button
+                    type="button"
+                    @click="deleteLead(lead)"
+                    :disabled="processingLeadId === lead.id"
+                    class="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-bold text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <span v-if="processingLeadId === lead.id" class="h-4 w-4 animate-spin rounded-full border-2 border-red-300 border-t-red-700"></span>
+                    <span v-else class="material-symbols-outlined text-[16px]">delete</span>
+                    Delete Lead
                   </button>
                   <button
                     type="button"
