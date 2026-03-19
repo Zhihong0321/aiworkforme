@@ -22,7 +22,6 @@ SALES_MATERIALS_DIR = Path(
     os.getenv("SALES_MATERIALS_DIR")
     or (Path(__file__).resolve().parents[3] / "storage" / "sales-materials")
 )
-SALES_MATERIALS_DIR.mkdir(parents=True, exist_ok=True)
 
 SALES_MATERIAL_MAX_BYTES = 30 * 1024 * 1024
 
@@ -282,21 +281,22 @@ def get_sales_material_storage_health() -> Dict[str, Any]:
     }
 
 
-def agent_sales_material_dir(tenant_id: int, agent_id: int) -> Path:
+def agent_sales_material_dir(tenant_id: int, agent_id: int, create: bool = False) -> Path:
     path = SALES_MATERIALS_DIR / f"tenant-{tenant_id}" / f"agent-{agent_id}"
-    path.mkdir(parents=True, exist_ok=True)
+    if create:
+        path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def sales_material_path(material: AgentSalesMaterial) -> Path:
+def sales_material_path(material: AgentSalesMaterial, create_dir: bool = False) -> Path:
     tenant_id = int(material.tenant_id or 0)
-    return agent_sales_material_dir(tenant_id, material.agent_id) / material.stored_name
+    return agent_sales_material_dir(tenant_id, material.agent_id, create=create_dir) / material.stored_name
 
 
 def write_sales_material_file(material: AgentSalesMaterial, content: bytes) -> None:
     if str(getattr(material, "source_type", "file") or "file").strip().lower() != "file":
         return
-    sales_material_path(material).write_bytes(content)
+    sales_material_path(material, create_dir=True).write_bytes(content)
 
 
 def delete_sales_material_file(material: AgentSalesMaterial) -> None:

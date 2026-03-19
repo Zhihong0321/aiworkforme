@@ -38,6 +38,24 @@ def test_sales_material_storage_health_warns_when_not_using_persistent_mount(mon
     assert "not under mounted persistent path" in " ".join(result["warnings"])
 
 
+def test_sales_material_paths_are_side_effect_free_until_write(monkeypatch, tmp_path: Path):
+    storage_dir = tmp_path / "sales-materials"
+    monkeypatch.setattr(sales_materials, "SALES_MATERIALS_DIR", storage_dir)
+    material = SimpleNamespace(
+        tenant_id=1,
+        agent_id=2,
+        stored_name="abc-brochure.pdf",
+        source_type="file",
+    )
+
+    file_path = sales_materials.sales_material_path(material)
+    assert file_path == storage_dir / "tenant-1" / "agent-2" / "abc-brochure.pdf"
+    assert not file_path.parent.exists()
+
+    sales_materials.write_sales_material_file(material, b"%PDF-1.4")
+    assert file_path.is_file()
+
+
 def test_health_check_exposes_startup_storage_snapshot(monkeypatch):
     startup_health = {
         "ready": True,

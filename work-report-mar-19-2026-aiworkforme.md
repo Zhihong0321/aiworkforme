@@ -13,5 +13,6 @@ REPO NAME : AIworkforMe
 - Built an internal prompt optimizer for agents with feedback intake, thread analysis, and a reviewed prompt rewrite flow, then verified it with tests and a frontend build.
 - Moved the new prompt optimizer into the live agent dashboard with an accessible Optimizer tab and direct launch from System Instructions, then verified the frontend build.
 - Added non-blocking storage health checks for persistent sales-material storage
+- Fixed sales-material storage startup crash by removing import-time directory creation
 
 =====================
