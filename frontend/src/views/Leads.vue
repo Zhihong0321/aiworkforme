@@ -143,6 +143,35 @@ const setLeadMode = async (lead, mode) => {
   }
 }
 
+const deleteLead = async (lead) => {
+  actionError.value = ''
+  actionMessage.value = ''
+  const leadLabel = lead.name || lead.external_id || `Lead #${lead.id}`
+  const confirmed = window.confirm(
+    `Permanently delete "${leadLabel}" and all chat history?\n\nThis will remove the lead, messages, memory, thread state, and related follow-up data.`
+  )
+  if (!confirmed) return
+
+  processingLeadId.value = lead.id
+  try {
+    await request(`/leads/${lead.id}`, {
+      method: 'DELETE'
+    })
+    if (chatLead.value?.id === lead.id) {
+      chatOpen.value = false
+      chatLead.value = null
+      chatMessages.value = []
+    }
+    actionMessage.value = `${leadLabel} deleted permanently.`
+    await fetchLeads()
+  } catch (e) {
+    actionError.value = e.message || 'Failed to delete lead'
+  } finally {
+    processingLeadId.value = null
+    setTimeout(() => { actionMessage.value = ''; actionError.value = '' }, 4000)
+  }
+}
+
 const reviewLeadChat = async (lead) => {
   chatOpen.value = true
   chatLoading.value = true
@@ -273,6 +302,16 @@ watch(() => store.activeAgentId, fetchLeads)
                         >
                             <span class="material-symbols-outlined text-sm pr-0.5">forum</span>
                             {{ lead.stage.includes('CLOSED') ? 'Review History' : 'Chat' }}
+                        </button>
+                    </div>
+                    <div class="mt-2">
+                        <button
+                            @click="deleteLead(lead)"
+                            :disabled="processingLeadId === lead.id"
+                            class="w-full px-3 py-2 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1 border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <span class="material-symbols-outlined text-sm">delete</span>
+                            {{ processingLeadId === lead.id ? 'Deleting...' : 'Delete Lead' }}
                         </button>
                     </div>
                 </div>
