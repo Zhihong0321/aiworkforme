@@ -21,6 +21,11 @@ from src.adapters.db.agent_models import Agent
 from src.adapters.db.channel_models import ChannelSession, SessionStatus
 from src.adapters.db.crm_models import Lead
 from src.adapters.db.messaging_models import OutboundQueue, UnifiedMessage
+from src.app.conversation_skills import (
+    ConversationTaskKind,
+    compose_conversation_prompt,
+    get_default_conversation_skill_registry,
+)
 from src.app.runtime.sales_materials import is_public_http_url, resolve_sales_material_public_url
 from src.infra.llm.costs import estimate_llm_cost_usd
 from src.infra.llm.router import LLMRouter
@@ -45,6 +50,14 @@ async def generate_initial_outreach_text(
     router: LLMRouter, agent: Agent, lead: Lead, include_context_prompt: bool
 ) -> Tuple[str, Dict[str, Any]]:
     lead_name = lead.name or "there"
+    composed = compose_conversation_prompt(
+        registry=get_default_conversation_skill_registry(),
+        base_prompt=agent.system_prompt,
+        task_kind=ConversationTaskKind.INITIAL_OUTREACH,
+        channel="whatsapp",
+        agent_id=agent.id,
+        tenant_id=lead.tenant_id,
+    )
     prompt = (
         "Generate one short first outreach WhatsApp message for this lead. "
         "Keep it natural, polite, and action-oriented. No markdown."
@@ -54,7 +67,7 @@ async def generate_initial_outreach_text(
         response = await router.execute(
             task=LLMTask.CONVERSATION,
             messages=[
-                {"role": "system", "content": agent.system_prompt},
+                {"role": "system", "content": composed.system_prompt},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.7,
@@ -69,8 +82,9 @@ async def generate_initial_outreach_text(
                 "provider": provider_info.get("provider") or "unknown",
                 "model": provider_info.get("model") or "unknown",
                 "usage": _normalize_usage(response.usage or {}),
-                "context_prompt": agent.system_prompt if include_context_prompt else None,
+                "context_prompt": composed.system_prompt if include_context_prompt else None,
                 "recorded_at": datetime.utcnow().isoformat(),
+                "conversation_skills": composed.debug_trace,
             }
             usage = ai_trace["usage"]
             ai_trace["usage"]["estimated_cost_usd"] = estimate_llm_cost_usd(
@@ -96,8 +110,9 @@ async def generate_initial_outreach_text(
                 "raw_usage": {},
                 "estimated_cost_usd": 0,
             },
-            "context_prompt": agent.system_prompt if include_context_prompt else None,
+            "context_prompt": composed.system_prompt if include_context_prompt else None,
             "recorded_at": datetime.utcnow().isoformat(),
+            "conversation_skills": composed.debug_trace,
         },
     )
 

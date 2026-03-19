@@ -14,6 +14,11 @@ from src.adapters.db.mcp_models import MCPServer
 from src.adapters.db.chat_models import ChatRequest, ChatResponse, ChatSession, ChatMessage
 from src.adapters.api.dependencies import get_mcp_manager, get_llm_router
 from src.adapters.mcp.manager import MCPManager
+from src.app.conversation_skills import (
+    ConversationTaskKind,
+    compose_conversation_prompt,
+    get_default_conversation_skill_registry,
+)
 from src.infra.llm.router import LLMRouter
 from src.infra.llm.schemas import LLMTask, LLMMessage
 
@@ -65,7 +70,20 @@ async def chat_with_agent(
             session.refresh(chat_session)
 
         # 2. Knowledge files are now handled by a dedicated MCP. No direct injection.
-        final_system_prompt = agent.system_prompt
+        composed = compose_conversation_prompt(
+            registry=get_default_conversation_skill_registry(),
+            base_prompt=agent.system_prompt,
+            task_kind=ConversationTaskKind.CONVERSATION,
+            channel="chat",
+            agent_id=agent.id,
+            tenant_id=agent.tenant_id,
+        )
+        final_system_prompt = composed.system_prompt
+        logger.info(
+            "chat conversation skills: agent_id=%s applied=%s",
+            agent.id,
+            [item.get("id") for item in composed.applied_skills],
+        )
 
         # 3. Load Linked MCP Servers
         links = session.exec(select(AgentMCPServer).where(AgentMCPServer.agent_id == agent.id)).all()

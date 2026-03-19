@@ -21,7 +21,7 @@ class UniAPIProvider(BaseLLMProvider):
         self,
         api_key: Optional[str] = None,
         base_url: str = "https://api.uniapi.io",
-        default_model: str = "gemini-3-flash-preview",
+        default_model: str = "gemini-3.1-flash-lite-preview",
         default_schema: str = "gemini_native",
     ):
         self.api_key = api_key
@@ -42,7 +42,7 @@ class UniAPIProvider(BaseLLMProvider):
     ]
 
     GEMINI_NATIVE_MODELS: List[str] = [
-        "gemini-3-flash-preview",
+        "gemini-3.1-flash-lite-preview",
     ]
 
     ALI_ASR_FILETRANS_MODELS: List[str] = [

@@ -57,7 +57,7 @@ def validate_zai_key(api_key: str) -> tuple[bool, str]:
 
 
 def validate_uniapi_key(api_key: str) -> tuple[bool, str]:
-    url = "https://api.uniapi.io/gemini/v1beta/models/gemini-3-flash-preview:generateContent"
+    url = "https://api.uniapi.io/gemini/v1beta/models/gemini-3.1-flash-lite-preview:generateContent"
     headers = {
         "x-goog-api-key": api_key,
         "Content-Type": "application/json",

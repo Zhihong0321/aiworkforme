@@ -11,6 +11,11 @@ from sqlmodel import Session
 
 from src.domain.entities.enums import LeadStage
 from src.app.policy.evaluator import PolicyEvaluator
+from src.app.runtime.agent_tooling import (
+    extract_voice_note_action,
+    load_agent_tools_for_runtime,
+    tool_result_to_text,
+)
 from src.app.runtime.context_builder import ContextBuilder
 from src.app.runtime.memory_service import MemoryService
 from src.app.runtime.leads_service import get_or_create_default_workspace
@@ -72,12 +77,114 @@ class ConversationAgentRuntime:
     def _get_bool_system_setting():
         return importlib.import_module("src.adapters.db.system_settings").get_bool_system_setting
 
+    async def _run_with_optional_tools(
+        self,
+        *,
+        llm_task: Any,
+        selected_task: Any,
+        messages: List[Dict[str, Any]],
+        execute_kwargs: Dict[str, Any],
+        agent_id: Optional[int],
+        tools_enabled: bool,
+    ) -> Dict[str, Any]:
+        tools: List[Dict[str, Any]] = []
+        tool_meta: Dict[str, Dict[str, Any]] = {}
+        selected_task_value = getattr(selected_task, "value", str(selected_task))
+        conversation_task_value = getattr(llm_task.CONVERSATION, "value", "conversation")
+        if tools_enabled and agent_id and selected_task_value == conversation_task_value:
+            tools, tool_meta = await load_agent_tools_for_runtime(self.session, int(agent_id))
+
+        if not tools:
+            response = await self.router.execute(
+                task=selected_task,
+                messages=messages,
+                **execute_kwargs,
+            )
+            return {"response": response, "voice_note_action": None, "tool_events": []}
+
+        tool_events: List[Dict[str, Any]] = []
+        tool_mode_task = llm_task.TOOL_USE
+        loop_messages: List[Dict[str, Any]] = list(messages)
+
+        for _ in range(5):
+            response = await self.router.execute(
+                task=tool_mode_task,
+                messages=loop_messages,
+                tools=tools,
+                **execute_kwargs,
+            )
+            tool_calls = list(response.tool_calls or [])
+            if not tool_calls:
+                return {"response": response, "voice_note_action": None, "tool_events": tool_events}
+
+            loop_messages.append(
+                {
+                    "role": "assistant",
+                    "content": response.content,
+                    "tool_calls": tool_calls,
+                }
+            )
+
+            for tool_call in tool_calls:
+                function_data = tool_call.get("function") if isinstance(tool_call, dict) else {}
+                tool_name = str((function_data or {}).get("name") or "").strip()
+                tool_args_str = str((function_data or {}).get("arguments") or "{}")
+                meta = tool_meta.get(tool_name) or {}
+                tool_result_text = "Tool not found"
+                parsed_args: Dict[str, Any] = {}
+
+                try:
+                    parsed_args = json.loads(tool_args_str) if tool_args_str else {}
+                    if not isinstance(parsed_args, dict):
+                        parsed_args = {}
+                except Exception:
+                    parsed_args = {}
+
+                if meta.get("server_id"):
+                    manager = importlib.import_module("src.adapters.api.dependencies").get_mcp_manager()
+                    try:
+                        tool_result = await manager.call_mcp_tool(
+                            str(meta["server_id"]),
+                            tool_name,
+                            parsed_args,
+                        )
+                        tool_result_text = tool_result_to_text(tool_result)
+                    except Exception as exc:
+                        tool_result_text = f"Error executing tool: {exc}"
+
+                tool_events.append(
+                    {
+                        "tool_name": tool_name,
+                        "arguments": parsed_args,
+                        "result": tool_result_text,
+                    }
+                )
+
+                voice_note_action = extract_voice_note_action(tool_name, tool_result_text, meta)
+                if voice_note_action:
+                    return {
+                        "response": response,
+                        "voice_note_action": voice_note_action,
+                        "tool_events": tool_events,
+                    }
+
+                loop_messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": str(tool_call.get("id") or ""),
+                        "content": tool_result_text,
+                    }
+                )
+
+        return {"response": None, "voice_note_action": None, "tool_events": tool_events}
+
     async def run_turn(
         self,
         lead_id: int,
         workspace_id: Optional[int] = None,
         user_message: Optional[str] = None,
         agent_id_override: Optional[int] = None,
+        thread_id_override: Optional[int] = None,
         bypass_safety: bool = False,
         history_override: Optional[List[Dict[str, str]]] = None,
         task_override: Optional[Any] = None,
@@ -116,7 +223,11 @@ class ConversationAgentRuntime:
 
         # 2. BUILD CONTEXT (agent system_prompt + RAG knowledge + lead memory)
         context = await self.builder.build_context(
-            lead_id, workspace_id, query=user_message, agent_id_override=agent_id_override
+            lead_id,
+            workspace_id,
+            query=user_message,
+            agent_id_override=agent_id_override,
+            thread_id=thread_id_override,
         )
 
         # 3. PREPARE MESSAGES
@@ -150,11 +261,59 @@ class ConversationAgentRuntime:
         execute_kwargs: Dict[str, Any] = {}
         if llm_extra_params:
             execute_kwargs.update(llm_extra_params)
-        response = await self.router.execute(
-            task=selected_task,
+        tool_run = await self._run_with_optional_tools(
+            llm_task=llm_task,
+            selected_task=selected_task,
             messages=messages,
-            **execute_kwargs,
+            execute_kwargs=execute_kwargs,
+            agent_id=context.get("agent_id"),
+            tools_enabled=bool(context.get("tools_enabled")),
         )
+        response = tool_run.get("response")
+        if tool_run.get("voice_note_action"):
+            response = response or type("Response", (), {"provider_info": {}, "usage": {}, "content": None})()
+            provider_info = response.provider_info or {}
+            usage = _normalize_usage(response.usage or {})
+            provider_name = provider_info.get("provider") or "unknown"
+            model_name = provider_info.get("model") or "unknown"
+            estimated_cost_usd = self._estimate_llm_cost()(
+                provider_name,
+                model_name,
+                usage["prompt_tokens"],
+                usage["completion_tokens"],
+            )
+            include_context_prompt = self._get_bool_system_setting()(
+                self.session, "record_context_prompt", default=False
+            )
+            ai_trace = {
+                "schema_version": "1.0",
+                "task": selected_task.value,
+                "provider": provider_name,
+                "model": model_name,
+                "usage": {**usage, "estimated_cost_usd": estimated_cost_usd},
+                "context_prompt": context["system_instruction"] if include_context_prompt else None,
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+                "tool_events": tool_run.get("tool_events") or [],
+            }
+            if context.get("conversation_skills"):
+                ai_trace["conversation_skills"] = context["conversation_skills"]
+            voice_note_action = dict(tool_run["voice_note_action"])
+            return {
+                "status": "sent",
+                "content": voice_note_action.get("text_content") or "",
+                "message_type": "audio",
+                "raw_payload": voice_note_action,
+                "ai_trace": ai_trace,
+                "llm_provider": provider_name,
+                "llm_model": model_name,
+                "llm_prompt_tokens": usage["prompt_tokens"],
+                "llm_completion_tokens": usage["completion_tokens"],
+                "llm_total_tokens": usage["total_tokens"],
+                "llm_estimated_cost_usd": estimated_cost_usd,
+            }
+
+        if response is None:
+            raise ValueError("LLM returned no response")
         model_text = response.content
         if not model_text:
             raise ValueError("LLM returned empty content")
@@ -199,6 +358,10 @@ class ConversationAgentRuntime:
             "context_prompt": context["system_instruction"] if include_context_prompt else None,
             "recorded_at": datetime.now(timezone.utc).isoformat(),
         }
+        if tool_run.get("tool_events"):
+            ai_trace["tool_events"] = tool_run["tool_events"]
+        if context.get("conversation_skills"):
+            ai_trace["conversation_skills"] = context["conversation_skills"]
         result: Dict[str, Any] = {
             "status": "sent",
             "content": model_text,

@@ -9,7 +9,7 @@ DEFAULT_MODEL_RATES_PER_1M = {
         "deepseek-v3.2": {"input": 0.236776, "output": 0.236776},
         "deepseek-v3.2-speciale": {"input": 0.240199, "output": 0.240199},
         "doubao-seed-1-6-251015": {"input": 0.890750, "output": 0.890750},
-        "gemini-3-flash-preview": {"input": 0.891334, "output": 0.891334},
+        "gemini-3.1-flash-lite-preview": {"input": 0.891334, "output": 0.891334},
         "gpt-5-nano-2025-08-07": {"input": 0.339729, "output": 0.339729},
         "gpt-5.1-chat-latest": {"input": 6.698630, "output": 6.698630},
         "gpt-oss-120b": {"input": 0.133501, "output": 0.133501},
@@ -72,7 +72,7 @@ def _read_rate(provider: str, model: str, side: str) -> float:
         except (TypeError, ValueError):
             pass
 
-    # 2) Prefix match for versioned aliases, e.g. "gemini-3-flash-preview-2026-01".
+    # 2) Prefix match for versioned aliases, e.g. "gemini-3.1-flash-lite-preview-2026-01".
     for known_model, known_rates in provider_rates.items():
         if model_key.startswith(f"{known_model}-") or model_key.startswith(f"{known_model}:") or model_key.startswith(f"{known_model}@"):
             maybe = known_rates.get(side.lower())

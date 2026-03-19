@@ -1,0 +1,12 @@
+id: human-base
+version: "1"
+enabled: true
+priority: 100
+applies_to_task_kinds:
+  - conversation
+  - initial_outreach
+  - followup_generation
+  - voice_note_generation
+applies_to_channels:
+  - "*"
+description: Baseline human, polite, friendly, non-pushy behavior for all customer-facing agents.

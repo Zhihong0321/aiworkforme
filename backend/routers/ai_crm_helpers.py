@@ -27,6 +27,11 @@ from src.adapters.db.crm_models import (
     Lead,
 )
 from src.adapters.db.messaging_models import UnifiedMessage, UnifiedThread
+from src.app.conversation_skills import (
+    ConversationTaskKind,
+    compose_conversation_prompt,
+    get_default_conversation_skill_registry,
+)
 
 from .ai_crm_schemas import AICRMControlResponse
 from .messaging_helpers_validation import resolve_agent_for_lead, sync_whatsapp_thread_assignment
@@ -401,17 +406,29 @@ async def generate_followup_text(
         return ""
 
     from src.infra.llm.schemas import LLMTask
+    composed = compose_conversation_prompt(
+        registry=get_default_conversation_skill_registry(),
+        base_prompt=(
+            "Write one short WhatsApp voice-note script. Keep it spoken, human, concise, and polite."
+            if message_type == AICRMFollowupMessageType.AUDIO
+            else "Write one short WhatsApp follow-up message. Keep it human, concise, and polite."
+        ),
+        task_kind=(
+            ConversationTaskKind.VOICE_NOTE_GENERATION
+            if message_type == AICRMFollowupMessageType.AUDIO
+            else ConversationTaskKind.FOLLOWUP_GENERATION
+        ),
+        channel="whatsapp",
+        agent_id=state.agent_id,
+        tenant_id=state.tenant_id,
+    )
 
     response = await router.execute(
         task=LLMTask.AI_CRM,
         messages=[
             {
                 "role": "system",
-                "content": (
-                    "Write one short WhatsApp voice-note script. Keep it spoken, human, concise, and polite."
-                    if message_type == AICRMFollowupMessageType.AUDIO
-                    else "Write one short WhatsApp follow-up message. Keep it human, concise, and polite."
-                ),
+                "content": composed.system_prompt,
             },
             {
                 "role": "user",

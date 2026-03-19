@@ -56,7 +56,7 @@ For AI-generated outbound rows, trace is stored in strict JSON format:
   "schema_version": "1.0",
   "task": "conversation",
   "provider": "uniapi",
-  "model": "gemini-3-flash-preview",
+  "model": "gemini-3.1-flash-lite-preview",
   "usage": {
     "prompt_tokens": 123,
     "completion_tokens": 45,
@@ -156,4 +156,3 @@ Platform admin UI:
 2. If schema blocker exists, run schema migration path and redeploy.
 3. Validate `et_messages` has all `llm_*` columns.
 4. Re-test one inbound message and inspect latest row statuses.
-
