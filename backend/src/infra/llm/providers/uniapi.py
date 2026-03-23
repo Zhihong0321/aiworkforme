@@ -16,6 +16,7 @@ class UniAPIProvider(BaseLLMProvider):
     - openai_chat: /v1/chat/completions
     - openai_responses: /v1/responses
     - ali_asr_filetrans: /ali/api/v1/services/audio/asr/transcription
+    - openai_audio_transcriptions: /v1/audio/transcriptions (multipart, e.g. gpt-4o-transcribe)
     """
     def __init__(
         self,
@@ -49,6 +50,12 @@ class UniAPIProvider(BaseLLMProvider):
         "qwen3-asr-flash-filetrans",
     ]
 
+    OPENAI_AUDIO_TRANSCRIBE_MODELS: List[str] = [
+        "gpt-4o-transcribe",
+        "gpt-4o-mini-transcribe",
+        "whisper-1",
+    ]
+
     def set_api_key(self, api_key: str) -> None:
         self.api_key = api_key.strip() if api_key else None
 
@@ -76,6 +83,14 @@ class UniAPIProvider(BaseLLMProvider):
                     "provider": "uniapi",
                     "model": model,
                     "schema": "ali_asr_filetrans",
+                }
+            )
+        for model in self.OPENAI_AUDIO_TRANSCRIBE_MODELS:
+            models.append(
+                {
+                    "provider": "uniapi",
+                    "model": model,
+                    "schema": "openai_audio_transcriptions",
                 }
             )
         return models
@@ -106,6 +121,8 @@ class UniAPIProvider(BaseLLMProvider):
             return await self._generate_openai_responses(request, api_key, model)
         if schema == "ali_asr_filetrans":
             return await self._generate_ali_asr_filetrans(request, api_key, model)
+        if schema == "openai_audio_transcriptions":
+            return await self._generate_openai_audio_transcriptions(request, api_key, model)
 
         raise ValueError(f"Unsupported UniAPI schema '{schema}'")
 
@@ -114,6 +131,8 @@ class UniAPIProvider(BaseLLMProvider):
             return "gemini_native"
         if model.startswith("qwen3-asr-flash-filetrans"):
             return "ali_asr_filetrans"
+        if model in self.OPENAI_AUDIO_TRANSCRIBE_MODELS:
+            return "openai_audio_transcriptions"
         return "openai_chat"
 
     async def _generate_ali_asr_filetrans(
@@ -207,6 +226,70 @@ class UniAPIProvider(BaseLLMProvider):
             content=transcript,
             usage={},
             provider_info={"provider": "uniapi", "model": model, "schema": "ali_asr_filetrans"},
+        )
+
+    async def _generate_openai_audio_transcriptions(
+        self, request: LLMRequest, api_key: str, model: str
+    ) -> LLMResponse:
+        """POST multipart/form-data to /v1/audio/transcriptions (OpenAI-compatible)."""
+        import io
+        extra = request.extra_params or {}
+
+        audio_content: Optional[bytes] = extra.get("audio_content")
+        audio_mime: str = str(extra.get("audio_mime_type") or "audio/ogg").strip()
+
+        if not audio_content:
+            raise ValueError(
+                "openai_audio_transcriptions requires audio_content bytes in extra_params"
+            )
+
+        # Derive a sensible filename from mime type so the API accepts the file
+        _mime_ext_map = {
+            "audio/ogg": "ogg",
+            "audio/mpeg": "mp3",
+            "audio/mp4": "mp4",
+            "audio/wav": "wav",
+            "audio/webm": "webm",
+            "audio/flac": "flac",
+            "audio/aac": "aac",
+            "audio/x-m4a": "m4a",
+        }
+        ext = _mime_ext_map.get(audio_mime.split(";")[0].strip().lower(), "ogg")
+        filename = f"audio.{ext}"
+
+        url = f"{self.base_url}/v1/audio/transcriptions"
+        headers = {"Authorization": f"Bearer {api_key}"}
+
+        # Optional params forwarded from extra
+        language = str(extra.get("asr_language") or "").strip() or None
+        response_format = str(extra.get("transcription_response_format") or "text").strip()
+
+        files = {"file": (filename, io.BytesIO(audio_content), audio_mime)}
+        data: Dict[str, Any] = {"model": model, "response_format": response_format}
+        if language:
+            data["language"] = language
+
+        response = await self.http_client.post(url, headers=headers, files=files, data=data)
+        response.raise_for_status()
+
+        # response_format="text" returns plain text; json returns {"text": "..."}
+        content_type = str(response.headers.get("content-type", "")).lower()
+        if "application/json" in content_type:
+            try:
+                body = response.json()
+                transcript = str(body.get("text") or "").strip()
+            except Exception:
+                transcript = response.text.strip()
+        else:
+            transcript = response.text.strip()
+
+        if not transcript:
+            raise RuntimeError("openai_audio_transcriptions returned empty transcript")
+
+        return LLMResponse(
+            content=transcript,
+            usage={},
+            provider_info={"provider": "uniapi", "model": model, "schema": "openai_audio_transcriptions"},
         )
 
     async def _fetch_ali_task(self, task_id: str, headers: Dict[str, str]) -> Dict[str, Any]:
@@ -387,6 +470,9 @@ class UniAPIProvider(BaseLLMProvider):
         }
         if request.tools:
             payload["tools"] = request.tools
+            tool_choice = request.extra_params.get("tool_choice")
+            if tool_choice is not None:
+                payload["tool_choice"] = tool_choice
         if request.response_format:
             payload["response_format"] = request.response_format
 
@@ -442,6 +528,9 @@ class UniAPIProvider(BaseLLMProvider):
             payload["instructions"] = instructions
         if request.tools:
             payload["tools"] = request.tools
+            tool_choice = request.extra_params.get("tool_choice")
+            if tool_choice is not None:
+                payload["tool_choice"] = tool_choice
         if request.response_format and request.response_format.get("type") == "json_object":
             payload["text"] = {"format": {"type": "json_object"}}
 

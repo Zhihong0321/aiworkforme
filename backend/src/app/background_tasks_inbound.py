@@ -886,6 +886,11 @@ async def _transcribe_voice_note(audio_bytes: bytes, mime_type: str, media_url: 
         ],
         temperature=0.0,
         max_tokens=1200,
+        # Default: gpt-4o-transcribe via /v1/audio/transcriptions (OpenAI-compatible).
+        # To use Alibaba ASR instead, set model="qwen3-asr-flash-filetrans" here or via
+        # the llm_task_model_config DB setting for the VOICE_NOTE task.
+        model="gpt-4o-transcribe",
+        uniapi_schema="openai_audio_transcriptions",
         audio_content=audio_bytes,
         audio_mime_type=mime_type,
         audio_url=(str(media_url).strip() or None),
