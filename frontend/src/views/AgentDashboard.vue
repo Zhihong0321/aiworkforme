@@ -13,7 +13,7 @@ import {
 const route = useRoute()
 const router = useRouter()
 
-const validTabs = ['settings', 'optimizer', 'channels', 'knowledge', 'inbox', 'contacts']
+const validTabs = ['inbox', 'settings', 'contacts', 'channels', 'knowledge', 'optimizer']
 const loading = ref(true)
 const missingAgent = ref(false)
 const toast = ref('')
@@ -67,14 +67,32 @@ const form = reactive({
 })
 
 const activeTab = computed(() => (
-  validTabs.includes(String(route.query.tab || 'settings'))
-    ? String(route.query.tab || 'settings')
-    : 'settings'
+  validTabs.includes(String(route.query.tab || 'inbox'))
+    ? String(route.query.tab || 'inbox')
+    : 'inbox'
 ))
 
 const agentId = computed(() => Number(route.params.agentId))
+const workspaceTabs = [
+  { id: 'inbox', label: 'Inbox', icon: 'forum' },
+  { id: 'settings', label: 'Instruction Setting', icon: 'tune' },
+  { id: 'contacts', label: 'Add New Contact', icon: 'person_add' },
+  { id: 'channels', label: 'Connected WhatsApp', icon: 'hub' },
+  { id: 'knowledge', label: 'Knowledge Base', icon: 'menu_book' },
+  { id: 'optimizer', label: 'Optimizer', icon: 'auto_fix_high' },
+]
+const workspaceShortcuts = [
+  { label: 'CRM Setting', icon: 'support_agent', path: '/ai-crm' },
+  { label: 'Calendar', icon: 'calendar_month', path: '/calendar' },
+  { label: 'Playground', icon: 'science', path: '/playground' },
+  { label: 'Catalog', icon: 'storefront', path: '/catalog' },
+  { label: 'Sales Material', icon: 'inventory_2', tab: 'settings' },
+]
 const assignedChannel = computed(() => (
   channels.value.find((session) => Number(session.id) === Number(form.preferred_channel_session_id || 0)) || null
+))
+const activeLead = computed(() => (
+  leads.value.find((lead) => Number(lead.id) === Number(activeThread.value?.lead_id || 0)) || null
 ))
 const selectedOptimizerThread = computed(() => (
   threads.value.find((thread) => Number(thread.thread_id) === Number(optimizerThreadId.value || 0)) || null
@@ -166,8 +184,18 @@ const setTab = (tab) => {
   if (!validTabs.includes(tab)) return
   router.replace({
     path: route.path,
-    query: tab === 'settings' ? {} : { tab },
+    query: tab === 'inbox' ? {} : { tab },
   })
+}
+
+const openWorkspaceShortcut = (shortcut) => {
+  if (shortcut.tab) {
+    setTab(shortcut.tab)
+    return
+  }
+  if (shortcut.path) {
+    router.push(shortcut.path)
+  }
 }
 
 const loadChannels = async () => {
@@ -761,8 +789,8 @@ onMounted(loadDashboard)
     </section>
 
     <template v-else>
-      <section class="rounded-[2rem] border border-line/80 bg-surface-elevated/90 p-5 shadow-shell backdrop-blur-xl sm:p-6">
-        <div class="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+      <section class="rounded-[2rem] border border-line/70 bg-[linear-gradient(135deg,_rgb(var(--panel-elevated-rgb)_/_0.98),_rgb(var(--accent-soft-rgb)_/_0.38),_rgb(var(--panel-rgb)_/_0.96))] p-5 shadow-[0_32px_70px_-42px_rgb(var(--accent-rgb)_/_0.35)] backdrop-blur-xl sm:p-6">
+        <div class="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div class="min-w-0 max-w-3xl">
             <button
               type="button"
@@ -772,49 +800,69 @@ onMounted(loadDashboard)
               <span class="material-symbols-outlined text-[18px]">arrow_back</span>
               Back to agents
             </button>
-            <p class="mt-4 text-[11px] font-bold uppercase tracking-[0.28em] text-ink-subtle">Agent Dashboard</p>
-            <h1 class="mt-2 truncate text-3xl font-bold tracking-[-0.03em] text-ink">{{ form.name || 'Untitled agent' }}</h1>
+            <p class="mt-4 text-[11px] font-extrabold uppercase tracking-[0.32em] text-ink-subtle">Agent Workspace</p>
+            <div class="mt-2 flex flex-wrap items-center gap-3">
+              <h1 class="truncate text-3xl font-extrabold tracking-[-0.04em] text-ink">{{ form.name || 'Untitled agent' }}</h1>
+              <span
+                class="rounded-full px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em]"
+                :class="assignedChannel && isConnectedChannelStatus(assignedChannel.status) ? 'bg-emerald-500/12 text-emerald-700' : 'bg-amber-500/12 text-amber-700'"
+              >
+                {{ assignedChannel && isConnectedChannelStatus(assignedChannel.status) ? 'Active' : 'Setup Needed' }}
+              </span>
+            </div>
             <p class="mt-3 text-sm leading-6 text-ink-muted">
-              One place for this agent’s settings, WhatsApp assignment, knowledge, inbox, and contacts.
+              Inbox is the default home now. From here you can work the conversation list, adjust instructions, manage WhatsApp, add contacts, and open supporting tools without re-learning the flow.
             </p>
           </div>
 
-          <div class="grid gap-3 sm:grid-cols-3">
-            <div class="rounded-2xl border border-line/80 bg-surface px-4 py-3 text-sm">
-              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-ink-subtle">Assigned WhatsApp</p>
+          <div class="grid gap-3 sm:grid-cols-2 xl:min-w-[540px] xl:grid-cols-4">
+            <div class="rounded-2xl border border-line/70 bg-surface/92 px-4 py-3 text-sm">
+              <p class="text-[11px] font-extrabold uppercase tracking-[0.24em] text-ink-subtle">Status</p>
+              <p class="mt-1 text-sm font-bold text-ink">
+                {{ assignedChannel && isConnectedChannelStatus(assignedChannel.status) ? 'Active' : 'Needs WhatsApp Setup' }}
+              </p>
+            </div>
+            <div class="rounded-2xl border border-line/70 bg-surface/92 px-4 py-3 text-sm">
+              <p class="text-[11px] font-extrabold uppercase tracking-[0.24em] text-ink-subtle">Assigned WhatsApp</p>
               <p class="mt-1 text-sm font-bold text-ink">
                 {{ assignedChannel ? getChannelIdentity(assignedChannel) : 'Unassigned' }}
               </p>
             </div>
-            <div class="rounded-2xl border border-line/80 bg-surface px-4 py-3 text-sm">
-              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-ink-subtle">Contacts</p>
-              <p class="mt-1 text-2xl font-bold text-ink">{{ leads.length }}</p>
+            <div class="rounded-2xl border border-line/70 bg-surface/92 px-4 py-3 text-sm">
+              <p class="text-[11px] font-extrabold uppercase tracking-[0.24em] text-ink-subtle">Conversations</p>
+              <p class="mt-1 text-2xl font-extrabold text-ink">{{ threads.length }}</p>
             </div>
-            <div class="rounded-2xl border border-line/80 bg-surface px-4 py-3 text-sm">
-              <p class="text-[11px] font-bold uppercase tracking-[0.24em] text-ink-subtle">Threads</p>
-              <p class="mt-1 text-2xl font-bold text-ink">{{ threads.length }}</p>
+            <div class="rounded-2xl border border-line/70 bg-surface/92 px-4 py-3 text-sm">
+              <p class="text-[11px] font-extrabold uppercase tracking-[0.24em] text-ink-subtle">Contacts</p>
+              <p class="mt-1 text-2xl font-extrabold text-ink">{{ leads.length }}</p>
             </div>
           </div>
         </div>
 
         <div class="mt-6 flex flex-wrap gap-2">
           <button
-            v-for="tab in [
-              { id: 'settings', label: 'Settings', icon: 'tune' },
-              { id: 'optimizer', label: 'Optimizer', icon: 'auto_fix_high' },
-              { id: 'channels', label: 'Channels', icon: 'hub' },
-              { id: 'knowledge', label: 'Knowledge', icon: 'menu_book' },
-              { id: 'inbox', label: 'Inbox', icon: 'inbox' },
-              { id: 'contacts', label: 'Contacts', icon: 'contacts' },
-            ]"
+            v-for="tab in workspaceTabs"
             :key="tab.id"
             type="button"
             @click="setTab(tab.id)"
             class="inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition-colors"
-            :class="activeTab === tab.id ? 'bg-primary text-white' : 'bg-surface text-ink-muted hover:bg-surface-muted hover:text-ink'"
+            :class="activeTab === tab.id ? 'bg-primary text-white shadow-[0_18px_32px_-18px_rgb(var(--accent-rgb)_/_0.75)]' : 'bg-surface text-ink-muted hover:bg-surface-muted hover:text-ink'"
           >
             <span class="material-symbols-outlined text-[18px]">{{ tab.icon }}</span>
             {{ tab.label }}
+          </button>
+        </div>
+
+        <div class="mt-4 flex flex-wrap gap-2">
+          <button
+            v-for="shortcut in workspaceShortcuts"
+            :key="shortcut.label"
+            type="button"
+            @click="openWorkspaceShortcut(shortcut)"
+            class="inline-flex items-center gap-2 rounded-full border border-line/70 bg-surface-elevated/88 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-ink-muted transition-colors hover:border-primary/30 hover:bg-primary/5 hover:text-primary"
+          >
+            <span class="material-symbols-outlined text-[16px]">{{ shortcut.icon }}</span>
+            {{ shortcut.label }}
           </button>
         </div>
       </section>
@@ -824,8 +872,8 @@ onMounted(loadDashboard)
           <article class="rounded-[1.75rem] border border-line/80 bg-surface-elevated/90 p-5 shadow-shell sm:p-6">
             <div class="flex items-start justify-between gap-4 border-b border-line/70 pb-4">
               <div>
-                <h2 class="text-xl font-bold text-ink">Agent Settings</h2>
-                <p class="mt-1 text-sm text-ink-muted">Behavior, tone, and WhatsApp routing for this agent.</p>
+                <h2 class="text-xl font-bold text-ink">Instruction Setting</h2>
+                <p class="mt-1 text-sm text-ink-muted">Behavior, tone, routing, and sales support for this agent workspace.</p>
               </div>
               <button
                 type="button"
@@ -1604,12 +1652,12 @@ onMounted(loadDashboard)
         </article>
       </section>
 
-      <section v-else class="grid gap-6 xl:grid-cols-[360px_minmax(0,1fr)]">
-        <aside class="rounded-[1.75rem] border border-line/80 bg-surface-elevated/90 p-5 shadow-shell sm:p-6">
+      <section v-else class="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)_320px]">
+        <aside class="rounded-[1.75rem] border border-line/70 bg-surface-elevated/92 p-5 shadow-[0_24px_46px_-36px_rgb(var(--accent-rgb)_/_0.18)] sm:p-6">
           <div class="flex items-center justify-between gap-4 border-b border-line/70 pb-4">
             <div>
               <h2 class="text-xl font-bold text-ink">Inbox</h2>
-              <p class="mt-1 text-sm text-ink-muted">Conversations handled by this agent.</p>
+              <p class="mt-1 text-sm text-ink-muted">WhatsApp-style conversation list for this agent.</p>
             </div>
           </div>
 
@@ -1624,14 +1672,20 @@ onMounted(loadDashboard)
               type="button"
               @click="openThread(thread)"
               class="w-full rounded-[1.4rem] border p-4 text-left transition-colors"
-              :class="activeThread?.thread_id === thread.thread_id ? 'border-primary/40 bg-primary/5' : 'border-line/80 bg-surface hover:border-line-strong hover:bg-surface-muted'"
+              :class="activeThread?.thread_id === thread.thread_id ? 'border-primary/30 bg-primary/5 shadow-[0_18px_34px_-26px_rgb(var(--accent-rgb)_/_0.35)]' : 'border-line/70 bg-surface hover:border-line-strong hover:bg-surface-muted'"
             >
               <div class="flex items-start justify-between gap-3">
                 <div class="min-w-0">
                   <p class="truncate font-semibold text-ink">{{ thread.lead_name || thread.lead_external_id || 'Unknown lead' }}</p>
                   <p class="mt-1 line-clamp-2 text-sm text-ink-muted">{{ thread.last_message_preview || 'No preview yet.' }}</p>
+                  <p class="mt-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-subtle">
+                    {{ thread.last_message_at ? new Date(thread.last_message_at).toLocaleString() : 'Awaiting first reply' }}
+                  </p>
                 </div>
-                <span class="text-[11px] font-bold uppercase tracking-[0.16em] text-ink-subtle">
+                <span
+                  class="rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.16em]"
+                  :class="thread.pending_scan ? 'bg-primary/10 text-primary' : 'bg-surface-muted text-ink-subtle'"
+                >
                   {{ thread.pending_scan ? 'New' : 'Seen' }}
                 </span>
               </div>
@@ -1639,33 +1693,33 @@ onMounted(loadDashboard)
           </div>
         </aside>
 
-        <article class="rounded-[1.75rem] border border-line/80 bg-surface-elevated/90 p-5 shadow-shell sm:p-6">
+        <article class="rounded-[1.75rem] border border-line/70 bg-surface-elevated/92 p-5 shadow-[0_28px_52px_-34px_rgb(var(--accent-rgb)_/_0.18)] sm:p-6">
           <div class="flex items-center justify-between gap-4 border-b border-line/70 pb-4">
             <div>
               <h2 class="text-xl font-bold text-ink">{{ activeThread?.lead_name || 'Select a conversation' }}</h2>
               <p class="mt-1 text-sm text-ink-muted">
-                {{ activeThread?.lead_external_id || 'Choose a thread on the left to inspect the transcript.' }}
+                {{ activeThread?.lead_external_id || 'Choose a thread on the left to open the conversation view.' }}
               </p>
             </div>
-            <button
-              v-if="activeThread"
-              type="button"
-              class="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-primary transition hover:bg-primary/10"
-              @click="useThreadForOptimizer(activeThread)"
-            >
-              <span class="material-symbols-outlined text-[16px]">auto_fix_high</span>
-              Optimize This Thread
-            </button>
-            <button
-              v-if="activeThread"
-              type="button"
-              class="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-              :disabled="isResettingThread"
-              @click="resetActiveThread"
-            >
-              <span class="material-symbols-outlined text-[16px]">restart_alt</span>
-              {{ isResettingThread ? 'Resetting...' : 'Reset Thread' }}
-            </button>
+            <div v-if="activeThread" class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                class="inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-primary transition hover:bg-primary/10"
+                @click="useThreadForOptimizer(activeThread)"
+              >
+                <span class="material-symbols-outlined text-[16px]">auto_fix_high</span>
+                Optimize This Thread
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-4 py-2 text-xs font-bold uppercase tracking-[0.18em] text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="isResettingThread"
+                @click="resetActiveThread"
+              >
+                <span class="material-symbols-outlined text-[16px]">restart_alt</span>
+                {{ isResettingThread ? 'Resetting...' : 'Reset Thread' }}
+              </button>
+            </div>
           </div>
 
           <div v-if="!activeThread" class="mt-5 rounded-2xl border border-dashed border-line/80 px-4 py-12 text-center text-sm text-ink-muted">
@@ -1688,8 +1742,8 @@ onMounted(loadDashboard)
               :class="message.direction === 'outbound' ? 'justify-end' : 'justify-start'"
             >
               <div
-                class="max-w-[80%] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm"
-                :class="message.direction === 'outbound' ? 'bg-primary text-white' : 'border border-line/80 bg-surface text-ink'"
+                class="max-w-[80%] rounded-[1.6rem] px-4 py-3 text-sm leading-6 shadow-sm"
+                :class="message.direction === 'outbound' ? 'bg-primary text-white shadow-[0_18px_34px_-24px_rgb(var(--accent-rgb)_/_0.45)]' : 'border border-line/70 bg-surface text-ink'"
               >
                 <p class="whitespace-pre-wrap">{{ message.text_content || '(media attached)' }}</p>
                 <p
@@ -1700,8 +1754,72 @@ onMounted(loadDashboard)
                 </p>
               </div>
             </div>
+
+            <div class="sticky bottom-0 rounded-[1.5rem] border border-line/70 bg-[rgb(var(--panel-rgb)_/_0.96)] px-4 py-3 shadow-[0_-12px_34px_-28px_rgb(var(--text-rgb)_/_0.2)] backdrop-blur">
+              <div class="flex flex-wrap items-center gap-2 text-xs font-semibold text-ink-muted">
+                <button type="button" class="inline-flex items-center gap-2 rounded-full bg-surface px-3 py-2 hover:text-primary">
+                  <span class="material-symbols-outlined text-[16px]">attach_file</span>
+                  Attachment
+                </button>
+                <button type="button" class="inline-flex items-center gap-2 rounded-full bg-surface px-3 py-2 hover:text-primary">
+                  <span class="material-symbols-outlined text-[16px]">auto_awesome</span>
+                  Template
+                </button>
+                <div class="min-w-[220px] flex-1 rounded-full bg-surface px-4 py-2 text-sm text-ink-subtle">
+                  Type a message...
+                </div>
+                <button type="button" class="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-white shadow-[0_18px_32px_-20px_rgb(var(--accent-rgb)_/_0.75)]">
+                  <span class="material-symbols-outlined text-[16px]">send</span>
+                  Send
+                </button>
+              </div>
+            </div>
           </div>
         </article>
+
+        <aside class="rounded-[1.75rem] border border-line/70 bg-surface-elevated/92 p-5 shadow-[0_24px_46px_-36px_rgb(var(--accent-rgb)_/_0.18)] sm:p-6">
+          <p class="text-[11px] font-extrabold uppercase tracking-[0.24em] text-ink-subtle">CRM Context</p>
+          <h3 class="mt-2 text-xl font-bold text-ink">{{ activeLead?.name || activeThread?.lead_name || 'Contact profile' }}</h3>
+          <p class="mt-2 text-sm text-ink-muted">
+            {{ activeLead?.external_id || activeThread?.lead_external_id || 'Select a thread to load contact details and quick actions.' }}
+          </p>
+
+          <div class="mt-5 space-y-3">
+            <div class="rounded-2xl bg-[rgb(var(--accent-soft-rgb)_/_0.34)] px-4 py-4">
+              <p class="text-[11px] font-extrabold uppercase tracking-[0.18em] text-ink-subtle">Lead Stage</p>
+              <p class="mt-2 text-sm font-bold text-ink">{{ activeLead?.stage || 'Unknown' }}</p>
+            </div>
+            <div class="rounded-2xl bg-surface px-4 py-4 ring-1 ring-line/60">
+              <p class="text-[11px] font-extrabold uppercase tracking-[0.18em] text-ink-subtle">Mode</p>
+              <p class="mt-2 text-sm font-bold text-ink">{{ activeLead ? (getLeadModeLabel(activeLead) === 'working' ? 'Working' : 'On Hold') : 'No contact selected' }}</p>
+            </div>
+            <div class="rounded-2xl bg-surface px-4 py-4 ring-1 ring-line/60">
+              <p class="text-[11px] font-extrabold uppercase tracking-[0.18em] text-ink-subtle">Follow-up</p>
+              <p class="mt-2 text-sm font-bold text-ink">{{ activeLead ? formatFollowUp(activeLead) : 'No follow-up scheduled' }}</p>
+            </div>
+          </div>
+
+          <div class="mt-5 space-y-2">
+            <button
+              type="button"
+              class="flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-bold text-white shadow-[0_18px_32px_-20px_rgb(var(--accent-rgb)_/_0.75)]"
+              :disabled="!activeLead"
+              @click="activeLead && setLeadMode(activeLead, getLeadModeLabel(activeLead) === 'working' ? 'on_hold' : 'working')"
+            >
+              <span class="material-symbols-outlined text-[18px]">swap_horiz</span>
+              {{ activeLead && getLeadModeLabel(activeLead) === 'working' ? 'Put On Hold' : 'Start Working' }}
+            </button>
+            <button
+              type="button"
+              class="flex w-full items-center justify-center gap-2 rounded-2xl border border-line/70 bg-surface px-4 py-3 text-sm font-bold text-ink transition-colors hover:border-primary/30 hover:text-primary"
+              :disabled="!activeThread"
+              @click="activeThread && useThreadForOptimizer(activeThread)"
+            >
+              <span class="material-symbols-outlined text-[18px]">auto_fix_high</span>
+              Open Optimizer
+            </button>
+          </div>
+        </aside>
       </section>
     </template>
   </div>

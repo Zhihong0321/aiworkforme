@@ -42,13 +42,13 @@ const routes = [
     path: '/agents',
     name: 'Agents',
     component: AgentsHome,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, wide: true }
   },
   {
     path: '/agents/:agentId',
     name: 'Agent Dashboard',
     component: AgentDashboard,
-    meta: { requiresAuth: true }
+    meta: { requiresAuth: true, wide: true }
   },
   {
     path: '/inbox',

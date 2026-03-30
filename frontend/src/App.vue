@@ -10,7 +10,9 @@ const mainClasses = computed(() =>
   showNav.value
     ? isPlatformAdmin.value
       ? 'relative z-10 mx-auto flex w-full max-w-[1800px] flex-col px-4 pb-8 pt-4 sm:px-6 lg:px-8'
-      : 'relative z-10 mx-auto flex w-full max-w-5xl flex-col px-4 pb-8 pt-4 sm:px-6'
+      : route.meta?.wide
+        ? 'relative z-10 mx-auto flex w-full max-w-[1680px] flex-col px-4 pb-8 pt-4 sm:px-6 lg:px-8'
+        : 'relative z-10 mx-auto flex w-full max-w-5xl flex-col px-4 pb-8 pt-4 sm:px-6'
     : 'relative z-10 flex min-h-screen flex-col'
 )
 </script>
