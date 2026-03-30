@@ -5,9 +5,12 @@ import TopNav from './components/TopNav.vue'
 
 const route = useRoute()
 const showNav = computed(() => !route.meta?.bare)
+const isPlatformAdmin = computed(() => localStorage.getItem('is_platform_admin') === 'true')
 const mainClasses = computed(() =>
   showNav.value
-    ? 'relative z-10 mx-auto flex w-full max-w-5xl flex-col px-4 pb-8 pt-4 sm:px-6'
+    ? isPlatformAdmin.value
+      ? 'relative z-10 mx-auto flex w-full max-w-[1800px] flex-col px-4 pb-8 pt-4 sm:px-6 lg:px-8'
+      : 'relative z-10 mx-auto flex w-full max-w-5xl flex-col px-4 pb-8 pt-4 sm:px-6'
     : 'relative z-10 flex min-h-screen flex-col'
 )
 </script>

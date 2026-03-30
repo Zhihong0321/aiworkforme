@@ -1,7 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import TuiBadge from '../components/ui/TuiBadge.vue'
 import TuiButton from '../components/ui/TuiButton.vue'
 import TuiCard from '../components/ui/TuiCard.vue'
+import PlatformAdminShell from '../components/platform/PlatformAdminShell.vue'
 import { request } from '../services/api'
 
 const platformMessages = ref([])
@@ -83,8 +85,8 @@ const fetchPlatformMessages = async () => {
     params.set('ai_only', historyAiOnly.value ? 'true' : 'false')
     const data = await request(`/platform/messages/history?${params.toString()}`)
     platformMessages.value = Array.isArray(data) ? data : []
-  } catch (e) {
-    message.value = `Error: ${e.message}`
+  } catch (error) {
+    message.value = `Error: ${error.message}`
     platformMessages.value = []
   } finally {
     platformMessagesLoading.value = false
@@ -97,78 +99,102 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="relative min-h-screen">
-    <main class="relative z-10 mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:px-10 space-y-6">
-      <header class="tui-surface rounded-3xl border border-slate-200 p-8 shadow-sm">
-        <p class="text-[10px] uppercase font-black tracking-[0.32em] text-indigo-600">Platform Admin</p>
-        <h1 class="mt-2 text-3xl font-black text-slate-900 tracking-tight">Message History</h1>
-        <p class="mt-2 text-sm text-slate-600">Review inbound/outbound messages with LLM usage and trace metadata.</p>
-      </header>
-
-      <TuiCard title="Filters" subtitle="Narrow the history view">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <div>
-            <label class="text-[10px] font-black uppercase tracking-widest text-slate-600 block mb-2">Direction</label>
-            <select v-model="historyDirection" class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800">
-              <option value="">All</option>
-              <option value="inbound">Inbound</option>
-              <option value="outbound">Outbound</option>
-            </select>
-          </div>
-          <div>
-            <label class="text-[10px] font-black uppercase tracking-widest text-slate-600 block mb-2">Limit</label>
-            <input v-model.number="historyLimit" type="number" min="1" max="1000" class="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800" />
-          </div>
-          <div class="flex items-end">
-            <label class="inline-flex items-center gap-2 text-xs font-bold text-slate-700">
-              <input v-model="historyAiOnly" type="checkbox" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500" />
-              AI only
-            </label>
-          </div>
-          <div class="flex items-end justify-end">
-            <TuiButton @click="fetchPlatformMessages" :loading="platformMessagesLoading" size="sm">Refresh</TuiButton>
-          </div>
+  <PlatformAdminShell>
+    <template #sidebar>
+      <div class="rounded-[1.75rem] border border-line/80 bg-surface-elevated/92 p-5 shadow-panel">
+        <p class="text-[10px] font-black uppercase tracking-[0.3em] text-ink-subtle">Platform Admin</p>
+        <h2 class="mt-2 text-2xl font-bold text-ink">Message Review</h2>
+        <p class="mt-2 text-sm text-ink-muted">A focused review lane for message history, costs, and trace payloads.</p>
+        <div class="mt-5 space-y-2">
+          <a href="/settings" class="block rounded-2xl border border-line/70 bg-surface px-4 py-3 text-sm font-semibold text-ink transition-colors hover:border-line-strong hover:bg-primary/5">Back to console</a>
+          <a href="/settings/benchmark" class="block rounded-2xl border border-line/70 bg-surface px-4 py-3 text-sm font-semibold text-ink transition-colors hover:border-line-strong hover:bg-primary/5">Benchmark</a>
         </div>
-        <p v-if="message" class="mt-3 text-xs font-semibold text-red-600">{{ message }}</p>
-      </TuiCard>
+      </div>
+    </template>
 
-      <TuiCard title="Messages" subtitle="Latest platform message records">
-        <div v-if="!platformMessagesLoading && modelSummary.length > 0" class="mb-4 overflow-x-auto">
-          <table class="w-full text-xs border border-slate-200 rounded-xl overflow-hidden">
+    <section class="rounded-[1.9rem] border border-line/80 bg-[linear-gradient(140deg,_rgb(var(--panel-elevated-rgb)_/_0.96),_rgb(var(--accent-soft-rgb)_/_0.18))] p-6 shadow-panel">
+      <div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div>
+          <p class="text-[10px] font-black uppercase tracking-[0.32em] text-aurora">Platform Admin</p>
+          <h1 class="mt-2 text-3xl font-black tracking-tight text-ink lg:text-4xl">Message history</h1>
+          <p class="mt-2 max-w-3xl text-sm text-ink-muted">Review inbound and outbound messages with token usage, cost breakdowns, and trace metadata.</p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <TuiBadge variant="info" size="sm">Desktop optimized</TuiBadge>
+          <TuiButton @click="fetchPlatformMessages" :loading="platformMessagesLoading">Refresh</TuiButton>
+        </div>
+      </div>
+      <p v-if="message" class="mt-4 rounded-2xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm font-semibold text-danger">{{ message }}</p>
+    </section>
+
+    <TuiCard title="Filters" subtitle="Narrow the history view">
+      <div class="grid gap-3 lg:grid-cols-[160px_160px_160px_auto]">
+        <div>
+          <label class="mb-2 block text-[10px] font-black uppercase tracking-widest text-ink-subtle">Direction</label>
+          <select v-model="historyDirection" class="w-full rounded-2xl border border-line-strong bg-surface-elevated/90 px-4 py-3 text-sm text-ink">
+            <option value="">All</option>
+            <option value="inbound">Inbound</option>
+            <option value="outbound">Outbound</option>
+          </select>
+        </div>
+        <div>
+          <label class="mb-2 block text-[10px] font-black uppercase tracking-widest text-ink-subtle">Limit</label>
+          <input v-model.number="historyLimit" type="number" min="1" max="1000" class="w-full rounded-2xl border border-line-strong bg-surface-elevated/90 px-4 py-3 text-sm text-ink" />
+        </div>
+        <div class="flex items-end">
+          <label class="inline-flex items-center gap-2 text-xs font-bold text-ink">
+            <input v-model="historyAiOnly" type="checkbox" class="h-4 w-4 rounded border-line text-primary focus:ring-primary" />
+            AI only
+          </label>
+        </div>
+        <div class="flex items-end justify-end">
+          <TuiButton @click="fetchPlatformMessages" :loading="platformMessagesLoading" size="sm">Refresh history</TuiButton>
+        </div>
+      </div>
+    </TuiCard>
+
+    <div class="grid gap-4 xl:grid-cols-[0.95fr_1.05fr]">
+      <TuiCard title="Cost Summary" subtitle="Aggregate by model">
+        <div v-if="!platformMessagesLoading && modelSummary.length > 0" class="overflow-x-auto">
+          <table class="min-w-full text-xs">
             <thead>
-              <tr class="bg-slate-50 text-left text-slate-600 uppercase tracking-wide">
-                <th class="px-3 py-2">Model</th>
-                <th class="px-3 py-2">Provider</th>
-                <th class="px-3 py-2">Msgs</th>
-                <th class="px-3 py-2">Input</th>
-                <th class="px-3 py-2">Output</th>
-                <th class="px-3 py-2">Total</th>
-                <th class="px-3 py-2">Cost</th>
-                <th class="px-3 py-2">$/Token</th>
-                <th class="px-3 py-2">$/1M</th>
+              <tr class="border-b border-line/70 text-left text-ink-subtle">
+                <th class="py-2 pr-3">Model</th>
+                <th class="py-2 pr-3">Provider</th>
+                <th class="py-2 pr-3">Msgs</th>
+                <th class="py-2 pr-3">Input</th>
+                <th class="py-2 pr-3">Output</th>
+                <th class="py-2 pr-3">Total</th>
+                <th class="py-2 pr-3">Cost</th>
+                <th class="py-2 pr-3">$/Token</th>
+                <th class="py-2 pr-3">$/1M</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="row in modelSummary" :key="`${row.provider}:${row.model}`" class="border-t border-slate-100">
-                <td class="px-3 py-2 font-semibold">{{ row.model }}</td>
-                <td class="px-3 py-2">{{ row.provider }}</td>
-                <td class="px-3 py-2">{{ formatInt(row.message_count) }}</td>
-                <td class="px-3 py-2">{{ formatInt(row.prompt_tokens) }}</td>
-                <td class="px-3 py-2">{{ formatInt(row.completion_tokens) }}</td>
-                <td class="px-3 py-2">{{ formatInt(row.total_tokens) }}</td>
-                <td class="px-3 py-2">{{ formatUsd(row.total_cost_usd, 6) }}</td>
-                <td class="px-3 py-2">{{ formatUsd(row.cost_per_token_usd, 9) }}</td>
-                <td class="px-3 py-2">{{ formatUsd(row.cost_per_1m_tokens_usd, 3) }}</td>
+              <tr v-for="row in modelSummary" :key="`${row.provider}:${row.model}`" class="border-b border-line/40">
+                <td class="py-2 pr-3 font-semibold text-ink">{{ row.model }}</td>
+                <td class="py-2 pr-3 text-ink-muted">{{ row.provider }}</td>
+                <td class="py-2 pr-3 text-ink-muted">{{ formatInt(row.message_count) }}</td>
+                <td class="py-2 pr-3 text-ink-muted">{{ formatInt(row.prompt_tokens) }}</td>
+                <td class="py-2 pr-3 text-ink-muted">{{ formatInt(row.completion_tokens) }}</td>
+                <td class="py-2 pr-3 text-ink-muted">{{ formatInt(row.total_tokens) }}</td>
+                <td class="py-2 pr-3 text-ink-muted">{{ formatUsd(row.total_cost_usd, 6) }}</td>
+                <td class="py-2 pr-3 text-ink-muted">{{ formatUsd(row.cost_per_token_usd, 9) }}</td>
+                <td class="py-2 pr-3 text-ink-muted">{{ formatUsd(row.cost_per_1m_tokens_usd, 3) }}</td>
               </tr>
             </tbody>
           </table>
         </div>
+        <div v-else-if="platformMessagesLoading" class="py-4 text-sm text-ink-muted">Loading message history...</div>
+        <div v-else class="py-4 text-sm text-ink-muted">No messages found for the selected filters.</div>
+      </TuiCard>
 
-        <div v-if="platformMessagesLoading" class="text-sm text-slate-600 py-4">Loading message history...</div>
-        <div v-else-if="platformMessages.length === 0" class="text-sm text-slate-600 py-4">No messages found for the selected filters.</div>
-        <div v-else class="space-y-3 max-h-[36rem] overflow-y-auto pr-1">
-          <article v-for="msg in platformMessages" :key="msg.message_id" class="rounded-2xl border border-slate-200 bg-white p-4">
-            <div class="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-widest font-black text-slate-600">
+      <TuiCard title="Messages" subtitle="Latest platform message records">
+        <div v-if="platformMessagesLoading" class="py-4 text-sm text-ink-muted">Loading message history...</div>
+        <div v-else-if="platformMessages.length === 0" class="py-4 text-sm text-ink-muted">No messages found for the selected filters.</div>
+        <div v-else class="space-y-3 max-h-[38rem] overflow-y-auto pr-1">
+          <article v-for="msg in platformMessages" :key="msg.message_id" class="rounded-2xl border border-line/70 bg-surface px-4 py-4">
+            <div class="flex flex-wrap items-center gap-2 text-[10px] font-black uppercase tracking-widest text-ink-subtle">
               <span>#{{ msg.message_id }}</span>
               <span>{{ msg.direction }}</span>
               <span>{{ msg.channel }}</span>
@@ -183,11 +209,11 @@ onMounted(() => {
               <span v-if="getCostUsd(msg) > 0 && getTotalTokens(msg) > 0">$/token {{ formatUsd(getCostPerToken(msg), 9) }}</span>
               <span v-if="getCostUsd(msg) > 0 && getTotalTokens(msg) > 0">$/1M {{ formatUsd(getCostPer1M(msg), 3) }}</span>
             </div>
-            <p class="mt-2 text-sm text-slate-800 whitespace-pre-wrap">{{ msg.text_content || '(empty)' }}</p>
-            <pre class="mt-3 rounded-xl bg-slate-950 text-slate-100 text-[11px] leading-5 p-3 overflow-x-auto">{{ JSON.stringify(msg.ai_trace || {}, null, 2) }}</pre>
+            <p class="mt-2 whitespace-pre-wrap text-sm text-ink">{{ msg.text_content || '(empty)' }}</p>
+            <pre class="mt-3 overflow-x-auto rounded-xl bg-slate-950 p-3 text-[11px] leading-5 text-slate-100">{{ JSON.stringify(msg.ai_trace || {}, null, 2) }}</pre>
           </article>
         </div>
       </TuiCard>
-    </main>
-  </div>
+    </div>
+  </PlatformAdminShell>
 </template>
