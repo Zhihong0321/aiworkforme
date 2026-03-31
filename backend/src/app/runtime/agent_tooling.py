@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlmodel import Session, select
@@ -35,9 +36,9 @@ def has_agent_mcp_script(session: Session, agent_id: int, script_name: str) -> b
 
 
 def _runtime_paths() -> Tuple[str, str]:
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    scripts_dir = os.getenv("MCP_SCRIPTS_DIR", os.path.join(base_dir, "mcp-runtime-scripts"))
-    fallback_cwd = base_dir
+    backend_dir = Path(__file__).resolve().parents[3]
+    scripts_dir = os.getenv("MCP_SCRIPTS_DIR", str(backend_dir / "mcp-runtime-scripts"))
+    fallback_cwd = str(backend_dir)
     return scripts_dir, fallback_cwd
 
 

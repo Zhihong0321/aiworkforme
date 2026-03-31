@@ -8,5 +8,6 @@ REPO NAME : AIworkforMe
 - Built calendar debug tracing for inbound scheduling, tool usage, and owner-vs-viewer calendar visibility diagnostics
 - Clarified agent calendar UI with real booking toggle and owner selection
 - Fixed calendar page to follow active agent owner and clarified calendar tool-only toggle
+- Fixed inbound MCP runtime path so calendar tools can actually load
 
 =====================
