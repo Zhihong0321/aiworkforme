@@ -52,6 +52,13 @@ const eventDisplayDate = (event) => {
     : parsed.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
+const eventCalendarDate = (event) => {
+  const raw = event?.requested_start_time || event?.start_time
+  if (!raw) return null
+  const parsed = new Date(raw)
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
 const eventDetailSummary = (event) => {
   const parts = []
   if (event?.status) parts.push(String(event.status).replace(/_/g, ' '))
@@ -144,8 +151,8 @@ const calendarDays = computed(() => {
 
 const getEventsForDay = (date) => {
   return events.value.filter(e => {
-    const d = new Date(e.start_time)
-    return d.toDateString() === date.toDateString()
+    const d = eventCalendarDate(e)
+    return d ? d.toDateString() === date.toDateString() : false
   })
 }
 
