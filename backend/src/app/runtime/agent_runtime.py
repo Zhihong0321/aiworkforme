@@ -17,6 +17,7 @@ from src.app.runtime.agent_tooling import (
     load_agent_tools_for_runtime,
     tool_result_to_text,
 )
+from src.app.runtime.calendar_debug import record_calendar_debug
 from src.app.runtime.context_builder import ContextBuilder
 from src.app.runtime.memory_service import MemoryService
 from src.app.runtime.leads_service import get_or_create_default_workspace
@@ -145,9 +146,11 @@ class ConversationAgentRuntime:
         tenant_id: Optional[int],
         tools_enabled: bool,
         user_message: Optional[str],
+        debug_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         tools: List[Dict[str, Any]] = []
         tool_meta: Dict[str, Dict[str, Any]] = {}
+        debug_context = dict(debug_context or {})
         selected_task_value = getattr(selected_task, "value", str(selected_task))
         conversation_task_value = getattr(llm_task.CONVERSATION, "value", "conversation")
         if tools_enabled and agent_id and selected_task_value == conversation_task_value:
@@ -158,7 +161,43 @@ class ConversationAgentRuntime:
             effective_messages = list(messages)
             effective_messages.append({"role": "system", "content": CALENDAR_TOOL_RULES})
 
+        scheduling_request = _is_scheduling_request(user_message)
+        has_calendar_tools = any(_is_calendar_tool(name) for name in tool_meta)
+        if scheduling_request or has_calendar_tools:
+            record_calendar_debug(
+                self.session,
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                lead_id=debug_context.get("lead_id"),
+                thread_id=debug_context.get("thread_id"),
+                inbound_message_id=debug_context.get("inbound_message_id"),
+                stage="runtime_calendar_context",
+                status="info",
+                message="Calendar runtime context evaluated.",
+                details={
+                    "tools_enabled": bool(tools_enabled),
+                    "has_any_tools": bool(tools),
+                    "has_calendar_tools": has_calendar_tools,
+                    "calendar_tool_names": sorted([name for name in tool_meta if _is_calendar_tool(name)]),
+                    "scheduling_request": scheduling_request,
+                    "user_message_preview": str(user_message or "")[:240],
+                },
+            )
+
         if not tools:
+            if scheduling_request:
+                record_calendar_debug(
+                    self.session,
+                    tenant_id=tenant_id,
+                    agent_id=agent_id,
+                    lead_id=debug_context.get("lead_id"),
+                    thread_id=debug_context.get("thread_id"),
+                    inbound_message_id=debug_context.get("inbound_message_id"),
+                    stage="runtime_calendar_tools_missing",
+                    status="warn",
+                    message="Scheduling request detected but no tools were loaded.",
+                    details={"selected_task": selected_task_value},
+                )
             response = await self.router.execute(
                 task=selected_task,
                 messages=effective_messages,
@@ -172,8 +211,21 @@ class ConversationAgentRuntime:
         require_calendar_tool_first = (
             bool(tools)
             and any(_is_calendar_tool(name) for name in tool_meta)
-            and _is_scheduling_request(user_message)
+            and scheduling_request
         )
+        if require_calendar_tool_first:
+            record_calendar_debug(
+                self.session,
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                lead_id=debug_context.get("lead_id"),
+                thread_id=debug_context.get("thread_id"),
+                inbound_message_id=debug_context.get("inbound_message_id"),
+                stage="runtime_calendar_tool_required",
+                status="info",
+                message="Calendar tool use is required for this turn.",
+                details={"turn_limit": 5},
+            )
 
         for turn_idx in range(5):
             loop_execute_kwargs = dict(execute_kwargs)
@@ -187,6 +239,19 @@ class ConversationAgentRuntime:
             )
             tool_calls = list(response.tool_calls or [])
             if not tool_calls:
+                if require_calendar_tool_first:
+                    record_calendar_debug(
+                        self.session,
+                        tenant_id=tenant_id,
+                        agent_id=agent_id,
+                        lead_id=debug_context.get("lead_id"),
+                        thread_id=debug_context.get("thread_id"),
+                        inbound_message_id=debug_context.get("inbound_message_id"),
+                        stage="runtime_calendar_tool_not_called",
+                        status="warn",
+                        message="Model returned no tool calls on a scheduling turn.",
+                        details={"turn_index": turn_idx, "response_preview": str(response.content or "")[:240]},
+                    )
                 return {"response": response, "voice_note_action": None, "tool_events": tool_events}
 
             loop_messages.append(
@@ -217,6 +282,19 @@ class ConversationAgentRuntime:
                     tenant_id=tenant_id,
                     agent_id=agent_id,
                 )
+                if _is_calendar_tool(tool_name):
+                    record_calendar_debug(
+                        self.session,
+                        tenant_id=tenant_id,
+                        agent_id=agent_id,
+                        lead_id=debug_context.get("lead_id"),
+                        thread_id=debug_context.get("thread_id"),
+                        inbound_message_id=debug_context.get("inbound_message_id"),
+                        stage="runtime_calendar_tool_called",
+                        status="info",
+                        message=f"Calling calendar tool: {tool_name}",
+                        details={"arguments": parsed_args, "turn_index": turn_idx},
+                    )
 
                 if meta.get("server_id"):
                     manager = importlib.import_module("src.adapters.api.dependencies").get_mcp_manager()
@@ -237,6 +315,19 @@ class ConversationAgentRuntime:
                         "result": tool_result_text,
                     }
                 )
+                if _is_calendar_tool(tool_name):
+                    record_calendar_debug(
+                        self.session,
+                        tenant_id=tenant_id,
+                        agent_id=agent_id,
+                        lead_id=debug_context.get("lead_id"),
+                        thread_id=debug_context.get("thread_id"),
+                        inbound_message_id=debug_context.get("inbound_message_id"),
+                        stage="runtime_calendar_tool_result",
+                        status="ok" if not str(tool_result_text).lower().startswith("error") else "error",
+                        message=f"Calendar tool returned: {tool_name}",
+                        details={"result": tool_result_text[:1000]},
+                    )
 
                 voice_note_action = extract_voice_note_action(tool_name, tool_result_text, meta)
                 if voice_note_action:
@@ -267,6 +358,7 @@ class ConversationAgentRuntime:
         history_override: Optional[List[Dict[str, str]]] = None,
         task_override: Optional[Any] = None,
         llm_extra_params: Optional[Dict[str, Any]] = None,
+        debug_context: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Executes a single workflow turn.
@@ -348,6 +440,11 @@ class ConversationAgentRuntime:
             tenant_id=lead.tenant_id,
             tools_enabled=bool(context.get("tools_enabled")),
             user_message=user_message,
+            debug_context={
+                "lead_id": lead_id,
+                "thread_id": thread_id_override,
+                **(debug_context or {}),
+            },
         )
         response = tool_run.get("response")
         if tool_run.get("voice_note_action"):

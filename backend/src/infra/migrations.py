@@ -614,3 +614,78 @@ def apply_calendar_foundation_migration(engine: Engine):
         return
 
     logger.warning("Skipping calendar foundation migration for unsupported dialect: %s", dialect)
+
+
+def apply_calendar_debug_trace_migration(engine: Engine):
+    """
+    Ensures calendar debug traces table exists for step-by-step appointment diagnostics.
+    Safe to run repeatedly.
+    """
+    dialect = engine.dialect.name
+
+    if dialect == "postgresql":
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    """
+                    CREATE TABLE IF NOT EXISTS et_calendar_debug_traces (
+                        id BIGSERIAL PRIMARY KEY,
+                        tenant_id INTEGER REFERENCES et_tenants(id),
+                        agent_id INTEGER REFERENCES zairag_agents(id),
+                        lead_id INTEGER REFERENCES et_leads(id),
+                        thread_id INTEGER REFERENCES et_threads(id),
+                        inbound_message_id INTEGER REFERENCES et_messages(id),
+                        outbound_message_id INTEGER REFERENCES et_messages(id),
+                        event_id INTEGER REFERENCES et_calendar_events(id),
+                        stage VARCHAR(64) NOT NULL,
+                        status VARCHAR(32) NOT NULL DEFAULT 'info',
+                        message TEXT,
+                        details JSON,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """
+                )
+            )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calendar_debug_traces_tenant_id ON et_calendar_debug_traces(tenant_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calendar_debug_traces_created_at ON et_calendar_debug_traces(created_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calendar_debug_traces_thread_id ON et_calendar_debug_traces(thread_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calendar_debug_traces_lead_id ON et_calendar_debug_traces(lead_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calendar_debug_traces_inbound_message_id ON et_calendar_debug_traces(inbound_message_id)"))
+        logger.info("Calendar debug trace migration applied for PostgreSQL.")
+        return
+
+    if dialect == "sqlite":
+        insp = inspect(engine)
+        tables = set(insp.get_table_names())
+        with engine.begin() as conn:
+            if "et_calendar_debug_traces" not in tables:
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE et_calendar_debug_traces (
+                            id INTEGER PRIMARY KEY,
+                            tenant_id INTEGER,
+                            agent_id INTEGER,
+                            lead_id INTEGER,
+                            thread_id INTEGER,
+                            inbound_message_id INTEGER,
+                            outbound_message_id INTEGER,
+                            event_id INTEGER,
+                            stage VARCHAR(64) NOT NULL,
+                            status VARCHAR(32) NOT NULL DEFAULT 'info',
+                            message TEXT,
+                            details JSON,
+                            created_at TIMESTAMP
+                        )
+                        """
+                    )
+                )
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calendar_debug_traces_tenant_id ON et_calendar_debug_traces(tenant_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calendar_debug_traces_created_at ON et_calendar_debug_traces(created_at)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calendar_debug_traces_thread_id ON et_calendar_debug_traces(thread_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calendar_debug_traces_lead_id ON et_calendar_debug_traces(lead_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_calendar_debug_traces_inbound_message_id ON et_calendar_debug_traces(inbound_message_id)"))
+        logger.info("Calendar debug trace migration applied for SQLite.")
+        return
+
+    logger.warning("Skipping calendar debug trace migration for unsupported dialect: %s", dialect)

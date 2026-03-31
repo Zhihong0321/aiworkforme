@@ -5,7 +5,9 @@ from datetime import datetime, timedelta
 
 from src.infra.database import get_session
 from src.adapters.api.dependencies import require_tenant_access, AuthContext
-from src.adapters.db.calendar_models import CalendarConfig, CalendarEvent
+from src.adapters.db.calendar_models import CalendarActionLog, CalendarConfig, CalendarDebugTrace, CalendarEvent
+from src.adapters.db.messaging_models import UnifiedMessage
+from src.app.runtime.calendar_service import get_calendar_owner_for_agent
 
 router = APIRouter(prefix="/api/v1/calendar", tags=["Calendar Management"])
 
@@ -219,3 +221,160 @@ def get_availability(
             })
             
     return {"date": date.isoformat(), "slots": free_slots}
+
+
+@router.get("/debug")
+def calendar_debug_snapshot(
+    agent_id: Optional[int] = None,
+    lead_id: Optional[int] = None,
+    thread_id: Optional[int] = None,
+    inbound_message_id: Optional[int] = None,
+    limit: int = 50,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    safe_limit = max(1, min(int(limit or 50), 200))
+
+    trace_query = select(CalendarDebugTrace).where(CalendarDebugTrace.tenant_id == auth.tenant.id)
+    action_query = select(CalendarActionLog).where(CalendarActionLog.tenant_id == auth.tenant.id)
+    event_query = select(CalendarEvent).where(CalendarEvent.tenant_id == auth.tenant.id)
+    message_query = select(UnifiedMessage).where(UnifiedMessage.tenant_id == auth.tenant.id)
+
+    if agent_id is not None:
+        trace_query = trace_query.where(CalendarDebugTrace.agent_id == agent_id)
+        action_query = action_query.where(CalendarActionLog.agent_id == agent_id)
+        event_query = event_query.where(CalendarEvent.agent_id == agent_id)
+    if lead_id is not None:
+        trace_query = trace_query.where(CalendarDebugTrace.lead_id == lead_id)
+        action_query = action_query.where(CalendarActionLog.lead_id == lead_id)
+        event_query = event_query.where(CalendarEvent.lead_id == lead_id)
+        message_query = message_query.where(UnifiedMessage.lead_id == lead_id)
+    if thread_id is not None:
+        trace_query = trace_query.where(CalendarDebugTrace.thread_id == thread_id)
+        message_query = message_query.where(UnifiedMessage.thread_id == thread_id)
+    if inbound_message_id is not None:
+        trace_query = trace_query.where(CalendarDebugTrace.inbound_message_id == inbound_message_id)
+        message_query = message_query.where(UnifiedMessage.id == inbound_message_id)
+
+    traces = session.exec(
+        trace_query.order_by(CalendarDebugTrace.created_at.desc(), CalendarDebugTrace.id.desc()).limit(safe_limit)
+    ).all()
+    action_logs = session.exec(
+        action_query.order_by(CalendarActionLog.created_at.desc(), CalendarActionLog.id.desc()).limit(safe_limit)
+    ).all()
+    recent_messages = session.exec(
+        message_query.order_by(UnifiedMessage.created_at.desc(), UnifiedMessage.id.desc()).limit(safe_limit)
+    ).all()
+
+    owner_user_id = None
+    owner_events = []
+    if agent_id is not None:
+        owner_user_id = get_calendar_owner_for_agent(session, int(auth.tenant.id), int(agent_id))
+        if owner_user_id is not None:
+            owner_events = session.exec(
+                event_query.where(CalendarEvent.user_id == owner_user_id)
+                .order_by(CalendarEvent.created_at.desc(), CalendarEvent.id.desc())
+                .limit(safe_limit)
+            ).all()
+
+    auth_user_events = session.exec(
+        event_query.where(CalendarEvent.user_id == auth.user.id)
+        .order_by(CalendarEvent.created_at.desc(), CalendarEvent.id.desc())
+        .limit(safe_limit)
+    ).all()
+
+    return {
+        "scope": {
+            "tenant_id": auth.tenant.id,
+            "auth_user_id": auth.user.id,
+            "agent_id": agent_id,
+            "lead_id": lead_id,
+            "thread_id": thread_id,
+            "inbound_message_id": inbound_message_id,
+            "calendar_owner_user_id": owner_user_id,
+        },
+        "summary": {
+            "trace_count": len(traces),
+            "action_log_count": len(action_logs),
+            "auth_user_event_count": len(auth_user_events),
+            "owner_user_event_count": len(owner_events),
+        },
+        "traces": [
+            {
+                "id": row.id,
+                "stage": row.stage,
+                "status": row.status,
+                "message": row.message,
+                "agent_id": row.agent_id,
+                "lead_id": row.lead_id,
+                "thread_id": row.thread_id,
+                "inbound_message_id": row.inbound_message_id,
+                "outbound_message_id": row.outbound_message_id,
+                "event_id": row.event_id,
+                "details": row.details,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in traces
+        ],
+        "action_logs": [
+            {
+                "id": row.id,
+                "tool_name": row.tool_name,
+                "action": row.action,
+                "result_status": row.result_status,
+                "event_id": row.event_id,
+                "lead_id": row.lead_id,
+                "user_id": row.user_id,
+                "request_payload": row.request_payload,
+                "result_payload": row.result_payload,
+                "error_message": row.error_message,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in action_logs
+        ],
+        "auth_user_events": [
+            {
+                "id": row.id,
+                "user_id": row.user_id,
+                "lead_id": row.lead_id,
+                "agent_id": row.agent_id,
+                "title": row.title,
+                "status": row.status,
+                "meeting_type_name": row.meeting_type_name,
+                "region": row.region,
+                "start_time": row.start_time.isoformat() if row.start_time else None,
+                "end_time": row.end_time.isoformat() if row.end_time else None,
+                "pending_reason": row.pending_reason,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in auth_user_events
+        ],
+        "owner_user_events": [
+            {
+                "id": row.id,
+                "user_id": row.user_id,
+                "lead_id": row.lead_id,
+                "agent_id": row.agent_id,
+                "title": row.title,
+                "status": row.status,
+                "meeting_type_name": row.meeting_type_name,
+                "region": row.region,
+                "start_time": row.start_time.isoformat() if row.start_time else None,
+                "end_time": row.end_time.isoformat() if row.end_time else None,
+                "pending_reason": row.pending_reason,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in owner_events
+        ],
+        "recent_messages": [
+            {
+                "id": row.id,
+                "direction": row.direction,
+                "delivery_status": row.delivery_status,
+                "text_preview": str(row.text_content or "")[:240],
+                "raw_payload": row.raw_payload if isinstance(row.raw_payload, dict) else {},
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in recent_messages
+        ],
+    }

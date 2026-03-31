@@ -16,7 +16,8 @@ import httpx
 from sqlalchemy import text
 from sqlmodel import Session, select
 
-from src.app.runtime.agent_runtime import ConversationAgentRuntime
+from src.app.runtime.agent_runtime import ConversationAgentRuntime, _is_scheduling_request
+from src.app.runtime.calendar_debug import record_calendar_debug
 from src.app.runtime.leads_service import get_or_create_default_workspace
 from src.app.runtime.sales_materials import (
     SALES_MATERIAL_MAX_BYTES,
@@ -1189,6 +1190,22 @@ async def _process_one_inbound(session: Session, message: Any):
         "Running AI agent (id=%s, name=%s) for inbound message_id=%s (lead=%s)",
         agent.id, agent.name, message.id, message.lead_id,
     )
+    record_calendar_debug(
+        session,
+        tenant_id=message.tenant_id,
+        agent_id=agent.id,
+        lead_id=message.lead_id,
+        thread_id=message.thread_id,
+        inbound_message_id=message.id,
+        stage="inbound_processing_started",
+        status="info",
+        message="Inbound message entered agent runtime.",
+        details={
+            "channel": getattr(message, "channel", None),
+            "delivery_status": getattr(message, "delivery_status", None),
+            "text_preview": str(prepared.get("user_message") or getattr(message, "text_content", "") or "")[:240],
+        },
+    )
     runtime = ConversationAgentRuntime(session, _get_llm_router())
     runtime_kwargs = _filter_supported_run_turn_kwargs(
         runtime.run_turn,
@@ -1202,6 +1219,7 @@ async def _process_one_inbound(session: Session, message: Any):
             "history_override": history,
             "task_override": prepared.get("task"),
             "llm_extra_params": prepared.get("llm_extra_params"),
+            "debug_context": {"inbound_message_id": message.id},
         },
     )
     result = await runtime.run_turn(
@@ -1212,6 +1230,23 @@ async def _process_one_inbound(session: Session, message: Any):
 
     if status == "sent":
         reply_text = result["content"]
+        ai_trace = result.get("ai_trace") or {}
+        tool_events = list(ai_trace.get("tool_events") or [])
+        record_calendar_debug(
+            session,
+            tenant_id=message.tenant_id,
+            agent_id=agent.id,
+            lead_id=message.lead_id,
+            thread_id=message.thread_id,
+            inbound_message_id=message.id,
+            stage="inbound_runtime_result",
+            status="ok",
+            message="Agent runtime returned a reply.",
+            details={
+                "tool_events_count": len(tool_events),
+                "reply_preview": str(reply_text or "")[:240],
+            },
+        )
         if str(result.get("message_type") or "text").strip().lower() == "audio":
             _enqueue_outbound_reply(
                 session=session,
@@ -1263,6 +1298,19 @@ async def _process_one_inbound(session: Session, message: Any):
                     material=planned["material"],
                     planner_trace=planned.get("planner_trace"),
                 )
+        if not tool_events and _is_scheduling_request(prepared.get("user_message") or message.text_content or ""):
+            record_calendar_debug(
+                session,
+                tenant_id=message.tenant_id,
+                agent_id=agent.id,
+                lead_id=message.lead_id,
+                thread_id=message.thread_id,
+                inbound_message_id=message.id,
+                stage="inbound_no_calendar_tool_events",
+                status="warn",
+                message="Reply was sent without any tool events recorded.",
+                details={"reply_preview": str(reply_text or "")[:240]},
+            )
         message.delivery_status = "inbound_ai_replied"
         logger.info(
             "AI reply enqueued for message_id=%s: %.80s…", message.id, reply_text

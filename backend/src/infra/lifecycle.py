@@ -48,6 +48,7 @@ from src.infra.migrations import (
     apply_agent_preferred_channel_migration,
     apply_agent_sales_material_links_migration,
     apply_calendar_foundation_migration,
+    apply_calendar_debug_trace_migration,
     apply_legacy_table_rename_migration,
     apply_message_usage_columns_migration,
     apply_multitenant_additive_migration,
@@ -115,6 +116,7 @@ async def run_startup_sequence() -> None:
         apply_agent_calendar_foundation_migration(engine)
         apply_agent_sales_material_links_migration(engine)
         apply_calendar_foundation_migration(engine)
+        apply_calendar_debug_trace_migration(engine)
 
         schema_check = evaluate_message_schema_compat(engine)
         STARTUP_HEALTH["schema"] = schema_check

@@ -77,3 +77,21 @@ class CalendarActionLog(SQLModel, table=True):
     result_status: str = Field(index=True)
     error_message: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+
+
+class CalendarDebugTrace(SQLModel, table=True):
+    __tablename__ = "et_calendar_debug_traces"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="et_tenants.id", index=True)
+    agent_id: Optional[int] = Field(default=None, foreign_key="zairag_agents.id", index=True)
+    lead_id: Optional[int] = Field(default=None, foreign_key="et_leads.id", index=True)
+    thread_id: Optional[int] = Field(default=None, foreign_key="et_threads.id", index=True)
+    inbound_message_id: Optional[int] = Field(default=None, foreign_key="et_messages.id", index=True)
+    outbound_message_id: Optional[int] = Field(default=None, foreign_key="et_messages.id", index=True)
+    event_id: Optional[int] = Field(default=None, foreign_key="et_calendar_events.id", index=True)
+    stage: str = Field(index=True)
+    status: str = Field(default="info", index=True)
+    message: Optional[str] = None
+    details: Dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow, index=True)
