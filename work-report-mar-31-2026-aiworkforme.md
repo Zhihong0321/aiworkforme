@@ -6,5 +6,6 @@ REPO NAME : AIworkforMe
 - Fixed calendar settings save failure by using shared frontend API tenant header handling
 - Hardened auth tenant parsing so blank calendar tenant headers no longer fail saves
 - Built calendar debug tracing for inbound scheduling, tool usage, and owner-vs-viewer calendar visibility diagnostics
+- Clarified agent calendar UI with real booking toggle and owner selection
 
 =====================

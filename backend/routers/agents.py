@@ -72,6 +72,13 @@ class AgentSalesMaterialLinkCreate(BaseModel):
     description: str
 
 
+class CalendarOwnerOption(BaseModel):
+    user_id: int
+    email: str
+    role: str
+    is_active: bool = True
+
+
 def _validate_preferred_channel_session(
     session: Session,
     tenant_id: int,
@@ -309,6 +316,39 @@ def get_agent(
         linked_mcp_ids=list(linked_ids),
         linked_mcp_count=len(linked_ids)
     )
+
+
+@router.get("/{agent_id}/calendar-owner-options", response_model=List[CalendarOwnerOption])
+def list_calendar_owner_options(
+    agent_id: int,
+    session: Session = Depends(get_session),
+    auth: AuthContext = Depends(require_tenant_access),
+):
+    agent = session.get(Agent, agent_id)
+    if not agent or agent.tenant_id != auth.tenant.id:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    rows = session.exec(
+        select(TenantMembership, User)
+        .join(User, User.id == TenantMembership.user_id)
+        .where(
+            TenantMembership.tenant_id == auth.tenant.id,
+            TenantMembership.is_active == True,
+            User.is_active == True,
+        )
+        .order_by(User.email.asc())
+    ).all()
+
+    return [
+        CalendarOwnerOption(
+            user_id=int(user.id),
+            email=user.email,
+            role=str(membership.role.value if hasattr(membership.role, "value") else membership.role),
+            is_active=bool(membership.is_active and user.is_active),
+        )
+        for membership, user in rows
+        if user.id is not None
+    ]
 
 
 @router.post("/{agent_id}/instruction-optimizer", response_model=AgentInstructionOptimizeResponse)

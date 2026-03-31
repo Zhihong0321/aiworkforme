@@ -20,6 +20,7 @@ const toast = ref('')
 
 const channels = ref([])
 const mcpServers = ref([])
+const calendarOwnerOptions = ref([])
 const knowledgeFiles = ref([])
 const leads = ref([])
 const threads = ref([])
@@ -64,7 +65,23 @@ const form = reactive({
   emoji_level: 'none',
   segment_delay_ms: 800,
   preferred_channel_session_id: null,
+  calendar_enabled: false,
+  calendar_owner_user_id: null,
 })
+
+const isCalendarServer = (server) => {
+  const script = String(server?.script || '').toLowerCase()
+  const name = String(server?.name || '').toLowerCase()
+  return script.includes('calendar') || name.includes('calendar')
+}
+
+const calendarSkillLinked = computed(() => (
+  mcpServers.value.some((server) => isCalendarServer(server) && form.linkedMcpIds.includes(server.id))
+))
+
+const selectedCalendarOwner = computed(() => (
+  calendarOwnerOptions.value.find((option) => Number(option.user_id) === Number(form.calendar_owner_user_id || 0)) || null
+))
 
 const activeTab = computed(() => (
   validTabs.includes(String(route.query.tab || 'inbox'))
@@ -137,6 +154,8 @@ const applyAgentToForm = (agent) => {
   form.emoji_level = agent?.emoji_level ?? 'none'
   form.segment_delay_ms = agent?.segment_delay_ms ?? 800
   form.preferred_channel_session_id = agent?.preferred_channel_session_id ?? null
+  form.calendar_enabled = agent?.calendar_enabled ?? false
+  form.calendar_owner_user_id = agent?.calendar_owner_user_id ?? null
 }
 
 const formatFileSize = (bytes) => {
@@ -210,8 +229,18 @@ const loadMcpServers = async () => {
         id: server.id ?? index,
         name: server.name ?? 'server',
         description: server.description || `Tool access via ${server.name}`,
+        script: server.script || '',
       }))
     : []
+}
+
+const loadCalendarOwnerOptions = async () => {
+  if (!form.id) {
+    calendarOwnerOptions.value = []
+    return
+  }
+  const data = await request(`/agents/${form.id}/calendar-owner-options`).catch(() => [])
+  calendarOwnerOptions.value = Array.isArray(data) ? data : []
 }
 
 const loadSalesMaterials = async () => {
@@ -274,6 +303,7 @@ const loadDashboard = async () => {
   await Promise.all([
     loadChannels(),
     loadMcpServers(),
+    loadCalendarOwnerOptions(),
     loadSalesMaterials(),
     loadKnowledge(),
     loadLeads(),
@@ -296,6 +326,8 @@ const saveAgent = async (successMessage = 'Agent settings saved') => {
         emoji_level: form.emoji_level,
         segment_delay_ms: form.segment_delay_ms,
         preferred_channel_session_id: form.preferred_channel_session_id,
+        calendar_enabled: form.calendar_enabled,
+        calendar_owner_user_id: form.calendar_owner_user_id,
       }),
     })
 
@@ -346,9 +378,9 @@ const toggleSkill = async (serverId) => {
       localAgent.linked_mcp_ids = [...form.linkedMcpIds]
       localAgent.linked_mcp_count = form.linkedMcpIds.length
     }
-    setToast('Skills updated')
+    setToast('Tool access updated')
   } catch (error) {
-    setToast(`Skill update failed: ${error.message}`)
+    setToast(`Tool access update failed: ${error.message}`)
   }
 }
 
@@ -982,6 +1014,70 @@ onMounted(loadDashboard)
                   class="mt-4 w-full cursor-pointer"
                 />
               </div>
+
+              <div class="rounded-[1.5rem] border border-line/80 bg-surface p-5">
+                <div class="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <p class="font-semibold text-ink">Calendar Booking</p>
+                    <p class="mt-1 text-xs text-ink-muted">
+                      This is the real booking switch. The AI can only write pending or confirmed appointments when this is on and an owner is selected.
+                    </p>
+                  </div>
+                  <span
+                    class="rounded-full px-3 py-1 text-xs font-bold"
+                    :class="form.calendar_enabled ? 'bg-emerald-500/10 text-emerald-700' : 'bg-slate-200 text-slate-700'"
+                  >
+                    {{ form.calendar_enabled ? 'Booking enabled' : 'Booking disabled' }}
+                  </span>
+                </div>
+
+                <div class="mt-5 grid gap-4 lg:grid-cols-2">
+                  <div class="rounded-2xl border border-line/70 bg-surface-elevated/80 p-4">
+                    <div class="flex items-center justify-between gap-3">
+                      <div>
+                        <p class="font-semibold text-ink">Enable Calendar Booking</p>
+                        <p class="mt-1 text-xs text-ink-muted">Turns on real calendar writes for this agent.</p>
+                      </div>
+                      <label class="relative inline-flex cursor-pointer items-center">
+                        <input v-model="form.calendar_enabled" type="checkbox" class="peer sr-only" />
+                        <div class="h-6 w-11 rounded-full bg-slate-200 transition peer-checked:bg-primary peer-checked:after:translate-x-full after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all"></div>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div class="rounded-2xl border border-line/70 bg-surface-elevated/80 p-4">
+                    <label class="block">
+                      <span class="font-semibold text-ink">Calendar Owner</span>
+                      <span class="mt-1 block text-xs text-ink-muted">Appointments are written into this tenant user’s calendar.</span>
+                      <select
+                        v-model.number="form.calendar_owner_user_id"
+                        class="mt-3 h-12 w-full rounded-xl border border-line/80 bg-surface px-4 text-sm text-ink focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+                      >
+                        <option :value="null">Select a tenant user</option>
+                        <option
+                          v-for="option in calendarOwnerOptions"
+                          :key="option.user_id"
+                          :value="option.user_id"
+                        >
+                          {{ option.email }} · {{ option.role }}
+                        </option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+
+                <div class="mt-4 space-y-3">
+                  <div v-if="!calendarSkillLinked" class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    Calendar tool access is still off below. Turn on the Calendar Management tool in Tool Access too, or the AI cannot call the calendar functions.
+                  </div>
+                  <div v-if="form.calendar_enabled && !selectedCalendarOwner" class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                    Booking is enabled, but no calendar owner is selected yet. The AI still will not be able to save appointments until you choose one.
+                  </div>
+                  <div v-if="selectedCalendarOwner" class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                    Calendar events for this agent will be written into {{ selectedCalendarOwner.email }}.
+                  </div>
+                </div>
+              </div>
             </div>
           </article>
 
@@ -1121,12 +1217,12 @@ onMounted(loadDashboard)
           <article class="rounded-[1.75rem] border border-line/80 bg-surface-elevated/90 p-5 shadow-shell">
             <div class="flex items-center justify-between gap-4 pb-4">
               <div>
-                <h2 class="text-xl font-bold text-ink">Skills</h2>
-                <p class="mt-1 text-sm text-ink-muted">MCP tools this agent can use.</p>
+                <h2 class="text-xl font-bold text-ink">Tool Access</h2>
+                <p class="mt-1 text-sm text-ink-muted">MCP tools this agent can use. Turning a tool on here only gives access; it does not enable booking by itself.</p>
               </div>
             </div>
             <div v-if="mcpServers.length === 0" class="rounded-2xl border border-dashed border-line/80 px-4 py-6 text-sm text-ink-muted">
-              No skills registered yet.
+              No tools registered yet.
             </div>
             <div v-else class="space-y-3">
               <div
@@ -1136,7 +1232,9 @@ onMounted(loadDashboard)
               >
                 <div class="min-w-0">
                   <p class="truncate font-semibold text-ink">{{ server.name }}</p>
-                  <p class="truncate text-xs text-ink-muted">{{ server.description }}</p>
+                  <p class="truncate text-xs text-ink-muted">
+                    {{ isCalendarServer(server) ? 'Calendar tool access only. Also turn on Calendar Booking and choose an owner in the Calendar Booking section.' : server.description }}
+                  </p>
                 </div>
                 <label class="relative inline-flex cursor-pointer items-center">
                   <input
