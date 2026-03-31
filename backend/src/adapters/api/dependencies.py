@@ -100,8 +100,12 @@ def get_auth_context(
     selected_tenant_id: Optional[int] = None
 
     if tenant_header is not None:
-        try: selected_tenant_id = int(tenant_header)
-        except ValueError: raise HTTPException(status_code=400, detail="X-Tenant-Id must be an integer")
+        normalized_tenant_header = str(tenant_header).strip()
+        if normalized_tenant_header and normalized_tenant_header.lower() not in {"null", "undefined"}:
+            try:
+                selected_tenant_id = int(normalized_tenant_header)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="X-Tenant-Id must be an integer")
     elif isinstance(tenant_id_from_token, int):
         selected_tenant_id = tenant_id_from_token
 
