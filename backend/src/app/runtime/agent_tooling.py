@@ -73,6 +73,17 @@ def _resolved_server_launch(server: MCPServer) -> Tuple[List[str], str, Dict[str
     if not os.path.isdir(cwd):
         cwd = fallback_cwd
 
+    if str(server.command or "").strip().lower() == "python":
+        existing_pythonpath = str(env_vars.get("PYTHONPATH") or "").strip()
+        pythonpath_parts = [cwd]
+        if fallback_cwd not in pythonpath_parts:
+            pythonpath_parts.append(fallback_cwd)
+        if existing_pythonpath:
+            pythonpath_parts.append(existing_pythonpath)
+        env_vars["PYTHONPATH"] = os.pathsep.join(
+            [part for index, part in enumerate(pythonpath_parts) if part and part not in pythonpath_parts[:index]]
+        )
+
     return args, cwd, env_vars
 
 

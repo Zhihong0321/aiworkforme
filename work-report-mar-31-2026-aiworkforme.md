@@ -9,5 +9,6 @@ REPO NAME : AIworkforMe
 - Clarified agent calendar UI with real booking toggle and owner selection
 - Fixed calendar page to follow active agent owner and clarified calendar tool-only toggle
 - Fixed inbound MCP runtime path so calendar tools can actually load
+- Fixed calendar MCP boot by injecting backend PYTHONPATH for runtime tool loading
 
 =====================
