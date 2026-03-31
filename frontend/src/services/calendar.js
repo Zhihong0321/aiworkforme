@@ -1,27 +1,4 @@
-import { store } from '../store'
-
-const API_BASE = (import.meta.env.VITE_API_BASE || `${window.location.origin}/api/v1`).replace(/\/$/, '')
-
-async function request(path, options = {}) {
-    const url = `${API_BASE}${path}`
-    const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'X-Tenant-Id': store.activeWorkspace?.tenant_id || ''
-    }
-
-    const response = await fetch(url, {
-        ...options,
-        headers: { ...headers, ...options.headers }
-    })
-
-    if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        throw new Error(err.detail || 'Request failed')
-    }
-
-    return response.json()
-}
+import { request } from './api'
 
 export const calendarService = {
     async getConfig() {
@@ -31,7 +8,7 @@ export const calendarService = {
     async updateConfig(config) {
         return request('/calendar/config', {
             method: 'POST',
-            body: JSON.stringify(config)
+            body: JSON.stringify(config),
         })
     },
 
@@ -46,17 +23,17 @@ export const calendarService = {
     async createEvent(event) {
         return request('/calendar/events', {
             method: 'POST',
-            body: JSON.stringify(event)
+            body: JSON.stringify(event),
         })
     },
 
     async deleteEvent(eventId) {
         return request(`/calendar/events/${eventId}`, {
-            method: 'DELETE'
+            method: 'DELETE',
         })
     },
 
     async getAvailability(date, durationMinutes = 30) {
         return request(`/calendar/availability?date=${date.toISOString()}&duration_minutes=${durationMinutes}`)
-    }
+    },
 }
