@@ -75,6 +75,16 @@ const isCalendarServer = (server) => {
   return script.includes('calendar') || name.includes('calendar')
 }
 
+const getToolAccessName = (server) => (
+  isCalendarServer(server) ? 'Calendar Tool Access' : (server?.name || 'server')
+)
+
+const getToolAccessDescription = (server) => (
+  isCalendarServer(server)
+    ? 'This only lets the agent call calendar functions. It does not turn booking on. Use the Calendar Booking toggle above.'
+    : server.description
+)
+
 const calendarSkillLinked = computed(() => (
   mcpServers.value.some((server) => isCalendarServer(server) && form.linkedMcpIds.includes(server.id))
 ))
@@ -365,6 +375,7 @@ const toggleSkill = async (serverId) => {
   if (!form.id) return
 
   const isLinked = form.linkedMcpIds.includes(serverId)
+  const server = mcpServers.value.find((item) => Number(item.id) === Number(serverId))
   try {
     if (isLinked) {
       await request(`/agents/${form.id}/link-mcp/${serverId}`, { method: 'DELETE' })
@@ -378,7 +389,11 @@ const toggleSkill = async (serverId) => {
       localAgent.linked_mcp_ids = [...form.linkedMcpIds]
       localAgent.linked_mcp_count = form.linkedMcpIds.length
     }
-    setToast('Tool access updated')
+    setToast(
+      isCalendarServer(server)
+        ? 'Calendar tool access updated. Booking still uses the Calendar Booking toggle above.'
+        : 'Tool access updated'
+    )
   } catch (error) {
     setToast(`Tool access update failed: ${error.message}`)
   }
@@ -1231,9 +1246,17 @@ onMounted(loadDashboard)
                 class="flex items-center justify-between gap-3 rounded-2xl border border-line/80 px-4 py-3"
               >
                 <div class="min-w-0">
-                  <p class="truncate font-semibold text-ink">{{ server.name }}</p>
-                  <p class="truncate text-xs text-ink-muted">
-                    {{ isCalendarServer(server) ? 'Calendar tool access only. Also turn on Calendar Booking and choose an owner in the Calendar Booking section.' : server.description }}
+                  <div class="flex items-center gap-2">
+                    <p class="truncate font-semibold text-ink">{{ getToolAccessName(server) }}</p>
+                    <span
+                      v-if="isCalendarServer(server)"
+                      class="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-amber-800"
+                    >
+                      Tool Only
+                    </span>
+                  </div>
+                  <p class="text-xs text-ink-muted">
+                    {{ getToolAccessDescription(server) }}
                   </p>
                 </div>
                 <label class="relative inline-flex cursor-pointer items-center">

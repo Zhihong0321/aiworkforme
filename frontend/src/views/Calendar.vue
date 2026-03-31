@@ -41,6 +41,7 @@ const newEvent = ref({
   region: '',
   description: ''
 })
+const activeAgentName = computed(() => store.activeAgent?.name || 'Active Agent')
 
 // Fetch data
 const fetchData = async () => {
@@ -210,6 +211,7 @@ const handleDeleteEvent = async (id) => {
        <div class="flex flex-col gap-1 mb-4">
          <h1 class="text-3xl font-semibold text-slate-900 tracking-tight">Calendar</h1>
          <p class="text-[10px] text-blue-600 font-bold uppercase tracking-widest mt-1">Availability & AI Scheduling</p>
+         <p class="text-xs text-slate-500 mt-1">Showing calendar for {{ activeAgentName }}</p>
        </div>
        
        <!-- Tab Navigation (Mobile friendly Segmented Control) -->

@@ -30,14 +30,30 @@ def _parse_optional_datetime(raw_value: Optional[str]) -> Optional[datetime]:
         return None
     return datetime.fromisoformat(text.replace("Z", "+00:00"))
 
+
+def _resolve_calendar_user_id(
+    session: Session,
+    auth: AuthContext,
+    agent_id: Optional[int] = None,
+) -> int:
+    if agent_id is None:
+        return int(auth.user.id)
+
+    owner_user_id = get_calendar_owner_for_agent(session, int(auth.tenant.id), int(agent_id))
+    if owner_user_id is None:
+        raise HTTPException(status_code=400, detail="Active agent has no calendar owner configured")
+    return int(owner_user_id)
+
 @router.get("/config", response_model=CalendarConfig)
 def get_calendar_config(
+    agent_id: Optional[int] = None,
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access)
 ):
+    target_user_id = _resolve_calendar_user_id(session, auth, agent_id)
     config = session.exec(
         select(CalendarConfig).where(
-            CalendarConfig.user_id == auth.user.id,
+            CalendarConfig.user_id == target_user_id,
             CalendarConfig.tenant_id == auth.tenant.id
         )
     ).first()
@@ -45,7 +61,7 @@ def get_calendar_config(
     if not config:
         # Create default config if not exists
         config = CalendarConfig(
-            user_id=auth.user.id,
+            user_id=target_user_id,
             tenant_id=auth.tenant.id,
             meeting_types=[{"name": "Discovery Call", "duration_minutes": 30}],
             available_regions=["Online", "Office"],
@@ -65,18 +81,20 @@ def get_calendar_config(
 @router.post("/config", response_model=CalendarConfig)
 def update_calendar_config(
     payload: Dict[str, Any],
+    agent_id: Optional[int] = None,
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access)
 ):
+    target_user_id = _resolve_calendar_user_id(session, auth, agent_id)
     config = session.exec(
         select(CalendarConfig).where(
-            CalendarConfig.user_id == auth.user.id,
+            CalendarConfig.user_id == target_user_id,
             CalendarConfig.tenant_id == auth.tenant.id
         )
     ).first()
     
     if not config:
-        config = CalendarConfig(user_id=auth.user.id, tenant_id=auth.tenant.id)
+        config = CalendarConfig(user_id=target_user_id, tenant_id=auth.tenant.id)
     
     if "meeting_types" in payload:
         config.meeting_types = payload["meeting_types"]
@@ -106,11 +124,13 @@ def update_calendar_config(
 def list_calendar_events(
     start: Optional[datetime] = None,
     end: Optional[datetime] = None,
+    agent_id: Optional[int] = None,
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access)
 ):
+    target_user_id = _resolve_calendar_user_id(session, auth, agent_id)
     query = select(CalendarEvent).where(
-        CalendarEvent.user_id == auth.user.id,
+        CalendarEvent.user_id == target_user_id,
         CalendarEvent.tenant_id == auth.tenant.id
     )
     if start:
@@ -125,12 +145,14 @@ def list_calendar_events(
 @router.post("/events", response_model=CalendarEvent)
 def create_calendar_event(
     event_data: Dict[str, Any],
+    agent_id: Optional[int] = None,
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access)
 ):
+    target_user_id = _resolve_calendar_user_id(session, auth, agent_id)
     # Using Dict for flexible input validation or expansion
     event = CalendarEvent(
-        user_id=auth.user.id,
+        user_id=target_user_id,
         tenant_id=auth.tenant.id,
         lead_id=event_data.get("lead_id"),
         title=event_data.get("title", "New Event"),
@@ -159,11 +181,13 @@ def create_calendar_event(
 @router.delete("/events/{event_id}")
 def delete_calendar_event(
     event_id: int,
+    agent_id: Optional[int] = None,
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access)
 ):
+    target_user_id = _resolve_calendar_user_id(session, auth, agent_id)
     event = session.get(CalendarEvent, event_id)
-    if not event or event.user_id != auth.user.id:
+    if not event or event.user_id != target_user_id or event.tenant_id != auth.tenant.id:
         raise HTTPException(status_code=404, detail="Event not found")
     
     session.delete(event)
@@ -174,9 +198,11 @@ def delete_calendar_event(
 def get_availability(
     date: datetime,
     duration_minutes: int = 30,
+    agent_id: Optional[int] = None,
     session: Session = Depends(get_session),
     auth: AuthContext = Depends(require_tenant_access)
 ):
+    target_user_id = _resolve_calendar_user_id(session, auth, agent_id)
     """
     Check availability for a specific date.
     Returns list of free slots (tuples of start/end).
@@ -190,7 +216,7 @@ def get_availability(
     # Get all events for that day
     events = session.exec(
         select(CalendarEvent).where(
-            CalendarEvent.user_id == auth.user.id,
+            CalendarEvent.user_id == target_user_id,
             CalendarEvent.tenant_id == auth.tenant.id,
             CalendarEvent.start_time < day_end,
             CalendarEvent.end_time > day_start,
