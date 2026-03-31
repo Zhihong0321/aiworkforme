@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlmodel import Session, select
 
 from src.adapters.api.dependencies import get_mcp_manager
+from src.adapters.db.agent_models import Agent
 from src.adapters.db.links import AgentMCPServer
 from src.adapters.db.mcp_models import MCPServer
 
@@ -20,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 VOICE_NOTE_TOOL_NAME = "request_voice_note_followup"
 VOICE_NOTE_SCRIPT = "voice_note_followup.py"
+CALENDAR_TOOL_NAMES = {"book_appointment", "get_user_availability", "create_pending_appointment"}
+CALENDAR_SCRIPT = "calendar_mcp.py"
 
 
 def has_agent_mcp_script(session: Session, agent_id: int, script_name: str) -> bool:
@@ -77,6 +80,7 @@ async def load_agent_tools_for_runtime(
     agent_id: int,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
     manager = get_mcp_manager()
+    agent = session.get(Agent, agent_id)
     linked_rows = session.exec(
         select(MCPServer)
         .join(AgentMCPServer, AgentMCPServer.mcp_server_id == MCPServer.id)
@@ -88,6 +92,8 @@ async def load_agent_tools_for_runtime(
     tool_meta: Dict[str, Dict[str, Any]] = {}
 
     for server in linked_rows:
+        if str(server.script or "").strip() == CALENDAR_SCRIPT and not bool(getattr(agent, "calendar_enabled", False)):
+            continue
         try:
             status = await manager.get_mcp_status(str(server.id))
             if status.get("status") == "not found":
@@ -104,13 +110,34 @@ async def load_agent_tools_for_runtime(
             for tool in server_tools:
                 tool_def = tool.model_dump(exclude_none=True)
                 tool_name = str(tool_def["name"])
+                parameters = dict(tool_def.get("inputSchema") or {"type": "object", "properties": {}})
+                description = tool_def.get("description")
+                if tool_name in CALENDAR_TOOL_NAMES:
+                    properties = dict(parameters.get("properties") or {})
+                    properties.pop("tenant_id", None)
+                    properties.pop("agent_id", None)
+                    parameters["properties"] = properties
+                    required = [
+                        item
+                        for item in list(parameters.get("required") or [])
+                        if item not in {"tenant_id", "agent_id"}
+                    ]
+                    if required:
+                        parameters["required"] = required
+                    else:
+                        parameters.pop("required", None)
+                    description = (
+                        f"{description} Authenticated tenant and agent identity is injected automatically."
+                        if description
+                        else "Authenticated tenant and agent identity is injected automatically."
+                    )
                 tools.append(
                     {
                         "type": "function",
                         "function": {
                             "name": tool_name,
-                            "description": tool_def.get("description"),
-                            "parameters": tool_def.get("inputSchema"),
+                            "description": description,
+                            "parameters": parameters,
                         },
                     }
                 )

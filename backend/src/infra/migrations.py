@@ -515,3 +515,102 @@ def apply_agent_preferred_channel_migration(engine: Engine):
         return
 
     logger.warning("Skipping agent preferred channel migration for unsupported dialect: %s", dialect)
+
+
+def apply_agent_calendar_foundation_migration(engine: Engine):
+    """
+    Ensures agents can be calendar-enabled and point to a calendar owner user.
+    Safe to run repeatedly.
+    """
+    dialect = engine.dialect.name
+    if dialect == "postgresql":
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE zairag_agents ADD COLUMN IF NOT EXISTS calendar_enabled BOOLEAN DEFAULT FALSE"))
+            conn.execute(text("ALTER TABLE zairag_agents ADD COLUMN IF NOT EXISTS calendar_owner_user_id INTEGER REFERENCES et_users(id)"))
+            conn.execute(text("ALTER TABLE zairag_agents ADD COLUMN IF NOT EXISTS calendar_require_region_validation BOOLEAN DEFAULT TRUE"))
+            conn.execute(text("ALTER TABLE zairag_agents ADD COLUMN IF NOT EXISTS calendar_require_meeting_type_validation BOOLEAN DEFAULT TRUE"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_zairag_agents_calendar_owner_user_id ON zairag_agents(calendar_owner_user_id)"))
+        logger.info("Agent calendar foundation migration applied for PostgreSQL.")
+        return
+
+    if dialect == "sqlite":
+        insp = inspect(engine)
+        tables = set(insp.get_table_names())
+        if "zairag_agents" not in tables:
+            return
+        existing_cols = {col["name"] for col in insp.get_columns("zairag_agents")}
+        with engine.begin() as conn:
+            if "calendar_enabled" not in existing_cols:
+                conn.execute(text("ALTER TABLE zairag_agents ADD COLUMN calendar_enabled BOOLEAN DEFAULT FALSE"))
+            if "calendar_owner_user_id" not in existing_cols:
+                conn.execute(text("ALTER TABLE zairag_agents ADD COLUMN calendar_owner_user_id INTEGER REFERENCES et_users(id)"))
+            if "calendar_require_region_validation" not in existing_cols:
+                conn.execute(text("ALTER TABLE zairag_agents ADD COLUMN calendar_require_region_validation BOOLEAN DEFAULT TRUE"))
+            if "calendar_require_meeting_type_validation" not in existing_cols:
+                conn.execute(text("ALTER TABLE zairag_agents ADD COLUMN calendar_require_meeting_type_validation BOOLEAN DEFAULT TRUE"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_zairag_agents_calendar_owner_user_id ON zairag_agents(calendar_owner_user_id)"))
+        logger.info("Agent calendar foundation migration applied for SQLite.")
+        return
+
+    logger.warning("Skipping agent calendar foundation migration for unsupported dialect: %s", dialect)
+
+
+def apply_calendar_foundation_migration(engine: Engine):
+    """
+    Ensures calendar config and events support production scheduling metadata.
+    Safe to run repeatedly.
+    """
+    dialect = engine.dialect.name
+    config_columns = {
+        "working_hours": "JSON",
+        "buffer_minutes": "INTEGER DEFAULT 0",
+        "advance_notice_minutes": "INTEGER DEFAULT 0",
+        "default_meeting_duration_minutes": "INTEGER DEFAULT 30",
+        "calendar_enabled": "BOOLEAN DEFAULT TRUE",
+    }
+    event_columns = {
+        "agent_id": "INTEGER REFERENCES zairag_agents(id)",
+        "source": "VARCHAR(32) DEFAULT 'manual'",
+        "needs_human_followup": "BOOLEAN DEFAULT FALSE",
+        "pending_reason": "TEXT",
+        "customer_notes": "TEXT",
+        "requested_start_time": "TIMESTAMP",
+        "requested_end_time": "TIMESTAMP",
+        "resolution_notes": "TEXT",
+    }
+
+    if dialect == "postgresql":
+        with engine.begin() as conn:
+            for name, ddl in config_columns.items():
+                conn.execute(text(f"ALTER TABLE et_calendar_configs ADD COLUMN IF NOT EXISTS {name} {ddl}"))
+            for name, ddl in event_columns.items():
+                conn.execute(text(f"ALTER TABLE et_calendar_events ADD COLUMN IF NOT EXISTS {name} {ddl}"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_et_calendar_events_agent_id ON et_calendar_events(agent_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_et_calendar_events_tenant_user_status ON et_calendar_events(tenant_id, user_id, status)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_et_calendar_events_tenant_lead ON et_calendar_events(tenant_id, lead_id)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS idx_et_calendar_events_followup_status ON et_calendar_events(tenant_id, needs_human_followup, status)"))
+        logger.info("Calendar foundation migration applied for PostgreSQL.")
+        return
+
+    if dialect == "sqlite":
+        insp = inspect(engine)
+        tables = set(insp.get_table_names())
+        with engine.begin() as conn:
+            if "et_calendar_configs" in tables:
+                existing_cols = {col["name"] for col in insp.get_columns("et_calendar_configs")}
+                for name, ddl in config_columns.items():
+                    if name not in existing_cols:
+                        conn.execute(text(f"ALTER TABLE et_calendar_configs ADD COLUMN {name} {ddl}"))
+            if "et_calendar_events" in tables:
+                existing_cols = {col["name"] for col in insp.get_columns("et_calendar_events")}
+                for name, ddl in event_columns.items():
+                    if name not in existing_cols:
+                        conn.execute(text(f"ALTER TABLE et_calendar_events ADD COLUMN {name} {ddl}"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_et_calendar_events_agent_id ON et_calendar_events(agent_id)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_et_calendar_events_tenant_user_status ON et_calendar_events(tenant_id, user_id, status)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_et_calendar_events_tenant_lead ON et_calendar_events(tenant_id, lead_id)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_et_calendar_events_followup_status ON et_calendar_events(tenant_id, needs_human_followup, status)"))
+        logger.info("Calendar foundation migration applied for SQLite.")
+        return
+
+    logger.warning("Skipping calendar foundation migration for unsupported dialect: %s", dialect)

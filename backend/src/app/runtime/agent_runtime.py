@@ -5,6 +5,7 @@ PURPOSE: Unified conversation runtime orchestration.
 import importlib
 import logging
 import json
+import re
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from sqlmodel import Session
@@ -23,6 +24,33 @@ from src.ports.llm import LLMRouterPort
 
 logger = logging.getLogger(__name__)
 
+CALENDAR_TOOL_NAMES = {"book_appointment", "get_user_availability", "create_pending_appointment"}
+SCHEDULING_KEYWORDS = (
+    "appoint",
+    "appointment",
+    "availability",
+    "available",
+    "book",
+    "booking",
+    "calendar",
+    "meeting",
+    "reschedule",
+    "schedule",
+    "slot",
+    "time slot",
+)
+SCHEDULING_TIME_PATTERN = re.compile(
+    r"\b(?:\d{1,2}(?::\d{2})?\s?(?:am|pm)|tomorrow|today|next week|next monday|next tuesday|next wednesday|next thursday|next friday|next saturday|next sunday|\d{4}-\d{2}-\d{2})\b",
+    re.IGNORECASE,
+)
+CALENDAR_TOOL_RULES = (
+    "CALENDAR TOOL RULES:\n"
+    "- For calendar, scheduling, availability, booking, rescheduling, or appointment requests, you must call the relevant calendar tool before answering.\n"
+    "- Never say an appointment is booked, scheduled, or confirmed unless the tool result explicitly succeeded.\n"
+    "- If the lead wants to meet but time or region is not finalized, create a pending appointment for follow-up.\n"
+    "- The system injects internal tenant_id and agent_id automatically. Do not invent them."
+)
+
 
 def _normalize_usage(usage: Dict[str, Any]) -> Dict[str, Any]:
     usage = usage or {}
@@ -37,6 +65,35 @@ def _normalize_usage(usage: Dict[str, Any]) -> Dict[str, Any]:
         "total_tokens": total_tokens,
         "raw_usage": usage.get("raw_usage", usage),
     }
+
+
+def _is_calendar_tool(tool_name: str) -> bool:
+    return str(tool_name or "").strip() in CALENDAR_TOOL_NAMES
+
+
+def _is_scheduling_request(message: Optional[str]) -> bool:
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    if any(keyword in text for keyword in SCHEDULING_KEYWORDS):
+        return True
+    return bool(SCHEDULING_TIME_PATTERN.search(text))
+
+
+def _inject_runtime_tool_args(
+    tool_name: str,
+    parsed_args: Dict[str, Any],
+    *,
+    tenant_id: Optional[int],
+    agent_id: Optional[int],
+) -> Dict[str, Any]:
+    resolved_args = dict(parsed_args or {})
+    if _is_calendar_tool(tool_name):
+        if tenant_id is not None:
+            resolved_args["tenant_id"] = int(tenant_id)
+        if agent_id is not None:
+            resolved_args["agent_id"] = int(agent_id)
+    return resolved_args
 
 
 class ConversationAgentRuntime:
@@ -85,7 +142,9 @@ class ConversationAgentRuntime:
         messages: List[Dict[str, Any]],
         execute_kwargs: Dict[str, Any],
         agent_id: Optional[int],
+        tenant_id: Optional[int],
         tools_enabled: bool,
+        user_message: Optional[str],
     ) -> Dict[str, Any]:
         tools: List[Dict[str, Any]] = []
         tool_meta: Dict[str, Dict[str, Any]] = {}
@@ -94,24 +153,37 @@ class ConversationAgentRuntime:
         if tools_enabled and agent_id and selected_task_value == conversation_task_value:
             tools, tool_meta = await load_agent_tools_for_runtime(self.session, int(agent_id))
 
+        effective_messages = list(messages)
+        if tools and any(_is_calendar_tool(name) for name in tool_meta):
+            effective_messages = list(messages)
+            effective_messages.append({"role": "system", "content": CALENDAR_TOOL_RULES})
+
         if not tools:
             response = await self.router.execute(
                 task=selected_task,
-                messages=messages,
+                messages=effective_messages,
                 **execute_kwargs,
             )
             return {"response": response, "voice_note_action": None, "tool_events": []}
 
         tool_events: List[Dict[str, Any]] = []
         tool_mode_task = llm_task.TOOL_USE
-        loop_messages: List[Dict[str, Any]] = list(messages)
+        loop_messages: List[Dict[str, Any]] = list(effective_messages)
+        require_calendar_tool_first = (
+            bool(tools)
+            and any(_is_calendar_tool(name) for name in tool_meta)
+            and _is_scheduling_request(user_message)
+        )
 
-        for _ in range(5):
+        for turn_idx in range(5):
+            loop_execute_kwargs = dict(execute_kwargs)
+            if require_calendar_tool_first and turn_idx == 0:
+                loop_execute_kwargs["tool_choice"] = "required"
             response = await self.router.execute(
                 task=tool_mode_task,
                 messages=loop_messages,
                 tools=tools,
-                **execute_kwargs,
+                **loop_execute_kwargs,
             )
             tool_calls = list(response.tool_calls or [])
             if not tool_calls:
@@ -139,6 +211,12 @@ class ConversationAgentRuntime:
                         parsed_args = {}
                 except Exception:
                     parsed_args = {}
+                parsed_args = _inject_runtime_tool_args(
+                    tool_name,
+                    parsed_args,
+                    tenant_id=tenant_id,
+                    agent_id=agent_id,
+                )
 
                 if meta.get("server_id"):
                     manager = importlib.import_module("src.adapters.api.dependencies").get_mcp_manager()
@@ -267,7 +345,9 @@ class ConversationAgentRuntime:
             messages=messages,
             execute_kwargs=execute_kwargs,
             agent_id=context.get("agent_id"),
+            tenant_id=lead.tenant_id,
             tools_enabled=bool(context.get("tools_enabled")),
+            user_message=user_message,
         )
         response = tool_run.get("response")
         if tool_run.get("voice_note_action"):

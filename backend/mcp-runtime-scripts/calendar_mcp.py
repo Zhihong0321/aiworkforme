@@ -1,125 +1,145 @@
-import os
 import json
 import logging
 import sys
-from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Any
+from datetime import datetime
+from typing import Optional
 from mcp.server.fastmcp import FastMCP
-from sqlalchemy import create_engine, text
+from sqlmodel import Session
+
+from src.infra.database import engine
+from src.app.runtime.calendar_service import (
+    book_appointment as service_book_appointment,
+    create_pending_appointment as service_create_pending_appointment,
+    get_calendar_capabilities as service_get_calendar_capabilities,
+    get_user_availability as service_get_user_availability,
+)
 
 # Configure logging to stderr for MCP communication
 logging.basicConfig(level=logging.INFO, stream=sys.stderr)
 logger = logging.getLogger("calendar_mcp")
 
-# Database Configuration
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///app_test.db")
-engine = create_engine(DATABASE_URL)
-
 # Initialize FastMCP
 app = FastMCP("calendar_management")
 
 @app.tool()
-async def get_user_availability(user_id: int, tenant_id: int, date_str: str) -> str:
+async def get_calendar_capabilities(tenant_id: int, agent_id: int) -> str:
     """
-    Checks the user's available slots for a given date (YYYY-MM-DD).
+    Returns the calendar configuration available to the agent.
+    """
+    try:
+        with Session(engine) as session:
+            result = service_get_calendar_capabilities(session, tenant_id=tenant_id, agent_id=agent_id)
+        return json.dumps(result, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Error getting calendar capabilities: {e}")
+        return json.dumps({"status": "error", "reason": str(e)}, ensure_ascii=False)
+
+
+@app.tool()
+async def get_user_availability(
+    tenant_id: int,
+    agent_id: int,
+    date_str: str,
+    duration_minutes: Optional[int] = None,
+    meeting_type_name: Optional[str] = None,
+    region: Optional[str] = None,
+) -> str:
+    """
+    Checks the calendar owner's available slots for a given date (YYYY-MM-DD).
     Returns a list of free time slots.
     """
     try:
-        # Simplistic 9-6 working hours
-        date = datetime.fromisoformat(date_str.split('T')[0])
-        day_start = date.replace(hour=9, minute=0, second=0)
-        day_end = date.replace(hour=18, minute=0, second=0)
-        
-        with engine.connect() as conn:
-            sql = """
-                SELECT start_time, end_time 
-                FROM et_calendar_events 
-                WHERE user_id = :uid AND tenant_id = :tid 
-                AND start_time < :end AND end_time > :start
-                AND status != 'cancelled'
-                ORDER BY start_time ASC
-            """
-            result = conn.execute(text(sql), {
-                "uid": user_id, 
-                "tid": tenant_id, 
-                "start": day_start, 
-                "end": day_end
-            })
-            events = [dict(row._mapping) for row in result]
-            
-        # Parse events and find gaps
-        free_slots = []
-        current_time = day_start
-        
-        for event in events:
-            # Handle possible string/datetime from different DB backends
-            e_start = event['start_time']
-            if isinstance(e_start, str): e_start = datetime.fromisoformat(e_start.replace('Z', '+00:00')).replace(tzinfo=None)
-            
-            e_end = event['end_time']
-            if isinstance(e_end, str): e_end = datetime.fromisoformat(e_end.replace('Z', '+00:00')).replace(tzinfo=None)
-
-            if e_start > current_time:
-                free_slots.append(f"{current_time.strftime('%H:%M')} - {e_start.strftime('%H:%M')}")
-            current_time = max(current_time, e_end)
-            
-        if current_time < day_end:
-            free_slots.append(f"{current_time.strftime('%H:%M')} - {day_end.strftime('%H:%M')}")
-            
-        if not free_slots:
-            return f"No availability found for {date_str}."
-            
-        return f"Available slots for {date_str}:\n" + "\n".join([f"- {s}" for s in free_slots])
-        
+        requested_date = datetime.fromisoformat(date_str.split("T")[0])
+        with Session(engine) as session:
+            result = service_get_user_availability(
+                session,
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                date_value=requested_date,
+                duration_minutes=duration_minutes,
+                meeting_type_name=meeting_type_name,
+                region=region,
+            )
+        return json.dumps(result, ensure_ascii=False)
     except Exception as e:
         logger.error(f"Error checking availability: {e}")
-        return f"Error: {str(e)}"
+        return json.dumps({"status": "error", "reason": str(e)}, ensure_ascii=False)
 
 @app.tool()
-async def book_appointment(user_id: int, tenant_id: int, title: str, start_time: str, end_time: str, description: Optional[str] = None) -> str:
+async def book_appointment(
+    tenant_id: int,
+    agent_id: int,
+    title: str,
+    start_time: Optional[str],
+    end_time: Optional[str],
+    lead_id: Optional[int] = None,
+    meeting_type_name: Optional[str] = None,
+    region: Optional[str] = None,
+    description: Optional[str] = None,
+    customer_notes: Optional[str] = None,
+) -> str:
     """
-    Books an appointment on behalf of the user.
+    Books an appointment on behalf of the tenant through the agent's configured calendar owner.
     start_time and end_time should be in ISO format.
     """
     try:
-        with engine.connect() as conn:
-            # Check for overlaps
-            check_sql = """
-                SELECT id FROM et_calendar_events 
-                WHERE user_id = :uid AND tenant_id = :tid
-                AND start_time < :end AND end_time > :start
-                AND status != 'cancelled'
-            """
-            overlap = conn.execute(text(check_sql), {
-                "uid": user_id,
-                "tid": tenant_id,
-                "start": datetime.fromisoformat(start_time.replace('Z', '+00:00')),
-                "end": datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-            }).first()
-            
-            if overlap:
-                return "Error: This time slot overlaps with an existing appointment."
-            
-            insert_sql = """
-                INSERT INTO et_calendar_events (user_id, tenant_id, title, start_time, end_time, description, event_type, status, created_at, updated_at)
-                VALUES (:uid, :tid, :title, :start, :end, :desc, 'appointment', 'confirmed', :now, :now)
-            """
-            now = datetime.utcnow()
-            conn.execute(text(insert_sql), {
-                "uid": user_id,
-                "tid": tenant_id,
-                "title": title,
-                "start": datetime.fromisoformat(start_time.replace('Z', '+00:00')),
-                "end": datetime.fromisoformat(end_time.replace('Z', '+00:00')),
-                "desc": description,
-                "now": now
-            })
-            conn.commit()
-            
-        return f"Successfully booked appointment: {title} from {start_time} to {end_time}"
+        with Session(engine) as session:
+            result = service_book_appointment(
+                session,
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                lead_id=lead_id,
+                title=title,
+                start_time=start_time,
+                end_time=end_time,
+                meeting_type_name=meeting_type_name,
+                region=region,
+                description=description,
+                customer_notes=customer_notes,
+            )
+        return json.dumps(result.as_dict(), ensure_ascii=False)
     except Exception as e:
         logger.error(f"Error booking appointment: {e}")
-        return f"Error: {str(e)}"
+        return json.dumps({"status": "error", "reason": str(e)}, ensure_ascii=False)
+
+
+@app.tool()
+async def create_pending_appointment(
+    tenant_id: int,
+    agent_id: int,
+    title: str,
+    lead_id: Optional[int] = None,
+    requested_start_time: Optional[str] = None,
+    requested_end_time: Optional[str] = None,
+    meeting_type_name: Optional[str] = None,
+    region: Optional[str] = None,
+    description: Optional[str] = None,
+    customer_notes: Optional[str] = None,
+    pending_reason: Optional[str] = None,
+) -> str:
+    """
+    Creates a pending appointment when the customer wants to meet but the exact details are not finalized.
+    """
+    try:
+        with Session(engine) as session:
+            result = service_create_pending_appointment(
+                session,
+                tenant_id=tenant_id,
+                agent_id=agent_id,
+                lead_id=lead_id,
+                title=title,
+                requested_start_time=requested_start_time,
+                requested_end_time=requested_end_time,
+                meeting_type_name=meeting_type_name,
+                region=region,
+                description=description,
+                customer_notes=customer_notes,
+                pending_reason=pending_reason,
+            )
+        return json.dumps(result.as_dict(), ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Error creating pending appointment: {e}")
+        return json.dumps({"status": "error", "reason": str(e)}, ensure_ascii=False)
 
 if __name__ == "__main__":
     app.run()

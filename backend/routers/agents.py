@@ -19,6 +19,7 @@ from src.adapters.db.agent_models import (
 )
 from src.adapters.db.channel_models import ChannelSession, ChannelType
 from src.adapters.db.mcp_models import MCPServer
+from src.adapters.db.user_models import TenantMembership, User
 from src.app.runtime.knowledge_processor import KnowledgeProcessor
 from src.app.runtime.instruction_optimizer import optimize_agent_instruction as run_instruction_optimizer
 from src.app.runtime.sales_materials import (
@@ -45,6 +46,10 @@ class AgentCreate(BaseModel):
     emoji_level: Optional[str] = "none"
     segment_delay_ms: Optional[int] = 800
     preferred_channel_session_id: Optional[int] = None
+    calendar_enabled: Optional[bool] = False
+    calendar_owner_user_id: Optional[int] = None
+    calendar_require_region_validation: Optional[bool] = True
+    calendar_require_meeting_type_validation: Optional[bool] = True
 
 
 class AgentSalesMaterialRead(BaseModel):
@@ -99,6 +104,31 @@ def _validate_preferred_channel_session(
         )
 
     return int(channel_session.id)
+
+
+def _validate_calendar_owner_user(
+    session: Session,
+    tenant_id: int,
+    calendar_owner_user_id: Optional[int],
+) -> Optional[int]:
+    if calendar_owner_user_id is None:
+        return None
+
+    user = session.get(User, calendar_owner_user_id)
+    if not user or not bool(user.is_active):
+        raise HTTPException(status_code=400, detail="Calendar owner user is invalid")
+
+    membership = session.exec(
+        select(TenantMembership).where(
+            TenantMembership.user_id == calendar_owner_user_id,
+            TenantMembership.tenant_id == tenant_id,
+            TenantMembership.is_active == True,
+        )
+    ).first()
+    if not membership:
+        raise HTTPException(status_code=400, detail="Calendar owner user must belong to this tenant")
+
+    return int(calendar_owner_user_id)
 
 @router.get("/", response_model=List[AgentRead])
 def list_agents(
@@ -160,6 +190,18 @@ def create_agent(
             agent_in.preferred_channel_session_id,
             current_agent_id=None,
         ),
+        calendar_enabled=bool(agent_in.calendar_enabled or False),
+        calendar_owner_user_id=_validate_calendar_owner_user(
+            session,
+            auth.tenant.id,
+            agent_in.calendar_owner_user_id,
+        ),
+        calendar_require_region_validation=bool(
+            True if agent_in.calendar_require_region_validation is None else agent_in.calendar_require_region_validation
+        ),
+        calendar_require_meeting_type_validation=bool(
+            True if agent_in.calendar_require_meeting_type_validation is None else agent_in.calendar_require_meeting_type_validation
+        ),
     )
     
     session.add(new_agent)
@@ -184,6 +226,10 @@ def create_agent(
         emoji_level=new_agent.emoji_level,
         segment_delay_ms=new_agent.segment_delay_ms,
         preferred_channel_session_id=new_agent.preferred_channel_session_id,
+        calendar_enabled=new_agent.calendar_enabled,
+        calendar_owner_user_id=new_agent.calendar_owner_user_id,
+        calendar_require_region_validation=new_agent.calendar_require_region_validation,
+        calendar_require_meeting_type_validation=new_agent.calendar_require_meeting_type_validation,
     )
 
 @router.put("/{agent_id}", response_model=AgentRead)
@@ -215,6 +261,18 @@ def update_agent(
             payload.preferred_channel_session_id,
             current_agent_id=agent.id,
         )
+    if payload.calendar_enabled is not None:
+        agent.calendar_enabled = payload.calendar_enabled
+    if "calendar_owner_user_id" in fields_set:
+        agent.calendar_owner_user_id = _validate_calendar_owner_user(
+            session,
+            auth.tenant.id,
+            payload.calendar_owner_user_id,
+        )
+    if payload.calendar_require_region_validation is not None:
+        agent.calendar_require_region_validation = payload.calendar_require_region_validation
+    if payload.calendar_require_meeting_type_validation is not None:
+        agent.calendar_require_meeting_type_validation = payload.calendar_require_meeting_type_validation
 
     session.add(agent)
     session.commit()

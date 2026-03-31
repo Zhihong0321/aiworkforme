@@ -1,3 +1,4 @@
+from copy import deepcopy
 from fastapi import APIRouter, Depends, HTTPException, Body
 import asyncio
 from sqlmodel import Session, select
@@ -5,6 +6,7 @@ from typing import List, Dict, Any, Optional
 import json
 import logging
 import os
+import re
 import time
 from openai import RateLimitError
 
@@ -12,7 +14,12 @@ from src.infra.database import get_session
 from src.adapters.db.agent_models import Agent, AgentMCPServer
 from src.adapters.db.mcp_models import MCPServer
 from src.adapters.db.chat_models import ChatRequest, ChatResponse, ChatSession, ChatMessage
-from src.adapters.api.dependencies import get_mcp_manager, get_llm_router
+from src.adapters.api.dependencies import (
+    AuthContext,
+    get_llm_router,
+    get_mcp_manager,
+    require_tenant_access,
+)
 from src.adapters.mcp.manager import MCPManager
 from src.app.conversation_skills import (
     ConversationTaskKind,
@@ -25,6 +32,97 @@ from src.infra.llm.schemas import LLMTask, LLMMessage
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/chat", tags=["Chat"])
+
+CALENDAR_TOOL_NAMES = {"book_appointment", "get_user_availability", "create_pending_appointment"}
+SCHEDULING_KEYWORDS = (
+    "appoint",
+    "appointment",
+    "availability",
+    "available",
+    "book",
+    "booking",
+    "calendar",
+    "meeting",
+    "reschedule",
+    "schedule",
+    "slot",
+    "time slot",
+)
+SCHEDULING_TIME_PATTERN = re.compile(
+    r"\b(?:\d{1,2}(?::\d{2})?\s?(?:am|pm)|tomorrow|today|next week|next monday|next tuesday|next wednesday|next thursday|next friday|next saturday|next sunday|\d{4}-\d{2}-\d{2})\b",
+    re.IGNORECASE,
+)
+CALENDAR_TOOL_RULES = (
+    "CALENDAR TOOL RULES:\n"
+    "- For calendar, scheduling, availability, booking, rescheduling, or appointment requests, you must call the relevant calendar tool before answering.\n"
+    "- Never say an appointment is booked, scheduled, confirmed, moved, or cancelled unless the tool result explicitly succeeded.\n"
+    "- If the request lacks date or time details, ask a follow-up question instead of pretending it is booked.\n"
+    "- The system injects authenticated calendar identity automatically. Do not ask the user for internal tenant_id or agent_id, and do not invent them."
+)
+
+
+def _is_calendar_tool(tool_name: str) -> bool:
+    return str(tool_name or "").strip() in CALENDAR_TOOL_NAMES
+
+
+def _is_scheduling_request(message: str) -> bool:
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    if any(keyword in text for keyword in SCHEDULING_KEYWORDS):
+        return True
+    return bool(SCHEDULING_TIME_PATTERN.search(text))
+
+
+def _sanitize_chat_tool(tool_def: Dict[str, Any]) -> Dict[str, Any]:
+    tool_name = str(tool_def.get("name") or "").strip()
+    description = str(tool_def.get("description") or "").strip()
+    parameters = deepcopy(tool_def.get("inputSchema") or {"type": "object", "properties": {}})
+
+    if _is_calendar_tool(tool_name):
+        properties = dict(parameters.get("properties") or {})
+        properties.pop("tenant_id", None)
+        properties.pop("agent_id", None)
+        parameters["properties"] = properties
+
+        required = [
+            item
+            for item in list(parameters.get("required") or [])
+            if item not in {"tenant_id", "agent_id"}
+        ]
+        if required:
+            parameters["required"] = required
+        else:
+            parameters.pop("required", None)
+
+        description = (
+            f"{description} Authenticated calendar identity is injected automatically."
+            if description
+            else "Authenticated calendar identity is injected automatically."
+        )
+
+    return {
+        "type": "function",
+        "function": {
+            "name": tool_name,
+            "description": description or None,
+            "parameters": parameters,
+        },
+    }
+
+
+def _inject_authenticated_tool_args(
+    tool_name: str,
+    tool_args: Dict[str, Any],
+    *,
+    auth: AuthContext,
+    agent: Agent,
+) -> Dict[str, Any]:
+    resolved_args = dict(tool_args or {})
+    if _is_calendar_tool(tool_name):
+        resolved_args["tenant_id"] = int(auth.tenant.id)
+        resolved_args["agent_id"] = int(agent.id)
+    return resolved_args
 
 def save_message(
     session: Session, 
@@ -52,19 +150,27 @@ async def chat_with_agent(
     request: ChatRequest, 
     session: Session = Depends(get_session),
     mcp_manager: MCPManager = Depends(get_mcp_manager),
-    llm_router: LLMRouter = Depends(get_llm_router)
+    llm_router: LLMRouter = Depends(get_llm_router),
+    auth: AuthContext = Depends(require_tenant_access),
 ):
     try:
         t0 = time.perf_counter()
         # 1. Load Agent
         agent = session.get(Agent, request.agent_id)
-        if not agent:
+        if not agent or int(agent.tenant_id or 0) != int(auth.tenant.id):
             raise HTTPException(status_code=404, detail="Agent not found")
 
         # 1.5 Create or Retrieve Chat Session
-        chat_session = session.exec(select(ChatSession).where(ChatSession.agent_id == agent.id).order_by(ChatSession.created_at.desc())).first()
+        chat_session = session.exec(
+            select(ChatSession)
+            .where(
+                ChatSession.agent_id == agent.id,
+                ChatSession.tenant_id == auth.tenant.id,
+            )
+            .order_by(ChatSession.created_at.desc())
+        ).first()
         if not chat_session:
-            chat_session = ChatSession(agent_id=agent.id, tenant_id=agent.tenant_id)
+            chat_session = ChatSession(agent_id=agent.id, tenant_id=auth.tenant.id)
             session.add(chat_session)
             session.commit()
             session.refresh(chat_session)
@@ -104,6 +210,9 @@ async def chat_with_agent(
             try:
                 mcp_server_db = session.get(MCPServer, server_id)
                 if not mcp_server_db:
+                    continue
+
+                if str(mcp_server_db.script or "").strip() == "calendar_mcp.py" and not bool(agent.calendar_enabled):
                     continue
 
                 status = await mcp_manager.get_mcp_status(str(server_id))
@@ -157,16 +266,12 @@ async def chat_with_agent(
                 continue
             for tool in server_tools:
                 tool_def = tool.model_dump(exclude_none=True)
-                openai_tool = {
-                    "type": "function",
-                    "function": {
-                        "name": tool_def["name"],
-                        "description": tool_def.get("description"),
-                        "parameters": tool_def.get("inputSchema"),
-                    },
-                }
+                openai_tool = _sanitize_chat_tool(tool_def)
                 tools.append(openai_tool)
                 tool_map[tool_def["name"]] = str(server_id)
+
+        if any(_is_calendar_tool(tool_name) for tool_name in tool_map):
+            final_system_prompt = f"{final_system_prompt}\n\n{CALENDAR_TOOL_RULES}"
 
         # 5. Build Chat History
         messages = [{"role": "system", "content": final_system_prompt}]
@@ -213,18 +318,28 @@ async def chat_with_agent(
 
         # Append Current User Message
         messages.append({"role": "user", "content": request.message})
-        save_message(session, chat_session.id, "user", request.message, tenant_id=agent.tenant_id)
+        save_message(session, chat_session.id, "user", request.message, tenant_id=auth.tenant.id)
 
         # 6. Chat Loop
         max_turns = 5
-        for _ in range(max_turns):
+        require_calendar_tool_first = (
+            bool(tools)
+            and any(_is_calendar_tool(tool_name) for tool_name in tool_map)
+            and _is_scheduling_request(request.message)
+        )
+        for turn_idx in range(max_turns):
             try:
                 t_llm0 = time.perf_counter()
                 task = LLMTask.TOOL_USE if tools else LLMTask.CONVERSATION
+                execute_kwargs: Dict[str, Any] = {}
+                if tools:
+                    execute_kwargs["tools"] = tools
+                if require_calendar_tool_first and turn_idx == 0:
+                    execute_kwargs["tool_choice"] = "required"
                 response = await llm_router.execute(
                     task=task,
                     messages=messages,
-                    tools=tools if tools else None,
+                    **execute_kwargs,
                 )
                 t_llm1 = time.perf_counter()
                 logger.info(
@@ -249,7 +364,7 @@ async def chat_with_agent(
             
             # Save to DB even if content is None (if tool calls exist)
             if response.content or tool_calls_list:
-                save_message(session, chat_session.id, "assistant", response.content, tenant_id=agent.tenant_id, tool_calls=tool_calls_list)
+                save_message(session, chat_session.id, "assistant", response.content, tenant_id=auth.tenant.id, tool_calls=tool_calls_list)
 
             if response.tool_calls:
                 for tool_call in response.tool_calls:
@@ -261,6 +376,14 @@ async def chat_with_agent(
                         server_id = tool_map[tool_name]
                         try:
                             tool_args = json.loads(tool_args_str)
+                            if not isinstance(tool_args, dict):
+                                tool_args = {}
+                            tool_args = _inject_authenticated_tool_args(
+                                tool_name,
+                                tool_args,
+                                auth=auth,
+                                agent=agent,
+                            )
                             t_tool0 = time.perf_counter()
                             result = await mcp_manager.call_mcp_tool(server_id, tool_name, tool_args)
                             t_tool1 = time.perf_counter()
@@ -289,7 +412,7 @@ async def chat_with_agent(
                         content=content_str
                     ))
                     # Save Tool Result to DB
-                    save_message(session, chat_session.id, "tool", content_str, tenant_id=agent.tenant_id, tool_call_id=tool_call["id"])
+                    save_message(session, chat_session.id, "tool", content_str, tenant_id=auth.tenant.id, tool_call_id=tool_call["id"])
             else:
                 t1 = time.perf_counter()
                 logger.info("chat total: agent_id=%s dt=%.3fs", agent.id, (t1 - t0))

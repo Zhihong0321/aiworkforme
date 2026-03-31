@@ -9,6 +9,25 @@ from src.adapters.db.calendar_models import CalendarConfig, CalendarEvent
 
 router = APIRouter(prefix="/api/v1/calendar", tags=["Calendar Management"])
 
+
+def _default_working_hours() -> Dict[str, Any]:
+    return {
+        "monday": {"start": "09:00", "end": "18:00"},
+        "tuesday": {"start": "09:00", "end": "18:00"},
+        "wednesday": {"start": "09:00", "end": "18:00"},
+        "thursday": {"start": "09:00", "end": "18:00"},
+        "friday": {"start": "09:00", "end": "18:00"},
+    }
+
+
+def _parse_optional_datetime(raw_value: Optional[str]) -> Optional[datetime]:
+    if raw_value is None:
+        return None
+    text = str(raw_value).strip()
+    if not text:
+        return None
+    return datetime.fromisoformat(text.replace("Z", "+00:00"))
+
 @router.get("/config", response_model=CalendarConfig)
 def get_calendar_config(
     session: Session = Depends(get_session),
@@ -28,6 +47,11 @@ def get_calendar_config(
             tenant_id=auth.tenant.id,
             meeting_types=[{"name": "Discovery Call", "duration_minutes": 30}],
             available_regions=["Online", "Office"],
+            working_hours=_default_working_hours(),
+            buffer_minutes=0,
+            advance_notice_minutes=0,
+            default_meeting_duration_minutes=30,
+            calendar_enabled=True,
             timezone="UTC"
         )
         session.add(config)
@@ -58,6 +82,16 @@ def update_calendar_config(
         config.available_regions = payload["available_regions"]
     if "timezone" in payload:
         config.timezone = payload["timezone"]
+    if "working_hours" in payload:
+        config.working_hours = payload["working_hours"]
+    if "buffer_minutes" in payload:
+        config.buffer_minutes = int(payload["buffer_minutes"] or 0)
+    if "advance_notice_minutes" in payload:
+        config.advance_notice_minutes = int(payload["advance_notice_minutes"] or 0)
+    if "default_meeting_duration_minutes" in payload:
+        config.default_meeting_duration_minutes = int(payload["default_meeting_duration_minutes"] or 30)
+    if "calendar_enabled" in payload:
+        config.calendar_enabled = bool(payload["calendar_enabled"])
     
     config.updated_at = datetime.utcnow()
     
@@ -104,7 +138,15 @@ def create_calendar_event(
         event_type=event_data.get("event_type", "appointment"),
         meeting_type_name=event_data.get("meeting_type_name"),
         region=event_data.get("region"),
-        status=event_data.get("status", "confirmed")
+        status=event_data.get("status", "confirmed"),
+        agent_id=event_data.get("agent_id"),
+        source=event_data.get("source", "manual"),
+        needs_human_followup=bool(event_data.get("needs_human_followup", False)),
+        pending_reason=event_data.get("pending_reason"),
+        customer_notes=event_data.get("customer_notes"),
+        requested_start_time=_parse_optional_datetime(event_data.get("requested_start_time")),
+        requested_end_time=_parse_optional_datetime(event_data.get("requested_end_time")),
+        resolution_notes=event_data.get("resolution_notes"),
     )
     
     session.add(event)

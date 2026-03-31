@@ -36,6 +36,14 @@ class Agent(SQLModel, table=True):
         foreign_key="et_channel_sessions.id",
         index=True,
     )
+    calendar_enabled: bool = Field(default=False)
+    calendar_owner_user_id: Optional[int] = Field(
+        default=None,
+        foreign_key="et_users.id",
+        index=True,
+    )
+    calendar_require_region_validation: bool = Field(default=True)
+    calendar_require_meeting_type_validation: bool = Field(default=True)
     
     chat_sessions: List["ChatSession"] = Relationship(
         back_populates="agent",
@@ -103,6 +111,10 @@ class AgentRead(SQLModel):
     emoji_level: str = "none"
     segment_delay_ms: int = 800
     preferred_channel_session_id: Optional[int] = None
+    calendar_enabled: bool = False
+    calendar_owner_user_id: Optional[int] = None
+    calendar_require_region_validation: bool = True
+    calendar_require_meeting_type_validation: bool = True
     class Config:
         from_attributes = True
 
@@ -113,6 +125,10 @@ class AgentUpdate(SQLModel):
     emoji_level: Optional[str] = None
     segment_delay_ms: Optional[int] = None
     preferred_channel_session_id: Optional[int] = None
+    calendar_enabled: Optional[bool] = None
+    calendar_owner_user_id: Optional[int] = None
+    calendar_require_region_validation: Optional[bool] = None
+    calendar_require_meeting_type_validation: Optional[bool] = None
 
 
 class AgentInstructionOptimizeRequest(SQLModel):
