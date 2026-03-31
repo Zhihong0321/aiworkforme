@@ -3,10 +3,13 @@ MODULE: Application Runtime - Agent Runtime
 PURPOSE: Unified conversation runtime orchestration.
 """
 import importlib
+import asyncio
 import logging
 import json
+import os
 import re
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Dict, Any, List, Optional
 from sqlmodel import Session
 
@@ -17,6 +20,7 @@ from src.app.runtime.agent_tooling import (
     load_agent_tools_for_runtime,
     tool_result_to_text,
 )
+from src.app.runtime.calendar_service import create_pending_appointment as create_pending_calendar_appointment
 from src.app.runtime.calendar_debug import record_calendar_debug
 from src.app.runtime.context_builder import ContextBuilder
 from src.app.runtime.memory_service import MemoryService
@@ -51,6 +55,7 @@ CALENDAR_TOOL_RULES = (
     "- If the lead wants to meet but time or region is not finalized, create a pending appointment for follow-up.\n"
     "- The system injects internal tenant_id and agent_id automatically. Do not invent them."
 )
+CALENDAR_TOOL_SELECTION_TIMEOUT_S = int(os.getenv("CALENDAR_TOOL_SELECTION_TIMEOUT_S", "20"))
 
 
 def _normalize_usage(usage: Dict[str, Any]) -> Dict[str, Any]:
@@ -134,6 +139,74 @@ class ConversationAgentRuntime:
     @staticmethod
     def _get_bool_system_setting():
         return importlib.import_module("src.adapters.db.system_settings").get_bool_system_setting
+
+    def _build_calendar_fallback_response(
+        self,
+        *,
+        tenant_id: Optional[int],
+        agent_id: Optional[int],
+        lead_id: Optional[int],
+        thread_id: Optional[int],
+        inbound_message_id: Optional[int],
+        user_message: Optional[str],
+        reason: str,
+    ) -> Dict[str, Any]:
+        fallback_text = (
+            "I recorded this as a pending appointment request and the team will follow up directly to confirm the new time."
+        )
+        if tenant_id is None or agent_id is None or lead_id is None:
+            return {
+                "response": SimpleNamespace(content=fallback_text, provider_info={}, usage={}),
+                "voice_note_action": None,
+                "tool_events": [],
+            }
+
+        result = create_pending_calendar_appointment(
+            self.session,
+            tenant_id=int(tenant_id),
+            agent_id=int(agent_id),
+            lead_id=int(lead_id),
+            title="Pending appointment request",
+            requested_start_time=None,
+            requested_end_time=None,
+            meeting_type_name=None,
+            region=None,
+            description="Auto-created by runtime fallback after calendar tool selection failed.",
+            customer_notes=str(user_message or "")[:1000] or None,
+            pending_reason=reason,
+            source="ai_agent",
+        )
+        record_calendar_debug(
+            self.session,
+            tenant_id=tenant_id,
+            agent_id=agent_id,
+            lead_id=lead_id,
+            thread_id=thread_id,
+            inbound_message_id=inbound_message_id,
+            event_id=result.event_id,
+            stage="runtime_calendar_fallback_pending",
+            status=result.status,
+            message="Created fallback pending appointment after calendar tool path failed.",
+            details={"reason": reason, "event_id": result.event_id},
+        )
+        if result.status == "pending":
+            fallback_text = "I recorded this as a pending appointment request and the team will follow up directly to confirm the new time."
+        return {
+            "response": SimpleNamespace(content=fallback_text, provider_info={}, usage={}),
+            "voice_note_action": None,
+            "tool_events": [
+                {
+                    "tool_name": "create_pending_appointment_fallback",
+                    "arguments": {
+                        "tenant_id": tenant_id,
+                        "agent_id": agent_id,
+                        "lead_id": lead_id,
+                        "reason": reason,
+                    },
+                    "result": result.message_for_ai,
+                }
+            ],
+        }
 
     async def _run_with_optional_tools(
         self,
@@ -231,12 +304,64 @@ class ConversationAgentRuntime:
             loop_execute_kwargs = dict(execute_kwargs)
             if require_calendar_tool_first and turn_idx == 0:
                 loop_execute_kwargs["tool_choice"] = "required"
-            response = await self.router.execute(
-                task=tool_mode_task,
-                messages=loop_messages,
-                tools=tools,
-                **loop_execute_kwargs,
-            )
+            try:
+                response = await asyncio.wait_for(
+                    self.router.execute(
+                        task=tool_mode_task,
+                        messages=loop_messages,
+                        tools=tools,
+                        **loop_execute_kwargs,
+                    ),
+                    timeout=CALENDAR_TOOL_SELECTION_TIMEOUT_S if require_calendar_tool_first else None,
+                )
+            except asyncio.TimeoutError:
+                if require_calendar_tool_first:
+                    record_calendar_debug(
+                        self.session,
+                        tenant_id=tenant_id,
+                        agent_id=agent_id,
+                        lead_id=debug_context.get("lead_id"),
+                        thread_id=debug_context.get("thread_id"),
+                        inbound_message_id=debug_context.get("inbound_message_id"),
+                        stage="runtime_calendar_tool_timeout",
+                        status="error",
+                        message="Calendar tool selection timed out.",
+                        details={"turn_index": turn_idx, "timeout_seconds": CALENDAR_TOOL_SELECTION_TIMEOUT_S},
+                    )
+                    return self._build_calendar_fallback_response(
+                        tenant_id=tenant_id,
+                        agent_id=agent_id,
+                        lead_id=debug_context.get("lead_id"),
+                        thread_id=debug_context.get("thread_id"),
+                        inbound_message_id=debug_context.get("inbound_message_id"),
+                        user_message=user_message,
+                        reason="tool_selection_timeout",
+                    )
+                raise
+            except Exception as exc:
+                if require_calendar_tool_first:
+                    record_calendar_debug(
+                        self.session,
+                        tenant_id=tenant_id,
+                        agent_id=agent_id,
+                        lead_id=debug_context.get("lead_id"),
+                        thread_id=debug_context.get("thread_id"),
+                        inbound_message_id=debug_context.get("inbound_message_id"),
+                        stage="runtime_calendar_tool_selection_error",
+                        status="error",
+                        message="Calendar tool selection failed before any tool call.",
+                        details={"turn_index": turn_idx, "error": str(exc)},
+                    )
+                    return self._build_calendar_fallback_response(
+                        tenant_id=tenant_id,
+                        agent_id=agent_id,
+                        lead_id=debug_context.get("lead_id"),
+                        thread_id=debug_context.get("thread_id"),
+                        inbound_message_id=debug_context.get("inbound_message_id"),
+                        user_message=user_message,
+                        reason="tool_selection_error",
+                    )
+                raise
             tool_calls = list(response.tool_calls or [])
             if not tool_calls:
                 if require_calendar_tool_first:
@@ -251,6 +376,15 @@ class ConversationAgentRuntime:
                         status="warn",
                         message="Model returned no tool calls on a scheduling turn.",
                         details={"turn_index": turn_idx, "response_preview": str(response.content or "")[:240]},
+                    )
+                    return self._build_calendar_fallback_response(
+                        tenant_id=tenant_id,
+                        agent_id=agent_id,
+                        lead_id=debug_context.get("lead_id"),
+                        thread_id=debug_context.get("thread_id"),
+                        inbound_message_id=debug_context.get("inbound_message_id"),
+                        user_message=user_message,
+                        reason="tool_not_called",
                     )
                 return {"response": response, "voice_note_action": None, "tool_events": tool_events}
 

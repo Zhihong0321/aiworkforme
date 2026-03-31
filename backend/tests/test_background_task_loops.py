@@ -972,3 +972,88 @@ def test_agent_runtime_run_turn_returns_audio_action_when_voice_tool_approves(mo
     assert result["llm_estimated_cost_usd"] == 0.321
     assert router.calls[0]["task"].value == "tool_use"
     assert router.calls[0]["tools"][0]["function"]["name"] == "request_voice_note_followup"
+
+
+def test_agent_runtime_calendar_timeout_creates_pending_fallback(monkeypatch):
+    Lead = type("LeadModel", (), {})
+
+    class _Task:
+        def __init__(self, value):
+            self.value = value
+
+    class _TaskEnum:
+        CONVERSATION = _Task("conversation")
+        TOOL_USE = _Task("tool_use")
+
+        def __call__(self, value):
+            return self.CONVERSATION if value == "conversation" else self.TOOL_USE
+
+    class _CalendarRouter:
+        async def execute(self, **_kwargs):
+            raise asyncio.TimeoutError()
+
+    class _CalendarBuilder:
+        async def build_context(self, *_args, **_kwargs):
+            return {
+                "system_instruction": "SYS",
+                "tools_enabled": True,
+                "agent_id": 77,
+            }
+
+    async def _fake_load_tools(_session, _agent_id):
+        return (
+            [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "create_pending_appointment",
+                        "description": "Create pending appointment",
+                        "parameters": {"type": "object"},
+                    },
+                }
+            ],
+            {"create_pending_appointment": {"server_id": "3", "script": "calendar_mcp.py"}},
+        )
+
+    class _PendingResult:
+        status = "pending"
+        event_id = 999
+        message_for_ai = "pending created"
+
+    pending_calls = []
+
+    def _fake_create_pending(*_args, **kwargs):
+        pending_calls.append(kwargs)
+        return _PendingResult()
+
+    class _Session(_FakeSession):
+        def get(self, _model, _id):
+            return SimpleNamespace(workspace_id=20, tenant_id=1)
+
+    session = _Session()
+    router = _CalendarRouter()
+    runtime = agent_runtime_mod.ConversationAgentRuntime(session, router)
+    runtime.policy = _FakePolicy(pre_allow=True, pre_reason="POLICY_PASSED", risk_allow=True)
+    runtime.builder = _CalendarBuilder()
+    runtime._crm_models = lambda: (Lead, object, object, object, object)
+    runtime._llm_task = lambda: _TaskEnum()
+    runtime._estimate_llm_cost = lambda: (lambda *_args: 0.0)
+    runtime._get_bool_system_setting = lambda: (lambda *_args, **_kwargs: False)
+
+    monkeypatch.setattr(agent_runtime_mod, "load_agent_tools_for_runtime", _fake_load_tools)
+    monkeypatch.setattr(agent_runtime_mod, "create_pending_calendar_appointment", _fake_create_pending)
+    monkeypatch.setattr(agent_runtime_mod, "CALENDAR_TOOL_SELECTION_TIMEOUT_S", 0)
+
+    result = asyncio.run(
+        runtime.run_turn(
+            lead_id=10,
+            workspace_id=20,
+            user_message="change to next thursday, 2pm",
+            history_override=[],
+            thread_id_override=44,
+        )
+    )
+
+    assert result["status"] == "sent"
+    assert "pending appointment request" in result["content"].lower()
+    assert pending_calls
