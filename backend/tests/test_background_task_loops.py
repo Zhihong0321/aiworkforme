@@ -1049,7 +1049,9 @@ def test_agent_runtime_calendar_timeout_creates_pending_fallback(monkeypatch):
             lead_id=10,
             workspace_id=20,
             user_message="change to next thursday, 2pm",
-            history_override=[],
+            history_override=[
+                {"role": "user", "content": "No.502, Jalan Impian Emas 2/4, Skudai, Johor, tmr 2pm"},
+            ],
             thread_id_override=44,
         )
     )
@@ -1057,3 +1059,7 @@ def test_agent_runtime_calendar_timeout_creates_pending_fallback(monkeypatch):
     assert result["status"] == "sent"
     assert "pending appointment request" in result["content"].lower()
     assert pending_calls
+    assert pending_calls[0]["title"] == "Pending appointment: Lead"
+    assert pending_calls[0]["region"] == "No.502, Jalan Impian Emas 2/4, Skudai, Johor, tmr 2pm"
+    assert pending_calls[0]["requested_start_time"] is not None
+    assert "change to next thursday, 2pm" in pending_calls[0]["customer_notes"]

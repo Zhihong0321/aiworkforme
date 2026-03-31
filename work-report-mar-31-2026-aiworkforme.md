@@ -11,5 +11,6 @@ REPO NAME : AIworkforMe
 - Fixed inbound MCP runtime path so calendar tools can actually load
 - Fixed calendar MCP boot by injecting backend PYTHONPATH for runtime tool loading
 - Added timeout fallback so stuck calendar tool selection creates a pending appointment instead of hanging inbound replies
+- Improved pending appointment records with lead details and richer calendar display
 
 =====================

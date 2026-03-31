@@ -8,7 +8,7 @@ import logging
 import json
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Dict, Any, List, Optional
 from sqlmodel import Session
@@ -56,6 +56,15 @@ CALENDAR_TOOL_RULES = (
     "- The system injects internal tenant_id and agent_id automatically. Do not invent them."
 )
 CALENDAR_TOOL_SELECTION_TIMEOUT_S = int(os.getenv("CALENDAR_TOOL_SELECTION_TIMEOUT_S", "20"))
+WEEKDAY_INDEX = {
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+}
 
 
 def _normalize_usage(usage: Dict[str, Any]) -> Dict[str, Any]:
@@ -100,6 +109,98 @@ def _inject_runtime_tool_args(
         if agent_id is not None:
             resolved_args["agent_id"] = int(agent_id)
     return resolved_args
+
+
+def _recent_user_messages(messages: List[Dict[str, Any]], limit: int = 4) -> List[str]:
+    items = [
+        str(message.get("content") or "").strip()
+        for message in list(messages or [])
+        if str(message.get("role") or "").strip().lower() == "user" and str(message.get("content") or "").strip()
+    ]
+    return items[-limit:]
+
+
+def _extract_requested_datetime(text: str) -> Optional[datetime]:
+    normalized = str(text or "").strip().lower()
+    if not normalized:
+        return None
+
+    now = datetime.now()
+    target_date = None
+
+    if "tomorrow" in normalized or re.search(r"\btmr\b", normalized):
+        target_date = (now + timedelta(days=1)).date()
+    elif "today" in normalized:
+        target_date = now.date()
+    else:
+        weekday_match = re.search(r"\bnext\s+(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", normalized)
+        if weekday_match:
+            weekday = WEEKDAY_INDEX[weekday_match.group(1)]
+            days_ahead = (weekday - now.weekday()) % 7
+            if days_ahead == 0:
+                days_ahead = 7
+            target_date = (now + timedelta(days=days_ahead)).date()
+        else:
+            explicit_date = re.search(r"\b(\d{4}-\d{2}-\d{2})\b", normalized)
+            if explicit_date:
+                try:
+                    target_date = datetime.fromisoformat(explicit_date.group(1)).date()
+                except Exception:
+                    target_date = None
+
+    if target_date is None:
+        return None
+
+    time_match = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b", normalized)
+    if not time_match:
+        time_match = re.search(r"\b(\d{1,2}):(\d{2})\b", normalized)
+
+    if not time_match:
+        return datetime.combine(target_date, datetime.min.time()).replace(hour=9, minute=0)
+
+    hour = int(time_match.group(1))
+    minute = int(time_match.group(2) or 0)
+    meridiem = str(time_match.group(3) or "").lower()
+    if meridiem == "pm" and hour < 12:
+        hour += 12
+    if meridiem == "am" and hour == 12:
+        hour = 0
+    return datetime.combine(target_date, datetime.min.time()).replace(hour=hour, minute=minute)
+
+
+def _extract_location_hint(messages: List[str]) -> Optional[str]:
+    for message in reversed(messages):
+        compact = " ".join(str(message or "").split())
+        lowered = compact.lower()
+        if any(token in lowered for token in ("jalan", "johor", "skudai", "no.", "road", "street", "address")):
+            return compact[:255]
+    return None
+
+
+def _build_fallback_calendar_payload(messages: List[Dict[str, Any]], lead: Any) -> Dict[str, Optional[str]]:
+    user_messages = _recent_user_messages(messages)
+    combined = "\n".join(user_messages).strip()
+    requested_start = _extract_requested_datetime(combined)
+    location_hint = _extract_location_hint(user_messages)
+    lead_label = str(getattr(lead, "name", None) or getattr(lead, "external_id", None) or "Lead").strip()
+
+    description_parts = []
+    if requested_start:
+        description_parts.append(f"Requested time: {requested_start.strftime('%Y-%m-%d %H:%M')}")
+    if location_hint:
+        description_parts.append(f"Requested address: {location_hint}")
+    if combined:
+        description_parts.append(f"Conversation notes: {combined[:500]}")
+
+    requested_end = requested_start + timedelta(minutes=30) if requested_start else None
+    return {
+        "title": f"Pending appointment: {lead_label}",
+        "requested_start_time": requested_start.isoformat() if requested_start else None,
+        "requested_end_time": requested_end.isoformat() if requested_end else None,
+        "region": location_hint,
+        "description": " | ".join(description_parts)[:1000] if description_parts else None,
+        "customer_notes": combined[:1000] if combined else None,
+    }
 
 
 class ConversationAgentRuntime:
@@ -149,6 +250,7 @@ class ConversationAgentRuntime:
         thread_id: Optional[int],
         inbound_message_id: Optional[int],
         user_message: Optional[str],
+        messages: Optional[List[Dict[str, Any]]],
         reason: str,
     ) -> Dict[str, Any]:
         fallback_text = (
@@ -160,19 +262,22 @@ class ConversationAgentRuntime:
                 "voice_note_action": None,
                 "tool_events": [],
             }
+        Lead, _, _, _, _ = self._crm_models()
+        lead = self.session.get(Lead, int(lead_id))
+        fallback_payload = _build_fallback_calendar_payload(messages or [], lead)
 
         result = create_pending_calendar_appointment(
             self.session,
             tenant_id=int(tenant_id),
             agent_id=int(agent_id),
             lead_id=int(lead_id),
-            title="Pending appointment request",
-            requested_start_time=None,
-            requested_end_time=None,
+            title=fallback_payload["title"] or "Pending appointment request",
+            requested_start_time=fallback_payload["requested_start_time"],
+            requested_end_time=fallback_payload["requested_end_time"],
             meeting_type_name=None,
-            region=None,
-            description="Auto-created by runtime fallback after calendar tool selection failed.",
-            customer_notes=str(user_message or "")[:1000] or None,
+            region=fallback_payload["region"],
+            description=fallback_payload["description"] or "Auto-created by runtime fallback after calendar tool selection failed.",
+            customer_notes=fallback_payload["customer_notes"] or str(user_message or "")[:1000] or None,
             pending_reason=reason,
             source="ai_agent",
         )
@@ -187,7 +292,7 @@ class ConversationAgentRuntime:
             stage="runtime_calendar_fallback_pending",
             status=result.status,
             message="Created fallback pending appointment after calendar tool path failed.",
-            details={"reason": reason, "event_id": result.event_id},
+            details={"reason": reason, "event_id": result.event_id, "fallback_payload": fallback_payload},
         )
         if result.status == "pending":
             fallback_text = "I recorded this as a pending appointment request and the team will follow up directly to confirm the new time."
@@ -335,6 +440,7 @@ class ConversationAgentRuntime:
                         thread_id=debug_context.get("thread_id"),
                         inbound_message_id=debug_context.get("inbound_message_id"),
                         user_message=user_message,
+                        messages=messages,
                         reason="tool_selection_timeout",
                     )
                 raise
@@ -359,6 +465,7 @@ class ConversationAgentRuntime:
                         thread_id=debug_context.get("thread_id"),
                         inbound_message_id=debug_context.get("inbound_message_id"),
                         user_message=user_message,
+                        messages=messages,
                         reason="tool_selection_error",
                     )
                 raise
@@ -384,6 +491,7 @@ class ConversationAgentRuntime:
                         thread_id=debug_context.get("thread_id"),
                         inbound_message_id=debug_context.get("inbound_message_id"),
                         user_message=user_message,
+                        messages=messages,
                         reason="tool_not_called",
                     )
                 return {"response": response, "voice_note_action": None, "tool_events": tool_events}

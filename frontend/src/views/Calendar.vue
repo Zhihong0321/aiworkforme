@@ -43,6 +43,29 @@ const newEvent = ref({
 })
 const activeAgentName = computed(() => store.activeAgent?.name || 'Active Agent')
 
+const eventDisplayDate = (event) => {
+  const raw = event?.requested_start_time || event?.start_time
+  if (!raw) return 'Pending time confirmation'
+  const parsed = new Date(raw)
+  return Number.isNaN(parsed.getTime())
+    ? 'Pending time confirmation'
+    : parsed.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+}
+
+const eventDetailSummary = (event) => {
+  const parts = []
+  if (event?.status) parts.push(String(event.status).replace(/_/g, ' '))
+  if (event?.region) parts.push(event.region)
+  if (event?.meeting_type_name) parts.push(event.meeting_type_name)
+  if (event?.pending_reason) parts.push(String(event.pending_reason).replace(/_/g, ' '))
+  return parts.filter(Boolean).join(' · ')
+}
+
+const eventNotesPreview = (event) => {
+  const text = event?.customer_notes || event?.description || ''
+  return String(text).trim().slice(0, 140)
+}
+
 // Fetch data
 const fetchData = async () => {
   isLoading.value = true
@@ -271,7 +294,9 @@ const handleDeleteEvent = async (id) => {
                   <div class="w-1 rounded-full absolute left-0 top-3 bottom-3" :class="event.event_type === 'appointment' ? 'bg-blue-500' : 'bg-red-500'"></div>
                   <div class="pl-2 flex-grow min-w-0">
                      <div class="text-[13px] font-bold text-slate-900 uppercase tracking-tight truncate">{{ event.title }}</div>
-                     <div class="text-[10px] text-slate-600 font-semibold uppercase mt-0.5">{{ new Date(event.start_time).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) }}</div>
+                     <div class="text-[10px] text-slate-600 font-semibold uppercase mt-0.5">{{ eventDisplayDate(event) }}</div>
+                     <div v-if="eventDetailSummary(event)" class="mt-1 text-[10px] font-semibold text-slate-500 truncate">{{ eventDetailSummary(event) }}</div>
+                     <div v-if="eventNotesPreview(event)" class="mt-1 text-[11px] text-slate-600 leading-4">{{ eventNotesPreview(event) }}</div>
                   </div>
                   <button @click="handleDeleteEvent(event.id)" class="shrink-0 w-8 h-8 rounded-full bg-red-500/10 text-red-400 flex items-center justify-center active:bg-red-500/20 transition-colors">
                      <Trash2 class="w-3.5 h-3.5" />
