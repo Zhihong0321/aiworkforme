@@ -1,0 +1,71 @@
+{
+  "model": "gemini-3-flash-preview",
+  "scenario": {
+    "id": "busy-deflector",
+    "description": "Asks price, wants brochure first, avoids address and meeting details.",
+    "opener": "hi"
+  },
+  "baseline_transcript": [
+    {
+      "role": "user",
+      "content": "hi"
+    },
+    {
+      "role": "assistant",
+      "content": "你好！我是 Eternalgy 的 Xiao Hao。"
+    },
+    {
+      "role": "user",
+      "content": "你们装太阳能多少"
+    },
+    {
+      "role": "assistant",
+      "content": "价格主要看你需要多大的系统。你家"
+    },
+    {
+      "role": "user",
+      "content": "给个大概的 range"
+    },
+    {
+      "role": "assistant",
+      "content": "一般来说，住宅的范围大概在 RM16k"
+    },
+    {
+      "role": "user",
+      "content": "16k 起跳？"
+    }
+  ],
+  "skilled_transcript": [
+    {
+      "role": "user",
+      "content": "hi"
+    },
+    {
+      "role": "assistant",
+      "content": "你好！我是 Eternalgy 的 Xiao Hao。请问"
+    },
+    {
+      "role": "user",
+      "content": "想问一下安装太阳"
+    },
+    {
+      "role": "assistant",
+      "content": "没问题，我可以帮你看看。请问"
+    },
+    {
+      "role": "user",
+      "content": "大概多少钱？有 brochure"
+    },
+    {
+      "role": "assistant",
+      "content": "价格通常在 RM15k 到"
+    },
+    {
+      "role": "user",
+      "content": "15k 起跳吗？"
+    }
+  ],
+  "judge": {
+    "raw_text": "{\n  \"baseline_scores\": {"
+  }
+}

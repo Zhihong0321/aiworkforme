@@ -10,11 +10,13 @@ SAFE CHANGE: Keep side effects (audit writes) unchanged per operation.
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from src.adapters.api.dependencies import AuthContext, require_platform_admin
 from src.adapters.db.audit_recorder import record_admin_audit
+from src.adapters.db.channel_models import ChannelSession
 from src.adapters.db.tenant_models import Tenant
 from src.adapters.db.user_models import TenantMembership, User
 from src.infra.database import get_session
@@ -35,18 +37,53 @@ from .platform_schemas import (
 router = APIRouter()
 
 
+def _count_map(rows) -> dict[int, int]:
+    counts: dict[int, int] = {}
+    for tenant_id, count in rows:
+        if tenant_id is None:
+            continue
+        counts[int(tenant_id)] = int(count or 0)
+    return counts
+
+
+def _scalar_count(value) -> int:
+    return int(value or 0)
+
+
 @router.get("/tenants", response_model=List[TenantResponse])
 def list_tenants(
     session: Session = Depends(get_session),
     _context: AuthContext = Depends(require_platform_admin),
 ):
     tenants = session.exec(select(Tenant).order_by(Tenant.created_at.desc())).all()
+    membership_counts = _count_map(
+        session.exec(
+            select(TenantMembership.tenant_id, func.count(TenantMembership.id))
+            .group_by(TenantMembership.tenant_id)
+        ).all()
+    )
+    active_membership_counts = _count_map(
+        session.exec(
+            select(TenantMembership.tenant_id, func.count(TenantMembership.id))
+            .where(TenantMembership.is_active.is_(True))
+            .group_by(TenantMembership.tenant_id)
+        ).all()
+    )
+    channel_counts = _count_map(
+        session.exec(
+            select(ChannelSession.tenant_id, func.count(ChannelSession.id))
+            .group_by(ChannelSession.tenant_id)
+        ).all()
+    )
     return [
         TenantResponse(
             id=t.id,
             name=t.name,
             status=t.status,
             created_at=t.created_at,
+            membership_count=membership_counts.get(int(t.id), 0),
+            active_membership_count=active_membership_counts.get(int(t.id), 0),
+            channel_count=channel_counts.get(int(t.id), 0),
         )
         for t in tenants
     ]
@@ -80,6 +117,9 @@ def create_tenant(
         name=tenant.name,
         status=tenant.status,
         created_at=tenant.created_at,
+        membership_count=0,
+        active_membership_count=0,
+        channel_count=0,
     )
 
 
@@ -241,6 +281,18 @@ def update_tenant_status(
         name=tenant.name,
         status=tenant.status,
         created_at=tenant.created_at,
+        membership_count=_scalar_count(session.exec(
+            select(func.count(TenantMembership.id)).where(TenantMembership.tenant_id == tenant.id)
+        ).one()),
+        active_membership_count=_scalar_count(session.exec(
+            select(func.count(TenantMembership.id)).where(
+                TenantMembership.tenant_id == tenant.id,
+                TenantMembership.is_active.is_(True),
+            )
+        ).one()),
+        channel_count=_scalar_count(session.exec(
+            select(func.count(ChannelSession.id)).where(ChannelSession.tenant_id == tenant.id)
+        ).one()),
     )
 
 

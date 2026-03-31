@@ -1,10 +1,13 @@
 import asyncio
+import importlib
+import json
 from types import SimpleNamespace
 
 from src.app import background_tasks_ai_crm as ai_crm_tasks
 from src.app import background_tasks_inbound as inbound_tasks
 from src.app import background_tasks_messaging as messaging_tasks
 from src.app.runtime import agent_runtime as agent_runtime_mod
+from src.app.runtime.sales_materials import SALES_MATERIAL_MAX_BYTES
 
 
 class _LoopExit(Exception):
@@ -221,6 +224,11 @@ def test_process_one_inbound_handles_no_agent(monkeypatch):
     assert session.commits >= 2
 
 
+def test_inbound_pdf_limit_matches_sales_material_limit():
+    assert inbound_tasks.PDF_MAX_DOWNLOAD_BYTES == SALES_MATERIAL_MAX_BYTES
+    assert inbound_tasks.PDF_MAX_DOWNLOAD_BYTES == 30 * 1024 * 1024
+
+
 def test_process_one_inbound_handles_blocked_result(monkeypatch):
     session = _FakeSession()
     message = type(
@@ -230,6 +238,7 @@ def test_process_one_inbound_handles_blocked_result(monkeypatch):
             "id": 2,
             "tenant_id": 99,
             "lead_id": 88,
+            "thread_id": 900,
             "delivery_status": "received",
             "updated_at": None,
             "text_content": "hi",
@@ -267,6 +276,7 @@ def test_process_one_inbound_handles_sent_result(monkeypatch):
             "id": 3,
             "tenant_id": 99,
             "lead_id": 88,
+            "thread_id": 901,
             "delivery_status": "received",
             "updated_at": None,
             "text_content": "hello",
@@ -279,11 +289,20 @@ def test_process_one_inbound_handles_sent_result(monkeypatch):
     monkeypatch.setattr(inbound_tasks, "_resolve_thread_agent", lambda *_args: agent)
     monkeypatch.setattr(inbound_tasks, "_build_thread_history", lambda *_args: [])
     monkeypatch.setattr(inbound_tasks, "_get_llm_router", lambda: object())
+    async def _fake_enqueue_segmented_reply(*_args, **_kwargs):
+        enqueue_calls.append(True)
+        return []
+
     monkeypatch.setattr(
         inbound_tasks,
-        "_enqueue_outbound_reply",
-        lambda *_args, **_kwargs: enqueue_calls.append(True),
+        "_enqueue_segmented_reply",
+        _fake_enqueue_segmented_reply,
     )
+
+    async def _fake_plan_sales_materials(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(inbound_tasks, "_plan_sales_material_sends", _fake_plan_sales_materials)
 
     class _Runtime:
         def __init__(self, _session, _router):
@@ -299,6 +318,197 @@ def test_process_one_inbound_handles_sent_result(monkeypatch):
 
     assert message.delivery_status == "inbound_ai_replied"
     assert enqueue_calls == [True]
+
+
+def test_process_one_inbound_filters_unsupported_runtime_kwargs(monkeypatch):
+    session = _FakeSession()
+    message = type(
+        "Msg",
+        (),
+        {
+            "id": 30,
+            "tenant_id": 99,
+            "lead_id": 88,
+            "thread_id": 777,
+            "delivery_status": "received",
+            "updated_at": None,
+            "text_content": "hello",
+        },
+    )()
+    lead = type("LeadObj", (), {"workspace_id": 77})()
+    agent = type("AgentObj", (), {"id": 44, "name": "Compat Agent"})()
+    captured = {}
+    enqueue_calls = []
+
+    monkeypatch.setattr(inbound_tasks, "_resolve_thread_agent", lambda *_args: agent)
+    monkeypatch.setattr(inbound_tasks, "_build_thread_history", lambda *_args: [])
+    monkeypatch.setattr(inbound_tasks, "_get_llm_router", lambda: object())
+
+    async def _fake_enqueue_segmented_reply(*_args, **_kwargs):
+        enqueue_calls.append(True)
+        return []
+
+    async def _fake_plan_sales_materials(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(inbound_tasks, "_enqueue_segmented_reply", _fake_enqueue_segmented_reply)
+    monkeypatch.setattr(inbound_tasks, "_plan_sales_material_sends", _fake_plan_sales_materials)
+
+    class _Runtime:
+        def __init__(self, _session, _router):
+            pass
+
+        async def run_turn(
+            self,
+            lead_id,
+            workspace_id=None,
+            user_message=None,
+            agent_id_override=None,
+            bypass_safety=False,
+            history_override=None,
+            task_override=None,
+            llm_extra_params=None,
+        ):
+            captured.update(
+                {
+                    "lead_id": lead_id,
+                    "workspace_id": workspace_id,
+                    "user_message": user_message,
+                    "agent_id_override": agent_id_override,
+                    "bypass_safety": bypass_safety,
+                    "history_override": history_override,
+                    "task_override": task_override,
+                    "llm_extra_params": llm_extra_params,
+                }
+            )
+            return {"status": "sent", "content": "reply"}
+
+    monkeypatch.setattr(inbound_tasks, "ConversationAgentRuntime", _Runtime)
+    monkeypatch.setattr(session, "get", lambda _model, _id: lead)
+
+    asyncio.run(inbound_tasks._process_one_inbound(session, message))
+
+    assert message.delivery_status == "inbound_ai_replied"
+    assert enqueue_calls == [True]
+    assert captured["lead_id"] == 88
+    assert captured["workspace_id"] == 77
+    assert captured["agent_id_override"] == 44
+    assert captured["history_override"] == []
+
+
+def test_process_one_inbound_handles_audio_voice_note_result(monkeypatch):
+    session = _FakeSession()
+    message = type(
+        "Msg",
+        (),
+        {
+            "id": 31,
+            "tenant_id": 99,
+            "lead_id": 88,
+            "thread_id": 902,
+            "delivery_status": "received",
+            "updated_at": None,
+            "text_content": "hello",
+        },
+    )()
+    lead = type("LeadObj", (), {"workspace_id": 77})()
+    agent = type("AgentObj", (), {"id": 45, "name": "Voice Agent"})()
+    enqueue_calls = []
+
+    monkeypatch.setattr(inbound_tasks, "_resolve_thread_agent", lambda *_args: agent)
+    monkeypatch.setattr(inbound_tasks, "_build_thread_history", lambda *_args: [])
+    monkeypatch.setattr(inbound_tasks, "_get_llm_router", lambda: object())
+    monkeypatch.setattr(
+        inbound_tasks,
+        "_enqueue_outbound_reply",
+        lambda *_args, **_kwargs: enqueue_calls.append(_kwargs),
+    )
+    async def _fake_plan_sales_materials(*_args, **_kwargs):
+        return []
+
+    monkeypatch.setattr(inbound_tasks, "_plan_sales_material_sends", _fake_plan_sales_materials)
+    monkeypatch.setattr(
+        inbound_tasks,
+        "_enqueue_segmented_reply",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("text path should not be used")),
+    )
+
+    class _Runtime:
+        def __init__(self, _session, _router):
+            pass
+
+        async def run_turn(self, **_kwargs):
+            return {
+                "status": "sent",
+                "content": "老板，我不介意被拒绝，但是我希望你可以告诉我，我哪里不达标？",
+                "message_type": "audio",
+                "raw_payload": {
+                    "tts_model": "qwen3-tts-flash",
+                    "tts_voice": "kiki",
+                    "tts_instructions": "Warm and sincere",
+                },
+            }
+
+    monkeypatch.setattr(inbound_tasks, "ConversationAgentRuntime", _Runtime)
+    monkeypatch.setattr(session, "get", lambda _model, _id: lead)
+
+    asyncio.run(inbound_tasks._process_one_inbound(session, message))
+
+    assert message.delivery_status == "inbound_ai_replied"
+    assert len(enqueue_calls) == 1
+    assert enqueue_calls[0]["message_type"] == "audio"
+    assert enqueue_calls[0]["extra_raw_payload"]["tts_model"] == "qwen3-tts-flash"
+
+
+def test_plan_sales_material_sends_prefers_heuristic_for_explicit_brochure_request(monkeypatch):
+    inbound_message = SimpleNamespace(
+        id=91,
+        tenant_id=7,
+        thread_id=12,
+        channel="whatsapp",
+    )
+    agent = SimpleNamespace(id=33, name="Sales Agent")
+    materials = [
+        SimpleNamespace(
+            id=1001,
+            filename="product-brochure.pdf",
+            description="Send this brochure when someone asks for the company overview.",
+            media_type="application/pdf",
+            source_type="file",
+            external_url="",
+            public_url="https://app.example.test/api/v1/public/sales-materials/token-a",
+        ),
+        SimpleNamespace(
+            id=1002,
+            filename="price-card.png",
+            description="Promo image for quick WhatsApp sharing.",
+            media_type="image/png",
+            source_type="file",
+            external_url="",
+            public_url="https://app.example.test/api/v1/public/sales-materials/token-b",
+        ),
+    ]
+
+    monkeypatch.setattr(inbound_tasks, "list_agent_sales_materials", lambda *_args, **_kwargs: materials)
+    monkeypatch.setattr(inbound_tasks, "thread_sales_material_state", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(
+        inbound_tasks,
+        "_get_llm_router",
+        lambda: (_ for _ in ()).throw(AssertionError("LLM planner should not run for explicit brochure ask")),
+    )
+
+    result = asyncio.run(
+        inbound_tasks._plan_sales_material_sends(
+            session=object(),
+            inbound_message=inbound_message,
+            agent=agent,
+            user_message="Can you send me the brochure PDF?",
+            reply_text="Sure, I will attach the brochure now.",
+        )
+    )
+
+    assert [item["material"].id for item in result] == [1001]
+    assert result[0]["planner_trace"]["selection_mode"] == "heuristic"
 
 
 def test_prepare_media_inbound_for_runtime_pdf(monkeypatch):
@@ -496,11 +706,20 @@ def test_process_one_inbound_skips_runtime_for_unprocessable_media(monkeypatch):
 
 
 def test_agent_runtime_run_turn_blocks_before_llm_call():
-    session = _FakeSession()
+    Lead = type("LeadModel", (), {})
+
+    class _Session(_FakeSession):
+        def get(self, model, _id):
+            if model is Lead:
+                return SimpleNamespace(workspace_id=20, tenant_id=1)
+            return None
+
+    session = _Session()
     router = _FakeRouter(content="should-not-be-used")
     runtime = agent_runtime_mod.ConversationAgentRuntime(session, router)
     runtime.policy = _FakePolicy(pre_allow=False, pre_reason="OUTBOUND_CAP_24H")
     runtime.builder = _FakeBuilder()
+    runtime._crm_models = lambda: (Lead, object, object, object, object)
 
     result = asyncio.run(
         runtime.run_turn(
@@ -518,13 +737,17 @@ def test_agent_runtime_run_turn_blocks_before_llm_call():
 
 
 def test_agent_runtime_run_turn_sent_path_with_history_override():
+    Lead = type("LeadModel", (), {})
     Workspace = type("WorkspaceModel", (), {})
     Agent = type("AgentModel", (), {})
+    lead_obj = SimpleNamespace(workspace_id=20, tenant_id=1)
     workspace_obj = SimpleNamespace(agent_id=77)
     agent_obj = SimpleNamespace(model="override-model")
 
     class _Session:
         def get(self, model, _id):
+            if model is Lead:
+                return lead_obj
             if model is Workspace:
                 return workspace_obj
             if model is Agent:
@@ -536,7 +759,7 @@ def test_agent_runtime_run_turn_sent_path_with_history_override():
     runtime = agent_runtime_mod.ConversationAgentRuntime(session, router)
     runtime.policy = _FakePolicy(pre_allow=True, pre_reason="POLICY_PASSED", risk_allow=True)
     runtime.builder = _FakeBuilder()
-    runtime._crm_models = lambda: (object, Workspace, object, object, object)
+    runtime._crm_models = lambda: (Lead, Workspace, object, object, object)
     runtime._agent_model = lambda: Agent
     runtime._llm_task = lambda: SimpleNamespace(CONVERSATION=SimpleNamespace(value="conversation"))
     runtime._estimate_llm_cost = lambda: (lambda *_args: 0.123)
@@ -566,8 +789,10 @@ def test_agent_runtime_run_turn_sent_path_with_history_override():
 
 
 def test_agent_runtime_run_turn_uses_task_override():
+    Lead = type("LeadModel", (), {})
     Workspace = type("WorkspaceModel", (), {})
     Agent = type("AgentModel", (), {})
+    lead_obj = SimpleNamespace(workspace_id=20, tenant_id=1)
     workspace_obj = SimpleNamespace(agent_id=77)
     agent_obj = SimpleNamespace(model="override-model")
 
@@ -586,6 +811,8 @@ def test_agent_runtime_run_turn_uses_task_override():
 
     class _Session:
         def get(self, model, _id):
+            if model is Lead:
+                return lead_obj
             if model is Workspace:
                 return workspace_obj
             if model is Agent:
@@ -597,7 +824,7 @@ def test_agent_runtime_run_turn_uses_task_override():
     runtime = agent_runtime_mod.ConversationAgentRuntime(session, router)
     runtime.policy = _FakePolicy(pre_allow=True, pre_reason="POLICY_PASSED", risk_allow=True)
     runtime.builder = _FakeBuilder()
-    runtime._crm_models = lambda: (object, Workspace, object, object, object)
+    runtime._crm_models = lambda: (Lead, Workspace, object, object, object)
     runtime._agent_model = lambda: Agent
     runtime._llm_task = lambda: _TaskEnum()
     runtime._estimate_llm_cost = lambda: (lambda *_args: 0.123)
@@ -619,3 +846,129 @@ def test_agent_runtime_run_turn_uses_task_override():
     assert router.calls[0]["task"].value == "pdf"
     assert router.calls[0]["image_content"] == b"img"
     assert router.calls[0]["image_mime_type"] == "image/jpeg"
+
+
+def test_agent_runtime_run_turn_returns_audio_action_when_voice_tool_approves(monkeypatch):
+    Lead = type("LeadModel", (), {})
+
+    class _Task:
+        def __init__(self, value):
+            self.value = value
+
+    class _TaskEnum:
+        CONVERSATION = _Task("conversation")
+        TOOL_USE = _Task("tool_use")
+
+        def __call__(self, value):
+            return self.CONVERSATION if value == "conversation" else self.TOOL_USE
+
+    class _ToolRouter:
+        def __init__(self):
+            self.calls = []
+
+        async def execute(self, **kwargs):
+            self.calls.append(kwargs)
+            return SimpleNamespace(
+                content=None,
+                tool_calls=[
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "request_voice_note_followup",
+                            "arguments": json.dumps(
+                                {
+                                    "spoken_text": "希望老板可以给我一次拜访您向您学习的机会。",
+                                    "trigger_reason": "appointment_request",
+                                    "customer_signal": "Lead keeps dodging text follow-up",
+                                },
+                                ensure_ascii=False,
+                            ),
+                        },
+                    }
+                ],
+                provider_info={"provider": "uniapi", "model": "test-model"},
+                usage={"prompt_tokens": 13, "completion_tokens": 5, "total_tokens": 18},
+            )
+
+    class _VoiceBuilder:
+        async def build_context(self, *_args, **_kwargs):
+            return {
+                "system_instruction": "SYS",
+                "tools_enabled": True,
+                "agent_id": 77,
+            }
+
+    async def _fake_load_tools(_session, _agent_id):
+        return (
+            [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "request_voice_note_followup",
+                        "description": "Prepare a voice note",
+                        "parameters": {"type": "object"},
+                    },
+                }
+            ],
+            {"request_voice_note_followup": {"server_id": "12", "script": "voice_note_followup.py"}},
+        )
+
+    class _Manager:
+        async def call_mcp_tool(self, _server_id, _tool_name, _tool_args):
+            return json.dumps(
+                {
+                    "approved": True,
+                    "message_type": "audio",
+                    "spoken_text": "希望老板可以给我一次拜访您向您学习的机会。",
+                    "trigger_reason": "appointment_request",
+                    "tts_model": "qwen3-tts-flash",
+                    "tts_voice": "kiki",
+                    "tts_instructions": "Warm, sincere, persuasive",
+                    "estimated_duration_seconds": 6.4,
+                },
+                ensure_ascii=False,
+            )
+
+    class _Session(_FakeSession):
+        def get(self, _model, _id):
+            return SimpleNamespace(workspace_id=20, tenant_id=1)
+
+    session = _Session()
+    router = _ToolRouter()
+    runtime = agent_runtime_mod.ConversationAgentRuntime(session, router)
+    runtime.policy = _FakePolicy(pre_allow=True, pre_reason="POLICY_PASSED", risk_allow=True)
+    runtime.builder = _VoiceBuilder()
+    runtime._crm_models = lambda: (Lead, object, object, object, object)
+    runtime._llm_task = lambda: _TaskEnum()
+    runtime._estimate_llm_cost = lambda: (lambda *_args: 0.321)
+    runtime._get_bool_system_setting = lambda: (lambda *_args, **_kwargs: False)
+
+    monkeypatch.setattr(agent_runtime_mod, "load_agent_tools_for_runtime", _fake_load_tools)
+    original_import_module = importlib.import_module
+    monkeypatch.setattr(
+        agent_runtime_mod.importlib,
+        "import_module",
+        lambda name: (
+            SimpleNamespace(get_mcp_manager=lambda: _Manager())
+            if name == "src.adapters.api.dependencies"
+            else original_import_module(name)
+        ),
+    )
+
+    result = asyncio.run(
+        runtime.run_turn(
+            lead_id=10,
+            workspace_id=20,
+            user_message="follow up again",
+            history_override=[],
+        )
+    )
+
+    assert result["status"] == "sent"
+    assert result["message_type"] == "audio"
+    assert result["content"] == "希望老板可以给我一次拜访您向您学习的机会。"
+    assert result["raw_payload"]["tts_voice"] == "kiki"
+    assert result["llm_estimated_cost_usd"] == 0.321
+    assert router.calls[0]["task"].value == "tool_use"
+    assert router.calls[0]["tools"][0]["function"]["name"] == "request_voice_note_followup"

@@ -5,6 +5,7 @@ import TuiBadge from '../components/ui/TuiBadge.vue'
 import TuiButton from '../components/ui/TuiButton.vue'
 import TuiCard from '../components/ui/TuiCard.vue'
 import TuiSelect from '../components/ui/TuiSelect.vue'
+import { request } from '../services/api'
 
 const API_BASE = `${window.location.origin}/api/v1`
 
@@ -160,13 +161,10 @@ const sendQuickMessage = async () => {
   quickLog.value.push({ role: 'user', text, ts: entryTs })
 
   try {
-    const res = await fetch(`${API_BASE}/chat/`, {
+    const data = await request('/chat/', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ agent_id: agentId, message: text })
     })
-    if (!res.ok) throw new Error('Chat request failed')
-    const data = await res.json()
     quickLog.value.push({
       role: 'assistant',
       text: data.response || 'No response text.',

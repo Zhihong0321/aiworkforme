@@ -1,0 +1,78 @@
+{
+  "started_at_utc": "2026-03-16T03:31:57.058525+00:00",
+  "session_id": "1:primary",
+  "to": "601121000099",
+  "paths": {
+    "tts_raw": "E:\\AIworkforMe\\test-results\\voice-debug\\20260316-033157\\tts-raw.wav",
+    "tts_ogg": "E:\\AIworkforMe\\test-results\\voice-debug\\20260316-033157\\tts-voice-note.ogg"
+  },
+  "session_status": {
+    "sessionId": "1:primary",
+    "status": "connected",
+    "qr": null,
+    "qrImage": null,
+    "error": "Connection closed: Connection Terminated (428)",
+    "message": "Connected",
+    "connectedNumber": "601121000099",
+    "me": {
+      "id": "601121000099:50@s.whatsapp.net",
+      "phone": "601121000099"
+    }
+  },
+  "text_control": {
+    "status": "sent",
+    "result": {
+      "key": {
+        "remoteJid": "601121000099@s.whatsapp.net",
+        "fromMe": true,
+        "id": "3EB093FFCED03702446720"
+      },
+      "message": {
+        "extendedTextMessage": {
+          "text": "Codex debug text control before voice-note send."
+        }
+      },
+      "messageTimestamp": "1773631925",
+      "status": "PENDING"
+    }
+  },
+  "tts": {
+    "raw_content_type": "audio/x-wav",
+    "raw_bytes": 199724,
+    "ogg_bytes": 12584
+  },
+  "upload": {
+    "provider": "catbox",
+    "public_audio_url": "https://files.catbox.moe/jdgxm6.ogg"
+  },
+  "send_result": {
+    "status": "sent",
+    "result": {
+      "key": {
+        "remoteJid": "601121000099@s.whatsapp.net",
+        "fromMe": true,
+        "id": "3EB02A26889BC196435D35"
+      },
+      "message": {
+        "audioMessage": {
+          "url": "https://mmg.whatsapp.net/v/t62.7114-24/653891311_1876598303024850_6099047598262660346_n.enc?ccb=11-4&oh=01_Q5Aa4AFmjUzhBf9ZKk_uTkfTw8NsjtLYXb63kPZEGIoGnO68iA&oe=69DEEEF5&_nc_sid=5e03e0&mms3=true",
+          "mimetype": "audio/ogg; codecs=opus",
+          "fileSha256": "YnbHG73P0Edlu0jxj1aW128FJRQwNsIf/1wdBHbEfXg=",
+          "fileLength": "12584",
+          "seconds": 4,
+          "ptt": true,
+          "mediaKey": "788GOD2mvpunGkxr0zKoj/iiO6qt6BoJsJRYEOeY+k8=",
+          "fileEncSha256": "Ls5ZoMKXvPwz7YVjjIuajAMT0jVIDVJnWSfDYsrXv80=",
+          "directPath": "/v/t62.7114-24/653891311_1876598303024850_6099047598262660346_n.enc?ccb=11-4&oh=01_Q5Aa4AFmjUzhBf9ZKk_uTkfTw8NsjtLYXb63kPZEGIoGnO68iA&oe=69DEEEF5&_nc_sid=5e03e0",
+          "mediaKeyTimestamp": "1773631935"
+        }
+      },
+      "messageTimestamp": "1773631935",
+      "status": "PENDING"
+    }
+  },
+  "provider_message_id": "3EB02A26889BC196435D35",
+  "remote_jid": "601121000099@s.whatsapp.net",
+  "history_verified": true,
+  "finished_at_utc": "2026-03-16T03:32:08.582007+00:00"
+}

@@ -1,0 +1,47 @@
+{
+  "sessionId": "1:primary",
+  "jid": "601121000099@s.whatsapp.net",
+  "count": 5,
+  "messages": [
+    {
+      "id": "3EB0AF260427E44F2D5A4A",
+      "phoneNumber": "601121000099",
+      "fromMe": true,
+      "timestamp": 1773631704000,
+      "type": "extendedTextMessage",
+      "content": "Codex debug ping from IDE text control test."
+    },
+    {
+      "id": "3EB0663136394346605456",
+      "phoneNumber": "601121000099",
+      "fromMe": true,
+      "timestamp": 1773631807000,
+      "type": "audioMessage",
+      "content": ""
+    },
+    {
+      "id": "3EB0E54744539B8A4C2FF1",
+      "phoneNumber": "601121000099",
+      "fromMe": true,
+      "timestamp": 1773631868000,
+      "type": "audioMessage",
+      "content": ""
+    },
+    {
+      "id": "3EB093FFCED03702446720",
+      "phoneNumber": "601121000099",
+      "fromMe": true,
+      "timestamp": 1773631925000,
+      "type": "extendedTextMessage",
+      "content": "Codex debug text control before voice-note send."
+    },
+    {
+      "id": "3EB02A26889BC196435D35",
+      "phoneNumber": "601121000099",
+      "fromMe": true,
+      "timestamp": 1773631935000,
+      "type": "audioMessage",
+      "content": ""
+    }
+  ]
+}

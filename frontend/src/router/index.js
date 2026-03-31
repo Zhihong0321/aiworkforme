@@ -14,6 +14,8 @@ import MessageHistory from '../views/MessageHistory.vue'
 import ModelBenchmark from '../views/ModelBenchmark.vue'
 import AICrmControl from '../views/AICrmControl.vue'
 import Home from '../views/Home.vue'
+import TenantManagement from '../views/TenantManagement.vue'
+import PlatformChannelManagement from '../views/PlatformChannelManagement.vue'
 
 const routes = [
   {
@@ -114,6 +116,18 @@ const routes = [
     path: '/settings/history',
     name: 'Message History',
     component: MessageHistory,
+    meta: { requiresAuth: true, requiresPlatformAdmin: true }
+  },
+  {
+    path: '/settings/tenants',
+    name: 'Tenant Management',
+    component: TenantManagement,
+    meta: { requiresAuth: true, requiresPlatformAdmin: true }
+  },
+  {
+    path: '/settings/channels',
+    name: 'Channel Management',
+    component: PlatformChannelManagement,
     meta: { requiresAuth: true, requiresPlatformAdmin: true }
   },
   {

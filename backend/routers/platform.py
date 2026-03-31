@@ -11,6 +11,7 @@ from fastapi import APIRouter
 
 from . import (
     platform_audit_routes,
+    platform_channel_routes,
     platform_identity_routes,
     platform_llm_routes,
     platform_settings_routes,
@@ -18,6 +19,7 @@ from . import (
 
 router = APIRouter(prefix="/api/v1/platform", tags=["Platform Admin"])
 router.include_router(platform_identity_routes.router)
+router.include_router(platform_channel_routes.router)
 router.include_router(platform_audit_routes.router)
 router.include_router(platform_llm_routes.router)
 router.include_router(platform_settings_routes.router)

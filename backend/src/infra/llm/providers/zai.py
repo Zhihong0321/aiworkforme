@@ -79,6 +79,9 @@ class ZaiProvider(BaseLLMProvider):
 
         if request.tools:
             kwargs["tools"] = request.tools
+            tool_choice = request.extra_params.get("tool_choice")
+            if tool_choice is not None:
+                kwargs["tool_choice"] = tool_choice
         
         if request.response_format:
             kwargs["response_format"] = request.response_format

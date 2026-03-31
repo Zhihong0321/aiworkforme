@@ -2,6 +2,8 @@ export const getNavItems = (isPlatformAdmin) => {
   if (isPlatformAdmin) {
     return [
       { label: 'Dashboard', path: '/settings#overview', icon: 'space_dashboard', description: 'System overview and shortcuts' },
+      { label: 'Tenant Management', path: '/settings/tenants', icon: 'apartment', description: 'All tenants and memberships' },
+      { label: 'Channel Management', path: '/settings/channels', icon: 'hub', description: 'All channels in the platform' },
       { label: 'Platform Setting', path: '/settings#platform-settings', icon: 'tune', description: 'Keys, routing, and defaults' },
       { label: 'Message Review', path: '/settings#message-review', icon: 'history', description: 'Audit history and AI traces' },
       { label: 'Benchmark', path: '/settings#benchmark', icon: 'speed', description: 'Provider comparison tests' }

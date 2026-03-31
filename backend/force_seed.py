@@ -7,6 +7,7 @@ from src.infra.seeding import (
     seed_knowledge_retrieval_mcp,
     seed_catalog_mcp,
     seed_calendar_mcp,
+    seed_voice_note_followup_mcp,
     seed_default_assets
 )
 # Ensure models are loaded
@@ -25,6 +26,7 @@ seed_mcp_scripts()
 seed_knowledge_retrieval_mcp(engine, default_tenant_id)
 seed_catalog_mcp(engine, default_tenant_id)
 seed_calendar_mcp(engine, default_tenant_id)
+seed_voice_note_followup_mcp(engine, default_tenant_id)
 seed_default_assets(engine)
 
 print("Seeding complete.")

@@ -8,9 +8,9 @@ SAFE CHANGE: Add fields in backward-compatible way only.
 """
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
-from sqlmodel import SQLModel
+from sqlmodel import Field, SQLModel
 
 from src.domain.entities.enums import Role, TenantStatus
 
@@ -24,6 +24,9 @@ class TenantResponse(SQLModel):
     name: str
     status: TenantStatus
     created_at: datetime
+    membership_count: int = 0
+    active_membership_count: int = 0
+    channel_count: int = 0
 
 
 class UserCreateRequest(SQLModel):
@@ -63,6 +66,22 @@ class UserStatusUpdateRequest(SQLModel):
 
 class MembershipStatusUpdateRequest(SQLModel):
     is_active: bool
+
+
+class PlatformChannelResponse(SQLModel):
+    id: int
+    tenant_id: int
+    tenant_name: str | None = None
+    channel_type: str
+    session_identifier: str
+    display_name: str | None = None
+    status: str
+    description: str | None = None
+    connected_number: str | None = None
+    provider_session_id: str | None = None
+    session_metadata: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
 
 
 class AdminAuditLogResponse(SQLModel):

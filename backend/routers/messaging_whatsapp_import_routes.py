@@ -41,6 +41,7 @@ from .messaging_helpers import (
     provider_headers as _provider_headers,
     resolve_whatsapp_base_url as _resolve_whatsapp_base_url,
     resolve_whatsapp_channel_session_for_tenant as _resolve_whatsapp_channel_session_for_tenant,
+    whatsapp_provider_session_identifier as _whatsapp_provider_session_identifier,
 )
 from .messaging_schemas import WhatsAppConversationImportRequest, WhatsAppConversationImportResponse
 
@@ -73,6 +74,7 @@ def import_whatsapp_conversations(
         channel_session_id=payload.channel_session_id,
     )
     base_url = _resolve_whatsapp_base_url(channel_session)
+    provider_session_id = _whatsapp_provider_session_identifier(channel_session)
 
     existing_leads = session.exec(
         select(Lead).where(
@@ -145,7 +147,7 @@ def import_whatsapp_conversations(
                     f"{base_url}/messages/send",
                     headers=_provider_headers(),
                     json={
-                        "sessionId": channel_session.session_identifier,
+                        "sessionId": provider_session_id,
                         "to": seed_phone,
                         "text": seed_text,
                     },
@@ -168,7 +170,7 @@ def import_whatsapp_conversations(
             chats_res = client.get(
                 f"{base_url}/chats",
                 headers=_provider_headers(),
-                params={"sessionId": channel_session.session_identifier, "limit": chat_limit},
+                params={"sessionId": provider_session_id, "limit": chat_limit},
             )
             chats_res.raise_for_status()
             chats_body = chats_res.json() if chats_res.content else {}
@@ -263,7 +265,7 @@ def import_whatsapp_conversations(
                         f"{base_url}/chats/{quote(jid, safe='')}/messages",
                         headers=_provider_headers(),
                         params={
-                            "sessionId": channel_session.session_identifier,
+                            "sessionId": provider_session_id,
                             "limit": message_limit,
                         },
                     )

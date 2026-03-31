@@ -18,5 +18,6 @@ REPO NAME : AIworkforMe
 - Added frontend API timeout guard to prevent deployed pages from hanging on stalled backend requests
 - Improved optimizer UX to use Inbox threads directly with one-click thread selection
 - Reworked sales material handling so uploads save public URLs, WhatsApp sends URL-only materials, and agent saves no longer hang on refresh.
+- Fixed chat calendar booking so authenticated chat sessions force real calendar tool use and save appointments to the correct user calendar with regression coverage.
 
 =====================

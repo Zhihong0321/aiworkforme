@@ -128,3 +128,117 @@ def test_send_whatsapp_message_audio_with_public_url_uses_voice_sender(monkeypat
     assert called["send"]["audio_url"] == "https://files.example.test/already-public.ogg"
     assert called["verify"]["provider_message_id"] == "voice_msg_002"
     assert message.raw_payload["provider_message_id"] == "voice_msg_002"
+
+
+def test_send_whatsapp_message_image_uses_media_payload(monkeypatch):
+    session = _build_session()
+    message = UnifiedMessage(
+        id=7,
+        tenant_id=1,
+        lead_id=1,
+        channel_session_id=2,
+        channel="whatsapp",
+        external_message_id="out_003",
+        direction="outbound",
+        message_type="image",
+        text_content="Here is the promo image.",
+        media_url="https://files.example.test/promo-image.jpg",
+        raw_payload={"file_name": "promo-image.jpg", "mime_type": "image/jpeg"},
+        delivery_status="queued",
+    )
+
+    captured: Dict[str, Any] = {}
+
+    class _FakeResponse:
+        def __init__(self):
+            self.content = b'{"result":{"key":{"id":"img_msg_001"}}}'
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"result": {"key": {"id": "img_msg_001"}}}
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            captured["timeout"] = kwargs.get("timeout")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, endpoint, headers=None, json=None):
+            captured["endpoint"] = endpoint
+            captured["headers"] = headers
+            captured["json"] = json
+            return _FakeResponse()
+
+    monkeypatch.setattr(messaging_runtime.httpx, "Client", _FakeClient)
+
+    provider_message_id = messaging_runtime.send_whatsapp_message(session, message)
+
+    assert provider_message_id == "img_msg_001"
+    assert captured["json"]["messageType"] == "image"
+    assert captured["json"]["mediaUrl"] == "https://files.example.test/promo-image.jpg"
+    assert captured["json"]["imageUrl"] == "https://files.example.test/promo-image.jpg"
+    assert captured["json"]["caption"] == "Here is the promo image."
+    assert message.raw_payload["file_name"] == "promo-image.jpg"
+
+
+def test_send_whatsapp_message_document_uses_media_payload(monkeypatch):
+    session = _build_session()
+    message = UnifiedMessage(
+        id=8,
+        tenant_id=1,
+        lead_id=1,
+        channel_session_id=2,
+        channel="whatsapp",
+        external_message_id="out_004",
+        direction="outbound",
+        message_type="document",
+        text_content="Here is the brochure.",
+        media_url="https://files.example.test/brochure.pdf",
+        raw_payload={"file_name": "brochure.pdf", "mime_type": "application/pdf"},
+        delivery_status="queued",
+    )
+
+    captured: Dict[str, Any] = {}
+
+    class _FakeResponse:
+        def __init__(self):
+            self.content = b'{"result":{"key":{"id":"doc_msg_001"}}}'
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"result": {"key": {"id": "doc_msg_001"}}}
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs):
+            captured["timeout"] = kwargs.get("timeout")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def post(self, endpoint, headers=None, json=None):
+            captured["endpoint"] = endpoint
+            captured["headers"] = headers
+            captured["json"] = json
+            return _FakeResponse()
+
+    monkeypatch.setattr(messaging_runtime.httpx, "Client", _FakeClient)
+
+    provider_message_id = messaging_runtime.send_whatsapp_message(session, message)
+
+    assert provider_message_id == "doc_msg_001"
+    assert captured["json"]["messageType"] == "document"
+    assert captured["json"]["mediaUrl"] == "https://files.example.test/brochure.pdf"
+    assert captured["json"]["documentUrl"] == "https://files.example.test/brochure.pdf"
+    assert captured["json"]["documentName"] == "brochure.pdf"
+    assert captured["json"]["mimeType"] == "application/pdf"

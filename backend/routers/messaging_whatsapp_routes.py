@@ -44,7 +44,9 @@ from .messaging_helpers import (
     provider_headers as _provider_headers,
     resolve_whatsapp_base_url as _resolve_whatsapp_base_url,
     resolve_whatsapp_channel_session_for_tenant as _resolve_whatsapp_channel_session_for_tenant,
+    sync_whatsapp_channel_identity as _sync_whatsapp_channel_identity,
     upsert_whatsapp_channel_session as _upsert_whatsapp_channel_session,
+    whatsapp_provider_session_identifier as _whatsapp_provider_session_identifier,
     get_or_create_thread as _get_or_create_thread,
 )
 from .messaging_schemas import (
@@ -83,11 +85,13 @@ def connect_whatsapp_session(
         tenant_id=auth.tenant.id,
         session_identifier=session_identifier,
         display_name=payload.display_name,
+        description=payload.description,
         provider_base_url=payload.provider_base_url,
     )
 
     base_url = _resolve_whatsapp_base_url(channel_session, payload.provider_base_url)
-    endpoint = f"{base_url}/sessions/{quote(channel_session.session_identifier, safe=':')}"
+    provider_session_id = _whatsapp_provider_session_identifier(channel_session)
+    endpoint = f"{base_url}/sessions/{quote(provider_session_id, safe=':')}"
 
     try:
         with httpx.Client(timeout=20.0) as client:
@@ -110,6 +114,12 @@ def connect_whatsapp_session(
     meta["last_connect_response"] = body
     meta["last_connect_at"] = datetime.utcnow().isoformat()
     channel_session.session_metadata = meta
+    _sync_whatsapp_channel_identity(
+        channel_session,
+        provider_payload=body,
+        description=payload.description or payload.display_name,
+        provider_session_id=provider_session_id,
+    )
     session.add(channel_session)
     session.commit()
     session.refresh(channel_session)
@@ -130,11 +140,12 @@ def refresh_whatsapp_session(
 ):
     channel_session = _assert_whatsapp_channel_session_for_tenant(session, auth.tenant.id, channel_session_id)
     base_url = _resolve_whatsapp_base_url(channel_session)
-    endpoint = f"{base_url}/sessions/{quote(channel_session.session_identifier, safe=':')}"
+    provider_session_id = _whatsapp_provider_session_identifier(channel_session)
+    endpoint = f"{base_url}/sessions/{quote(provider_session_id, safe=':')}"
 
     try:
         with httpx.Client(timeout=20.0) as client:
-            response = client.post(endpoint, headers=_provider_headers())
+            response = client.get(endpoint, headers=_provider_headers())
             response.raise_for_status()
             body = response.json() if response.content else {}
     except Exception as exc:
@@ -153,6 +164,11 @@ def refresh_whatsapp_session(
     meta["last_refresh_response"] = body
     meta["last_refresh_at"] = datetime.utcnow().isoformat()
     channel_session.session_metadata = meta
+    _sync_whatsapp_channel_identity(
+        channel_session,
+        provider_payload=body,
+        provider_session_id=provider_session_id,
+    )
     session.add(channel_session)
     session.commit()
     session.refresh(channel_session)
@@ -173,12 +189,33 @@ def get_whatsapp_qr(
 ):
     channel_session = _assert_whatsapp_channel_session_for_tenant(session, auth.tenant.id, channel_session_id)
     base_url = _resolve_whatsapp_base_url(channel_session)
-    endpoint = f"{base_url}/sessions/{quote(channel_session.session_identifier, safe=':')}/qr"
+    provider_session_id = _whatsapp_provider_session_identifier(channel_session)
+    endpoint = f"{base_url}/sessions/{quote(provider_session_id, safe=':')}/qr"
 
     try:
         with httpx.Client(timeout=20.0) as client:
             response = client.get(endpoint, headers=_provider_headers())
             if response.status_code == 404:
+                status_response = client.get(
+                    f"{base_url}/sessions/{quote(provider_session_id, safe=':')}",
+                    headers=_provider_headers(),
+                )
+                if status_response.status_code < 400:
+                    body = status_response.json() if status_response.content else {}
+                    _sync_whatsapp_channel_identity(
+                        channel_session,
+                        provider_payload=body,
+                        provider_session_id=provider_session_id,
+                    )
+                    channel_session.status = _map_remote_status_to_local(body.get("status"))
+                    channel_session.updated_at = datetime.utcnow()
+                    meta = dict(channel_session.session_metadata or {})
+                    meta["last_refresh_response"] = body
+                    meta["last_refresh_at"] = datetime.utcnow().isoformat()
+                    channel_session.session_metadata = meta
+                    session.add(channel_session)
+                    session.commit()
+                    return body
                 return {"status": "connected_or_not_ready", "qr": None, "qrImage": None}
             response.raise_for_status()
             return response.json() if response.content else {"status": "ok"}
@@ -194,7 +231,7 @@ def disconnect_whatsapp_session(
 ):
     channel_session = _assert_whatsapp_channel_session_for_tenant(session, auth.tenant.id, channel_session_id)
     base_url = _resolve_whatsapp_base_url(channel_session)
-    endpoint = f"{base_url}/sessions/{quote(channel_session.session_identifier, safe=':')}"
+    endpoint = f"{base_url}/sessions/{quote(_whatsapp_provider_session_identifier(channel_session), safe=':')}"
 
     try:
         with httpx.Client(timeout=20.0) as client:
@@ -209,5 +246,3 @@ def disconnect_whatsapp_session(
     session.add(channel_session)
     session.commit()
     return {"status": "disconnected", "channel_session_id": channel_session.id}
-
-

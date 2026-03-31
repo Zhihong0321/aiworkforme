@@ -302,8 +302,8 @@ def delete_lead(
     if not lead or lead.tenant_id != auth.tenant.id or lead.workspace_id != workspace_id:
         raise HTTPException(status_code=404, detail="Lead not found")
 
-    delete_lead_and_children(session, auth.tenant.id, lead)
-    return {"status": "deleted", "lead_id": lead_id}
+    deleted = delete_lead_and_children(session, auth.tenant.id, lead)
+    return {"status": "deleted", **deleted}
 
 
 @router.post("/{workspace_id}/leads/{lead_id}/mode", response_model=Lead)
